@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+backend/.uploads/
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/tsconfig.tsbuildinfo
+
+# Env files
+.env
+backend/.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
