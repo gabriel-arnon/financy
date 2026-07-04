@@ -1,15 +1,31 @@
+from fastapi import Request
+
+from app.core.auth import CurrentUser, get_current_user
 from app.core.config import settings
-from app.repositories.local_json import LocalJsonRepository
+from app.repositories.factory import create_repository
 from app.services.import_service import ImportService
 from app.services.transaction_service import TransactionService
 
 
-repository = LocalJsonRepository(settings.upload_dir)
+repository = create_repository(settings)
+
+
+def _ensure_profile(user: CurrentUser) -> None:
+    ensure_profile = getattr(repository, "ensure_profile", None)
+    if ensure_profile:
+        ensure_profile(user.id, email=user.email, full_name=user.full_name)
 
 
 def get_user_id() -> str:
-    # Future swap point: validate Supabase Auth JWT and return auth.uid().
-    return settings.dev_user_id
+    user = get_current_user(None)
+    _ensure_profile(user)
+    return user.id
+
+
+def get_request_user_id(request: Request) -> str:
+    user = get_current_user(request)
+    _ensure_profile(user)
+    return user.id
 
 
 def get_import_service() -> ImportService:

@@ -3,17 +3,27 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.uploads/
 backend/.uploads/
 
 # Node / Next.js
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/.uploads/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.env
+frontend/.env.production
+frontend/.env.development
 frontend/.env.local
 frontend/tsconfig.tsbuildinfo
 
 # Env files
 .env
+*.env
+!*.env.example
+!*.env.production.example
 backend/.env
 
 # OS / editor

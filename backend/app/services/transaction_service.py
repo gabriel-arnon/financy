@@ -10,6 +10,28 @@ class TransactionService:
     def list(self, user_id: str) -> list[TransactionRead]:
         return [TransactionRead(**item) for item in self.repository.list_transactions(user_id)]
 
+    def _validate_references(self, user_id: str, data: dict) -> None:
+        account_id = data.get("account_id")
+        if account_id and not self.repository.get_account(user_id, account_id):
+            raise AppError("Conta da transacao nao encontrada.", status_code=400, code="transaction_account_not_found")
+
+        card_id = data.get("card_id")
+        if card_id and not self.repository.get_card(user_id, card_id):
+            raise AppError("Cartao da transacao nao encontrado.", status_code=400, code="transaction_card_not_found")
+
+        statement_id = data.get("card_statement_id")
+        if statement_id and not self.repository.get_card_statement(user_id, statement_id):
+            raise AppError("Fatura da transacao nao encontrada.", status_code=400, code="transaction_statement_not_found")
+
+        category_id = data.get("category_id")
+        if category_id and not self.repository.category_exists(category_id, user_id):
+            raise AppError("Categoria da transacao nao encontrada.", status_code=400, code="transaction_category_not_found")
+
+        source_file_id = data.get("source_file_id")
+        get_import_file = getattr(self.repository, "get_import_file", None)
+        if source_file_id and get_import_file and not get_import_file(user_id, source_file_id):
+            raise AppError("Arquivo de origem da transacao nao encontrado.", status_code=400, code="transaction_source_file_not_found")
+
     def create(
         self,
         user_id: str,
@@ -20,6 +42,7 @@ class TransactionService:
         data = payload_dict or payload.model_dump(mode="json")  # type: ignore[union-attr]
         data["original_description"] = data.get("original_description") or data["description"]
         data["normalized_description"] = normalize_description(data["description"])
+        self._validate_references(user_id, data)
         candidate = {"user_id": user_id, **data}
 
         if not allow_duplicate and self.repository.transaction_signature_exists(candidate):
@@ -31,7 +54,20 @@ class TransactionService:
         return TransactionRead(**record)
 
     def update(self, user_id: str, transaction_id: str, payload: TransactionUpdate) -> TransactionRead:
-        record = self.repository.update_transaction(user_id, transaction_id, payload.model_dump(mode="json", exclude_unset=True))
+        data = payload.model_dump(mode="json", exclude_unset=True)
+        current = self.repository.get_transaction(user_id, transaction_id)
+        if not current:
+            raise AppError("Transacao nao encontrada.", status_code=404, code="transaction_not_found")
+        if "category_id" not in payload.model_fields_set:
+            description = data.get("description") or current.get("description", "")
+            original_description = data.get("original_description") or current.get("original_description")
+            transaction_type = data.get("type") or current.get("type")
+            rule = self.repository.match_classification_rule(user_id, description, original_description, transaction_type)
+            if rule:
+                data["category_id"] = rule["category_id"]
+        self._validate_references(user_id, {**current, **data})
+
+        record = self.repository.update_transaction(user_id, transaction_id, data)
         if not record:
             raise AppError("Transacao nao encontrada.", status_code=404, code="transaction_not_found")
         return TransactionRead(**record)

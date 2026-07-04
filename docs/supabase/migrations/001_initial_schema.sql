@@ -4,6 +4,10 @@ create type transaction_type as enum ('expense', 'income', 'transfer', 'payment'
 create type transaction_status as enum ('pending', 'confirmed', 'reconciled', 'ignored');
 create type preview_status as enum ('pending', 'selected', 'ignored', 'confirmed', 'duplicate', 'error');
 create type statement_status as enum ('open', 'closed', 'paid', 'partial', 'overdue');
+create type account_type as enum ('checking', 'savings', 'wallet', 'investment');
+create type entity_status as enum ('active', 'inactive');
+create type classification_match_scope as enum ('description', 'original_description', 'both');
+create type category_type as enum ('expense', 'income', 'both');
 
 create table profiles (
   id uuid primary key,
@@ -17,18 +21,26 @@ create table accounts (
   user_id uuid not null references profiles(id),
   name text not null,
   institution text,
-  type text not null default 'checking',
+  agency text,
+  account_number text,
+  type account_type not null default 'checking',
+  balance numeric(14, 2) not null default 0,
+  status entity_status not null default 'active',
   created_at timestamptz not null default now()
 );
 
 create table cards (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references profiles(id),
-  account_id uuid references accounts(id),
+  account_id uuid not null references accounts(id),
   name text not null,
+  institution text,
   brand text,
+  last_digits char(4) not null check (last_digits ~ '^[0-9]{4}$'),
+  limit_amount numeric(14, 2),
   closing_day integer,
   due_day integer,
+  status entity_status not null default 'active',
   created_at timestamptz not null default now()
 );
 
@@ -36,6 +48,9 @@ create table categories (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references profiles(id),
   name text not null,
+  type category_type not null default 'both',
+  status entity_status not null default 'active',
+  is_system boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -70,6 +85,7 @@ create table card_statements (
   total_amount numeric(14, 2),
   minimum_payment_amount numeric(14, 2),
   status statement_status not null default 'open',
+  paid_at timestamptz,
   source_file_id uuid references import_files(id),
   created_at timestamptz not null default now()
 );
@@ -88,6 +104,8 @@ create table import_preview_items (
   amount numeric(14, 2) not null,
   type transaction_type not null default 'expense',
   category_id uuid references categories(id),
+  suggested_category text,
+  merchant_country text,
   installment_current integer,
   installment_total integer,
   raw_text text,
@@ -95,6 +113,22 @@ create table import_preview_items (
   parser_confidence numeric(4, 3) not null default 0.75,
   needs_review boolean not null default false,
   duplicate_candidate boolean not null default false,
+  default_selected boolean not null default true,
+  excluded_reason text,
+  classification_rule_id uuid,
+  classification_label text,
+  statement_total_amount numeric(14, 2),
+  statement_due_date date,
+  statement_reference_month date,
+  card_last_digits text,
+  card_name text,
+  card_brand text,
+  card_institution text,
+  card_limit_amount numeric(14, 2),
+  account_institution text,
+  account_agency text,
+  account_number text,
+  account_balance numeric(14, 2),
   status preview_status not null default 'pending',
   created_at timestamptz not null default now()
 );
@@ -132,10 +166,12 @@ create unique index transactions_dedupe_idx on transactions (
 create table classification_rules (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references profiles(id),
-  pattern text not null,
+  keyword text not null,
   category_id uuid references categories(id),
   transaction_type transaction_type,
   priority integer not null default 100,
-  active boolean not null default true,
+  status entity_status not null default 'active',
+  match_scope classification_match_scope not null default 'both',
+  auto_created boolean not null default false,
   created_at timestamptz not null default now()
 );

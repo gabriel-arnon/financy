@@ -2,7 +2,7 @@ import csv
 from pathlib import Path
 
 from app.models.enums import TransactionType
-from app.schemas.common import NormalizedTransactionPreview
+from app.schemas.common import NormalizedTransactionPreview, ParserResult
 from app.parsers.utils import infer_transaction_type, parse_brazilian_money, parse_date
 
 
@@ -19,7 +19,7 @@ def _first(row: dict[str, str], keys: tuple[str, ...]) -> str | None:
     return None
 
 
-def parse(path: Path, mime_type: str | None = None) -> list[NormalizedTransactionPreview]:
+def parse(path: Path, mime_type: str | None = None) -> ParserResult:
     previews: list[NormalizedTransactionPreview] = []
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -41,4 +41,4 @@ def parse(path: Path, mime_type: str | None = None) -> list[NormalizedTransactio
                     parser_confidence=0.9,
                 )
             )
-    return previews
+    return ParserResult(items=previews)

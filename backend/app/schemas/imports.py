@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel
 
-from app.models.enums import PreviewStatus, TransactionType
+from app.models.enums import ExcludedReason, PreviewStatus, TransactionType
 from app.schemas.common import CategoryRead
 
 
@@ -22,15 +22,33 @@ class ImportPreviewItemRead(BaseModel):
     amount: Decimal
     type: TransactionType
     category_id: str | None = None
+    suggested_category: str | None = None
+    merchant_country: str | None = None
     account_id: str | None = None
     card_id: str | None = None
     card_statement_id: str | None = None
     installment_current: int | None = None
     installment_total: int | None = None
     raw_text: str | None = None
-    parser_confidence: float
-    needs_review: bool
-    duplicate_candidate: bool
+    parser_confidence: float = 0.75
+    needs_review: bool = False
+    duplicate_candidate: bool = False
+    default_selected: bool = True
+    excluded_reason: ExcludedReason | None = None
+    classification_rule_id: str | None = None
+    classification_label: str | None = None
+    statement_total_amount: Decimal | None = None
+    statement_due_date: str | None = None
+    statement_reference_month: str | None = None
+    card_last_digits: str | None = None
+    card_name: str | None = None
+    card_brand: str | None = None
+    card_institution: str | None = None
+    card_limit_amount: Decimal | None = None
+    account_institution: str | None = None
+    account_agency: str | None = None
+    account_number: str | None = None
+    account_balance: Decimal | None = None
     status: PreviewStatus
 
 

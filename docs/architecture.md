@@ -5,8 +5,8 @@
 1. `POST /imports/upload` recebe o arquivo e salva metadados em `import_files`.
 2. Um `import_batch` representa a tentativa de importacao.
 3. `ParserFactory` detecta extensao/MIME e chama o parser especifico.
-4. Parsers retornam `NormalizedTransactionPreview`.
-5. Os itens sao persistidos em `import_preview_items` com metadados brutos, confianca e status.
+4. Parsers retornam `ParserResult`, com itens normalizados, linhas ignoradas e metadados da fatura quando existirem.
+5. Os itens sao persistidos em `import_preview_items` com metadados brutos, sugestoes, confianca e status.
 6. `GET /imports/{import_id}/preview` entrega itens editaveis ao frontend.
 7. `POST /imports/{import_id}/confirm` grava apenas itens selecionados em `transactions`.
 

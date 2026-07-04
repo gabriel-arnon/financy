@@ -18,7 +18,8 @@ def test_parser_factory_accepts_csv_by_extension(tmp_path: Path) -> None:
     path = tmp_path / "statement.csv"
     path.write_text("data,descricao,valor\n01/05/2026,Cafe,\"12,50\"\n", encoding="utf-8")
 
-    items = ParserFactory.parse(path=path, filename="statement.csv", mime_type=None)
+    result = ParserFactory.parse(path=path, filename="statement.csv", mime_type=None)
 
-    assert len(items) == 1
-    assert items[0].description == "Cafe"
+    assert len(result.items) == 1
+    assert result.items[0].description == "Cafe"
+    assert result.ignored_lines == []

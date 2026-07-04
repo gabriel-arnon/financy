@@ -1,14 +1,14 @@
-insert into categories (user_id, name)
+insert into categories (user_id, name, type, status, is_system)
 values
-  (null, 'Alimentação'),
-  (null, 'Supermercado'),
-  (null, 'Transporte'),
-  (null, 'Moradia'),
-  (null, 'Saúde'),
-  (null, 'Educação'),
-  (null, 'Lazer'),
-  (null, 'Serviços'),
-  (null, 'Assinaturas'),
-  (null, 'Impostos'),
-  (null, 'Outros')
+  (null, 'Alimentação', 'expense', 'active', true),
+  (null, 'Supermercado', 'expense', 'active', true),
+  (null, 'Transporte', 'expense', 'active', true),
+  (null, 'Moradia', 'expense', 'active', true),
+  (null, 'Saúde', 'expense', 'active', true),
+  (null, 'Educação', 'expense', 'active', true),
+  (null, 'Lazer', 'expense', 'active', true),
+  (null, 'Serviços', 'expense', 'active', true),
+  (null, 'Assinaturas', 'expense', 'active', true),
+  (null, 'Impostos', 'expense', 'active', true),
+  (null, 'Outros', 'both', 'active', true)
 on conflict do nothing;

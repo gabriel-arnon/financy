@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from app.core.errors import AppError
-from app.schemas.common import NormalizedTransactionPreview
+from app.schemas.common import ParserResult
 from app.parsers import csv_parser, ofx_parser, pdf_parser, xlsx_parser
 
 
@@ -23,7 +23,7 @@ SUPPORTED_MIME_TYPES = {
 
 class ParserFactory:
     @staticmethod
-    def parse(path: Path, filename: str, mime_type: str | None) -> list[NormalizedTransactionPreview]:
+    def parse(path: Path, filename: str, mime_type: str | None) -> ParserResult:
         extension = Path(filename).suffix.lower()
         parser = SUPPORTED_MIME_TYPES.get(mime_type or "") or SUPPORTED_EXTENSIONS.get(extension)
         if parser is None:

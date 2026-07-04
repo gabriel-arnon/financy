@@ -1,0 +1,299 @@
+"use client";
+
+import Link from "next/link";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { ArrowRight, CreditCard, Landmark, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { IconButton, UiButton } from "@/components/ui-button";
+import { createAccount, deleteAccount, getAccounts, getCards, updateAccount } from "@/lib/api";
+import { formatCurrency } from "@/lib/format";
+import { accountTypeLabels, formatAccountName, formatCardName, isActiveEntity } from "@/lib/labels";
+import type { Account, AccountPayload, AccountType, Card } from "@/lib/types";
+
+const emptyAccount: AccountPayload = {
+  name: "",
+  institution: "",
+  type: "checking",
+  balance: "0",
+  status: "active"
+};
+
+interface AccountsContentProps {
+  initialAccounts: Account[];
+  initialCards: Card[];
+}
+
+export function AccountsContent({ initialAccounts, initialCards }: AccountsContentProps) {
+  const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
+  const [cards, setCards] = useState<Card[]>(initialCards);
+  const [accountForm, setAccountForm] = useState<AccountPayload>(emptyAccount);
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [showAccountForm, setShowAccountForm] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const activeAccounts = useMemo(() => accounts.filter(isActiveEntity), [accounts]);
+  const activeCards = useMemo(() => cards.filter(isActiveEntity), [cards]);
+  const accountSummary = useMemo(() => {
+    return activeAccounts.reduce(
+      (summary, account) => {
+        const linkedCards = activeCards.filter((card) => card.account_id === account.id);
+        summary.totalBalance += Number(account.balance ?? 0);
+        if (linkedCards.length > 0) summary.accountsWithCards += 1;
+        return summary;
+      },
+      { totalBalance: 0, accountsWithCards: 0 }
+    );
+  }, [activeAccounts, activeCards]);
+
+  async function loadData() {
+    const [nextAccounts, nextCards] = await Promise.all([getAccounts(), getCards()]);
+    setAccounts(nextAccounts);
+    setCards(nextCards);
+  }
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([getAccounts(), getCards()])
+      .then(([nextAccounts, nextCards]) => {
+        if (!active) return;
+        setAccounts(nextAccounts);
+        setCards(nextCards);
+      })
+      .catch((err) => {
+        if (active && initialAccounts.length === 0) setError(err instanceof Error ? err.message : "Falha ao carregar contas bancárias.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [initialAccounts.length]);
+
+  function resetMessages() {
+    setMessage(null);
+    setError(null);
+  }
+
+  async function handleAccountSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    resetMessages();
+    try {
+      const payload = {
+        ...accountForm,
+        institution: accountForm.institution || null,
+        balance: accountForm.balance || "0",
+        status: "active" as const
+      };
+      if (editingAccountId) {
+        await updateAccount(editingAccountId, payload);
+        setMessage("Conta atualizada.");
+      } else {
+        await createAccount(payload);
+        setMessage("Conta cadastrada.");
+      }
+      setAccountForm(emptyAccount);
+      setEditingAccountId(null);
+      setShowAccountForm(false);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao salvar conta.");
+    }
+  }
+
+  function editAccount(account: Account) {
+    setEditingAccountId(account.id);
+    setShowAccountForm(true);
+    setAccountForm({
+      name: account.name,
+      institution: account.institution ?? "",
+      type: account.type,
+      balance: account.balance,
+      status: "active"
+    });
+  }
+
+  async function inactivateAccount(accountId: string) {
+    if (!window.confirm("Inativar esta conta? Ela não aparecerá mais nas listagens.")) return;
+    resetMessages();
+    try {
+      await deleteAccount(accountId);
+      setMessage("Conta inativada.");
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao inativar conta.");
+    }
+  }
+
+  function cancelAccountEdit() {
+    setEditingAccountId(null);
+    setAccountForm(emptyAccount);
+    setShowAccountForm(false);
+  }
+
+  function startNewAccount() {
+    resetMessages();
+    setEditingAccountId(null);
+    setAccountForm(emptyAccount);
+    setShowAccountForm(true);
+  }
+
+  return (
+    <section className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-mint">Cadastro</p>
+          <h1 className="mt-2 text-3xl font-semibold text-ink">Contas Bancárias</h1>
+          <p className="mt-2 text-sm text-stone-500">Cadastre e acompanhe contas bancárias. Cartões vinculados aparecem como entidades relacionadas.</p>
+        </div>
+        <UiButton icon={<Plus className="h-4 w-4" />} onClick={startNewAccount} variant="primary">
+          Nova conta
+        </UiButton>
+      </div>
+
+      {message ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
+      {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="min-h-[92px] rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">Total de contas</p>
+          <p className="mt-2 text-2xl font-semibold text-ink">{activeAccounts.length}</p>
+        </div>
+        <div className="min-h-[92px] rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">Saldo total</p>
+          <p className="mt-2 text-2xl font-semibold text-ink">{formatCurrency(accountSummary.totalBalance)}</p>
+        </div>
+        <div className="min-h-[92px] rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">Contas com cartões</p>
+          <p className="mt-2 text-2xl font-semibold text-ink">{accountSummary.accountsWithCards}</p>
+        </div>
+        <div className="min-h-[92px] rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
+          <p className="text-xs font-semibold uppercase tracking-wide text-stone-500">Cartões vinculados</p>
+          <p className="mt-2 text-2xl font-semibold text-ink">{activeCards.filter((card) => card.account_id).length}</p>
+        </div>
+      </div>
+
+      {showAccountForm ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/55 px-4 py-6 backdrop-blur-sm">
+          <form onSubmit={handleAccountSubmit} className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-lg border border-stone-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-stone-200 px-5 py-4">
+              <h2 className="flex items-center gap-2 text-lg font-semibold text-ink">
+                <Landmark className="h-5 w-5 text-mint" />
+                {editingAccountId ? "Editar conta bancária" : "Nova conta bancária"}
+              </h2>
+              <button
+                aria-label="Fechar formulário"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-md text-stone-500 hover:bg-stone-100 hover:text-ink"
+                onClick={cancelAccountEdit}
+                type="button"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-5">
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-ink">Nome</span>
+                <input className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint" placeholder="Nome da conta" value={accountForm.name} onChange={(event) => setAccountForm({ ...accountForm, name: event.target.value })} required />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-ink">Instituição</span>
+                <input className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint" placeholder="Banco ou instituição" value={accountForm.institution ?? ""} onChange={(event) => setAccountForm({ ...accountForm, institution: event.target.value })} />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-ink">Tipo de conta</span>
+                <select className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint" value={accountForm.type} onChange={(event) => setAccountForm({ ...accountForm, type: event.target.value as AccountType })}>
+                  {Object.entries(accountTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-sm font-medium text-ink">Saldo inicial</span>
+                <input className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint" placeholder="R$ 0,00" type="number" step="0.01" value={accountForm.balance} onChange={(event) => setAccountForm({ ...accountForm, balance: event.target.value })} />
+              </label>
+            </div>
+
+            <div className="grid gap-2 border-t border-stone-200 px-5 py-4 sm:grid-cols-2">
+              <UiButton onClick={cancelAccountEdit} variant="secondary">
+                Cancelar
+              </UiButton>
+              <UiButton icon={editingAccountId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} type="submit" variant="primary">
+                {editingAccountId ? "Salvar" : "Criar"}
+              </UiButton>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full table-fixed divide-y divide-stone-200 text-sm">
+            <colgroup>
+              <col className="w-[30%]" />
+              <col className="w-[18%]" />
+              <col className="w-[17%]" />
+              <col className="w-[20%]" />
+              <col className="w-[15%]" />
+            </colgroup>
+            <thead className="bg-stone-50 text-left text-xs uppercase text-stone-500">
+              <tr>
+                <th className="px-3 py-3">Conta</th>
+                <th className="px-3 py-3">Tipo</th>
+                <th className="px-3 py-3">Saldo</th>
+                <th className="px-3 py-3">Cartões vinculados</th>
+                <th className="px-3 py-3 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-100">
+              {activeAccounts.map((account) => {
+                const linkedCards = activeCards.filter((card) => card.account_id === account.id);
+                return (
+                  <tr key={account.id} className="align-middle">
+                    <td className="px-3 py-2.5">
+                      <div className="min-w-0">
+                        <Link href={`/accounts/${account.id}`} className="inline-flex max-w-full items-center gap-1 font-medium text-ink hover:text-mint">
+                          <span className="truncate">{formatAccountName(account)}</span>
+                          <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+                        </Link>
+                        <p className="mt-1 truncate text-xs text-stone-500">{account.institution || "Instituição não informada"}</p>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2.5 text-stone-600">
+                      <p className="font-medium text-stone-700">{accountTypeLabels[account.type]}</p>
+                      <p className="mt-1 text-xs text-stone-400">Conta bancária</p>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-stone-600">{formatCurrency(account.balance)}</td>
+                    <td className="px-3 py-2.5 text-stone-600">
+                      {linkedCards.length > 0 ? (
+                        <div className="space-y-1">
+                          {linkedCards.slice(0, 2).map((card) => (
+                            <div key={card.id} className="flex min-w-0 items-center gap-1.5">
+                              <CreditCard className="h-3.5 w-3.5 shrink-0 text-stone-400" />
+                              <Link href={`/cards/${card.id}`} className="truncate text-sm font-medium text-mint hover:text-emerald-700">
+                                {formatCardName(card)}
+                              </Link>
+                            </div>
+                          ))}
+                          {linkedCards.length > 2 ? <p className="text-xs text-stone-400">+{linkedCards.length - 2} cartões</p> : null}
+                        </div>
+                      ) : (
+                        <span className="text-sm text-stone-400">Nenhum cartão</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Link href={`/accounts/${account.id}`} className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-stone-300 bg-white px-2.5 text-xs font-medium text-ink shadow-sm hover:bg-stone-50">
+                          Detalhes
+                          <ArrowRight className="h-3.5 w-3.5 shrink-0" />
+                        </Link>
+                        <IconButton aria-label="Editar conta" icon={<Pencil className="h-4 w-4" />} onClick={() => editAccount(account)} title="Editar" variant="secondary" />
+                        <IconButton aria-label="Inativar conta" icon={<Trash2 className="h-4 w-4" />} onClick={() => inactivateAccount(account.id)} title="Excluir" variant="danger" />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {activeAccounts.length === 0 ? <tr><td className="px-4 py-8 text-center text-stone-500" colSpan={5}>Nenhuma conta cadastrada.</td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}

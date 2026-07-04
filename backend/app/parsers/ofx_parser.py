@@ -3,10 +3,10 @@ from pathlib import Path
 from ofxparse import OfxParser
 
 from app.models.enums import TransactionType
-from app.schemas.common import NormalizedTransactionPreview
+from app.schemas.common import NormalizedTransactionPreview, ParserResult
 
 
-def parse(path: Path, mime_type: str | None = None) -> list[NormalizedTransactionPreview]:
+def parse(path: Path, mime_type: str | None = None) -> ParserResult:
     with path.open("rb") as handle:
         ofx = OfxParser.parse(handle)
 
@@ -26,4 +26,4 @@ def parse(path: Path, mime_type: str | None = None) -> list[NormalizedTransactio
                 parser_confidence=0.95,
             )
         )
-    return previews
+    return ParserResult(items=previews)

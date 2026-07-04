@@ -3,16 +3,16 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from app.models.enums import TransactionType
-from app.schemas.common import NormalizedTransactionPreview
+from app.schemas.common import NormalizedTransactionPreview, ParserResult
 from app.parsers.utils import infer_transaction_type, parse_brazilian_money, parse_date
 
 
-def parse(path: Path, mime_type: str | None = None) -> list[NormalizedTransactionPreview]:
+def parse(path: Path, mime_type: str | None = None) -> ParserResult:
     workbook = load_workbook(path, read_only=True, data_only=True)
     sheet = workbook.active
     rows = list(sheet.iter_rows(values_only=True))
     if not rows:
-        return []
+        return ParserResult()
 
     headers = [str(cell).strip().lower() if cell is not None else "" for cell in rows[0]]
     previews: list[NormalizedTransactionPreview] = []
@@ -36,4 +36,4 @@ def parse(path: Path, mime_type: str | None = None) -> list[NormalizedTransactio
                 parser_confidence=0.88,
             )
         )
-    return previews
+    return ParserResult(items=previews)
