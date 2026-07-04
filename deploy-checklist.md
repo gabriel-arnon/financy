@@ -53,8 +53,8 @@ Checklist operacional para publicar ou atualizar o Financy em ambiente privado c
 
 - [ ] Configurar `DATABASE_URL` com a senha real do PostgreSQL no painel do provedor. A senha foi fornecida, mas nao deve ser versionada.
 - [ ] Configurar `JWT_SECRET` real do Supabase no painel do provedor. O valor foi fornecido, mas nao deve ser versionado.
-- [ ] Substituir `NEXT_PUBLIC_API_URL` local pela URL publica do backend.
-- [ ] Substituir `CORS_ORIGINS` local pelo dominio publico do frontend.
+- [x] Substituir `NEXT_PUBLIC_API_URL` local pela URL publica do backend: `https://financy-api-mpt0.onrender.com`.
+- [x] Substituir `CORS_ORIGINS` local pelo dominio publico do frontend: `https://financy-flame.vercel.app`.
 - [ ] Confirmar que o token Supabase recebido usa HS256 com o `JWT_SECRET` configurado; se o projeto usar tokens assimetricos/JWKS, implementar validacao JWKS antes do deploy.
 
 ## 5. Validacao local antes do deploy
@@ -109,7 +109,7 @@ docker compose up --build
 
 ## 7. Smoke test funcional pos-deploy
 
-- [ ] Abrir frontend publicado.
+- [x] Abrir frontend publicado: `https://financy-flame.vercel.app`.
 - [ ] Fazer login com usuario real.
 - [ ] Confirmar carregamento do dashboard.
 - [ ] Abrir transacoes.
@@ -121,7 +121,7 @@ docker compose up --build
 - [ ] Criar ou editar um cartao.
 - [ ] Abrir importacao.
 - [ ] Importar arquivo pequeno de teste.
-- [ ] Confirmar que a API responde `/health`.
+- [x] Confirmar que a API responde `/health`: `https://financy-api-mpt0.onrender.com/health`.
 - [ ] Fazer logout.
 - [ ] Confirmar que rotas protegidas exigem login.
 
