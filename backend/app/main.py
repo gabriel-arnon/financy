@@ -22,7 +22,12 @@ async def log_import_upload_requests(request: Request, call_next):
             },
             flush=True,
         )
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        if request.method == "POST" and request.url.path == "/imports/upload":
+            print("IMPORT_UPLOAD_REQUEST_ERROR", {"error": repr(exc)}, flush=True)
+        raise
     if request.method == "POST" and request.url.path == "/imports/upload":
         print("IMPORT_UPLOAD_REQUEST_END", {"status_code": response.status_code}, flush=True)
     return response
