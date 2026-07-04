@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, ReactNode, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useState } from "react";
 import { ListChecks, Pencil, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import { IconButton, UiButton } from "@/components/ui-button";
 import {
@@ -55,6 +55,12 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
     setCategories(nextCategories);
     setForm((current) => ({ ...current, category_id: current.category_id || nextCategories[0]?.id || "" }));
   }
+
+  useEffect(() => {
+    void Promise.resolve()
+      .then(loadData)
+      .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar regras."));
+  }, []);
 
   async function handleReload() {
     setMessage(null);

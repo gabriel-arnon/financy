@@ -1,9 +1,6 @@
 import { Check, Palette, Save, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
 import { RulesContent } from "@/components/rules-content";
 import { SettingsCategoriesSection } from "@/components/settings-categories-section";
-import { serverGetCategories, serverGetClassificationRules } from "@/lib/server-api";
-
-export const dynamic = "force-dynamic";
 
 const settingsNav = [
   { href: "#settings-profile", label: "Perfil" },
@@ -12,12 +9,7 @@ const settingsNav = [
   { href: "#settings-rules", label: "Regras" },
 ];
 
-export default async function SettingsPage() {
-  const [categories, rules] = await Promise.all([
-    serverGetCategories().catch(() => []),
-    serverGetClassificationRules().catch(() => []),
-  ]);
-
+export default function SettingsPage() {
   return (
     <section className="space-y-6">
       <div className="flex items-start gap-3">
@@ -168,10 +160,10 @@ export default async function SettingsPage() {
         </div>
       </article>
 
-      <SettingsCategoriesSection initialCategories={categories} />
+      <SettingsCategoriesSection initialCategories={[]} />
 
       <div id="settings-rules" className="scroll-mt-6">
-        <RulesContent embedded initialCategories={categories} initialRules={rules} />
+        <RulesContent embedded initialCategories={[]} initialRules={[]} />
       </div>
     </section>
   );

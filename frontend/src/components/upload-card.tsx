@@ -70,7 +70,6 @@ export function UploadCard({ onUploaded }: UploadCardProps) {
         className="sr-only"
         type="file"
         accept=".pdf,.ofx,.csv,.xlsx"
-        onInput={handleChange}
         onChange={handleChange}
         disabled={loading}
       />

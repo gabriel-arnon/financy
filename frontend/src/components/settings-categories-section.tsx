@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Pencil, Plus, Save, Tags, Trash2 } from "lucide-react";
 import { IconButton, UiButton } from "@/components/ui-button";
 import { createCategory, deleteCategory, getCategories, updateCategory } from "@/lib/api";
@@ -132,6 +132,12 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
     const nextCategories = await getCategories();
     setCategories(nextCategories);
   }
+
+  useEffect(() => {
+    void Promise.resolve()
+      .then(refetchCategories)
+      .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar categorias."));
+  }, []);
 
   function startCreate() {
     setMessage(null);
