@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import psycopg
+from psycopg_pool import ConnectionPool
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
@@ -48,10 +49,17 @@ class PostgresRepository:
     def __init__(self, database_url: str, dev_user_id: str) -> None:
         self.database_url = database_url
         self.dev_user_id = dev_user_id
+        self.pool = ConnectionPool(
+            database_url,
+            kwargs={"row_factory": dict_row},
+            min_size=1,
+            max_size=5,
+            open=True,
+        )
         self._ensure_profile(dev_user_id)
 
-    def _connect(self) -> psycopg.Connection:
-        return psycopg.connect(self.database_url, row_factory=dict_row)
+    def _connect(self):
+        return self.pool.connection()
 
     def ensure_profile(self, user_id: str, email: str | None = None, full_name: str | None = None) -> None:
         with self._connect() as conn, conn.cursor() as cur:
@@ -372,6 +380,7 @@ class PostgresRepository:
     ) -> list[dict[str, Any]]:
         self._ensure_profile(user_id)
         records = []
+        existing_signatures = {self.transaction_signature(item) for item in self.list_transactions(user_id)}
         with self._connect() as conn:
             for item in items:
                 record = {
@@ -382,7 +391,7 @@ class PostgresRepository:
                     "created_at": datetime.now(timezone.utc),
                     **item,
                 }
-                if self.transaction_signature_exists(record):
+                if self.transaction_signature(record) in existing_signatures:
                     record["duplicate_candidate"] = True
                     record["default_selected"] = False
                     record["excluded_reason"] = "duplicate"
