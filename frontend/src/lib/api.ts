@@ -43,6 +43,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     if (response.status === 401 && typeof window !== "undefined" && isSupabaseConfigured()) {
+      const supabase = getSupabaseClient();
+      await supabase?.auth.signOut();
+      document.cookie = "financy_access_token=; Path=/; Max-Age=0; SameSite=Lax";
       window.location.assign("/login");
     }
     throw new Error(body?.error?.message ?? "Erro na API");
