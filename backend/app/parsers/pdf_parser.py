@@ -173,7 +173,9 @@ def _extract_text(path: Path) -> str:
     with pdfplumber.open(path) as pdf:
         for page in pdf.pages:
             page_text = page.extract_text(x_tolerance=1, y_tolerance=3) or ""
-            pages.append(page_text)
+            if page_text.strip():
+                pages.append(page_text)
+                continue
             for table in page.extract_tables() or []:
                 for row in table:
                     cleaned = " ".join(cell.strip() for cell in row if cell and cell.strip())
