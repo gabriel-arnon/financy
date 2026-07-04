@@ -6,7 +6,7 @@ from decimal import Decimal
 from dateutil import parser as date_parser
 
 
-MONEY_RE = re.compile(r"(?P<sign>-)?(?:R\$\s*)?(?P<number>\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})")
+MONEY_RE = re.compile(r"(?P<sign>-)?(?:R\$\s*)?(?P<number>\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}|\d+(?:\.\d{2})?)")
 
 
 def normalize_description(value: str) -> str:
@@ -19,7 +19,9 @@ def parse_brazilian_money(value: str) -> Decimal:
     match = MONEY_RE.search(value)
     if not match:
         raise ValueError(f"Invalid money value: {value}")
-    number = match.group("number").replace(".", "").replace(",", ".")
+    number = match.group("number")
+    if "," in number:
+        number = number.replace(".", "").replace(",", ".")
     amount = Decimal(number)
     if match.group("sign"):
         return -amount

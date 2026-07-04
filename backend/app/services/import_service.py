@@ -58,10 +58,20 @@ class ImportService:
         print("IMPORT_SERVICE_PARSE_START", {"filename": file.filename}, flush=True)
         parsed_result = ParserFactory.parse(path=path, filename=file.filename, mime_type=file.content_type)
         print("IMPORT_SERVICE_PARSE_END", {"items": len(parsed_result.items)}, flush=True)
+        print("IMPORT_SERVICE_CLASSIFICATION_LOAD_START", flush=True)
+        rules = self.repository.list_classification_rules(user_id)
+        categories_by_id = {category["id"]: category["name"] for category in self.repository.categories(user_id)}
+        print("IMPORT_SERVICE_CLASSIFICATION_LOAD_END", {"rules": len(rules), "categories": len(categories_by_id)}, flush=True)
+        print("IMPORT_SERVICE_CLASSIFICATION_APPLY_START", {"items": len(parsed_result.items)}, flush=True)
         parsed_items = [
-            self._apply_classification(user_id=user_id, item=item.model_dump(mode="json"))
+            self._apply_classification_from_rules(
+                item=item.model_dump(mode="json"),
+                rules=rules,
+                categories_by_id=categories_by_id,
+            )
             for item in parsed_result.items
         ]
+        print("IMPORT_SERVICE_CLASSIFICATION_APPLY_END", {"items": len(parsed_items)}, flush=True)
         print("IMPORT_SERVICE_ATTACH_ACCOUNT_START", flush=True)
         self._attach_existing_detected_account(user_id, parsed_items)
         print("IMPORT_SERVICE_ATTACH_ACCOUNT_END", flush=True)
@@ -95,6 +105,45 @@ class ImportService:
         item["category_id"] = rule["category_id"]
         item["classification_rule_id"] = rule["id"]
         item["classification_label"] = f"Regra: {rule['keyword']} → {category_name or 'Categoria'}"
+        suggested = (item.get("suggested_category") or "").strip().lower()
+        if suggested and category_name and suggested != category_name.strip().lower():
+            item["needs_review"] = True
+        return item
+
+    def _apply_classification_from_rules(
+        self,
+        item: dict,
+        rules: list[dict],
+        categories_by_id: dict[str, str],
+    ) -> dict:
+        transaction_type = item.get("type")
+        description_text = (item.get("description") or "").upper()
+        original_text = (item.get("original_description") or "").upper()
+        candidates: list[dict] = []
+
+        for rule in rules:
+            if rule.get("status") != "active":
+                continue
+            if rule.get("transaction_type") is not None and rule.get("transaction_type") != transaction_type:
+                continue
+            keyword = rule["keyword"].upper()
+            scope = rule.get("match_scope", "both")
+            haystacks = []
+            if scope in ("description", "both"):
+                haystacks.append(description_text)
+            if scope in ("original_description", "both"):
+                haystacks.append(original_text)
+            if any(keyword in haystack for haystack in haystacks):
+                candidates.append(rule)
+
+        if not candidates:
+            return item
+
+        rule = sorted(candidates, key=lambda rule_item: (rule_item.get("priority", 0), rule_item.get("created_at", "")), reverse=True)[0]
+        category_name = categories_by_id.get(rule["category_id"])
+        item["category_id"] = rule["category_id"]
+        item["classification_rule_id"] = rule["id"]
+        item["classification_label"] = f"Regra: {rule['keyword']} -> {category_name or 'Categoria'}"
         suggested = (item.get("suggested_category") or "").strip().lower()
         if suggested and category_name and suggested != category_name.strip().lower():
             item["needs_review"] = True
