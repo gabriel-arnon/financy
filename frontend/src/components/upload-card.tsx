@@ -5,6 +5,8 @@ import { useState } from "react";
 import { FileUp, Loader2 } from "lucide-react";
 import { uploadImport } from "@/lib/api";
 
+const MAX_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024;
+
 interface UploadCardProps {
   onUploaded: (importId: string) => void;
 }
@@ -17,6 +19,11 @@ export function UploadCard({ onUploaded }: UploadCardProps) {
 
   async function uploadFile(file: File | undefined) {
     if (!file) return;
+    if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+      setSuccess(null);
+      setError("Arquivo muito grande para o deploy atual. Envie um arquivo de ate 8 MB.");
+      return;
+    }
     setLoading(true);
     setError(null);
     setSuccess(null);
@@ -25,7 +32,7 @@ export function UploadCard({ onUploaded }: UploadCardProps) {
       setSuccess("Upload concluído. Abrindo prévia...");
       onUploaded(response.import_id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao importar arquivo");
+      setError(err instanceof Error ? err.message : "Falha ao importar arquivo. Tente um arquivo menor ou verifique a conexao.");
     } finally {
       setLoading(false);
     }
