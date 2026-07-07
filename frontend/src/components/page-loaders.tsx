@@ -9,6 +9,7 @@ import { RulesContent } from "@/components/rules-content";
 import { StatementsContent } from "@/components/statements-content";
 import { TransactionsTable } from "@/components/transactions-table";
 import { useAuth } from "@/components/auth-provider";
+import { useToast } from "@/components/toast-provider";
 import { UiButton } from "@/components/ui-button";
 import {
   getAccounts,
@@ -196,6 +197,7 @@ function getErrorMessage(err: unknown, fallback: string) {
 }
 
 function usePageData<T>(ready: boolean, load: () => Promise<T>, fallbackError: string) {
+  const toast = useToast();
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -206,9 +208,13 @@ function usePageData<T>(ready: boolean, load: () => Promise<T>, fallbackError: s
     setError(null);
     load()
       .then(setData)
-      .catch((err) => setError(getErrorMessage(err, fallbackError)))
+      .catch((err) => {
+        const message = getErrorMessage(err, fallbackError);
+        setError(message);
+        toast.error(message);
+      })
       .finally(() => setLoading(false));
-  }, [fallbackError, load, ready]);
+  }, [fallbackError, load, ready, toast]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(reload, 0);

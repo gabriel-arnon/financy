@@ -122,7 +122,7 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
     try {
       await deleteAccount(accountId);
       setMessage("Conta inativada.");
-      toast.success("Conta inativada.");
+      toast.danger("Conta inativada.");
       await loadData();
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Falha ao inativar conta.";

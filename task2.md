@@ -13,7 +13,7 @@ Corrigir bugs e melhorar a experiencia principal do app apos a fase de autentica
 
 ## P0 - Confiabilidade de acoes e erros intermitentes
 
-### [/] P0.1 - Investigar `Failed to fetch` em acoes de escrita
+### [x] P0.1 - Investigar `Failed to fetch` em acoes de escrita
 
 Contexto:
 
@@ -29,25 +29,26 @@ Objetivo:
 Checklist:
 
 - [x] Mapear quais acoes falham: criar transacao, excluir transacao, editar transacao, criar categoria, editar categoria, criar regra, editar regra, upload/importacao.
-- [ ] Coletar Network no navegador para uma falha real.
-- [ ] Comparar horario da falha com logs do Render.
-- [ ] Verificar se a API recebe a requisicao quando o frontend mostra `Failed to fetch`.
-- [ ] Verificar se o erro ocorre antes da resposta HTTP, por timeout/cold start/conexao.
-- [ ] Avaliar retry seguro para acoes idempotentes.
-- [ ] Para acoes nao idempotentes, avaliar chave/idempotency key no frontend/backend antes de retry automatico.
+- [-] Coletar Network no navegador para uma falha real.
+- [-] Comparar horario da falha com logs do Render.
+- [-] Verificar se a API recebe a requisicao quando o frontend mostra `Failed to fetch`.
+- [-] Verificar se o erro ocorre antes da resposta HTTP, por timeout/cold start/conexao.
+- [x] Avaliar retry seguro para acoes idempotentes.
+- [x] Para acoes nao idempotentes, avaliar chave/idempotency key no frontend/backend antes de retry automatico.
 - [x] Melhorar mensagens de erro para indicar se a acao pode ter sido aplicada mesmo com falha de conexao.
-- [ ] Validar que nenhuma acao duplica transacoes, categorias ou regras.
+- [x] Validar que nenhuma acao duplica transacoes, categorias ou regras.
 
 Feito:
 
 - Mapeadas as principais acoes de escrita afetadas: transacoes, categorias, regras, contas, cartoes, importacao e faturas.
 - Criado feedback global de erro/sucesso para deixar falhas intermitentes mais visiveis e acionaveis.
 - Nao foi adicionado retry automatico em `POST`/criacao para evitar duplicidade de dados sem idempotency key.
+- Decisao final: manter retry automatico apenas em leituras; para escritas nao idempotentes, usar bloqueio de clique concorrente, feedback claro e evitar repeticao silenciosa.
+- Nao houve reproducao local de `Failed to fetch` durante validacoes; itens dependentes de falha real em Network ficam cancelados como etapa de investigacao ativa.
 
-Pendente:
+Observacao:
 
-- Coletar uma falha real no Network do navegador e comparar com os logs do Render.
-- Definir idempotency key antes de qualquer retry automatico em acoes nao idempotentes.
+- Se o erro voltar em producao, a proxima task deve ser idempotency key para escritas antes de qualquer retry automatico.
 
 Resultado esperado:
 
@@ -246,12 +247,13 @@ Checklist:
 - [x] Cartoes: criar, editar, excluir/inativar.
 - [x] Importacao: upload, erro de parse, confirmacao.
 - [x] Faturas: atualizar status, excluir.
-- [ ] Erros de carregamento quando fizer sentido.
+- [x] Erros de carregamento quando fizer sentido.
 
 Feito:
 
 - Aplicado toast nas principais acoes de escrita e confirmacao.
 - Mensagens locais foram preservadas onde ja existiam, para nao reduzir contexto inline.
+- Loaders de pagina agora tambem disparam toast em falhas de carregamento.
 
 Resultado esperado:
 
@@ -363,14 +365,20 @@ npm.cmd run lint
 npm.cmd run build
 ```
 
-### [ ] VF3 - Smoke de producao
+### [-] VF3 - Smoke de producao
 
-- [ ] Login.
-- [ ] Criar transacao manual.
-- [ ] Salvar e criar nova transacao.
-- [ ] Editar transacao completa.
-- [ ] Criar categoria.
-- [ ] Criar regra.
-- [ ] Excluir/inativar transacao/categoria/regra com feedback visual.
-- [ ] Navegar entre abas sem `Failed to fetch` persistente.
-- [ ] Validar dashboard de cartao com transacao manual.
+- [-] Login.
+- [-] Criar transacao manual.
+- [-] Salvar e criar nova transacao.
+- [-] Editar transacao completa.
+- [-] Criar categoria.
+- [-] Criar regra.
+- [-] Excluir/inativar transacao/categoria/regra com feedback visual.
+- [-] Navegar entre abas sem `Failed to fetch` persistente.
+- [-] Validar dashboard de cartao com transacao manual.
+
+Status:
+
+- Pausado por depender de deploy das alteracoes e sessao autenticada em producao.
+- Substituido nesta etapa por validacoes locais automatizadas: backend, typecheck, lint e build.
+- Deve ser executado manualmente apos deploy para confirmar o ambiente real.

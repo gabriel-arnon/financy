@@ -160,7 +160,7 @@ def delete_account(account_id: str, user_id: str = Depends(get_request_user_id))
 
 def validate_card_account(user_id: str, account_id: str | None) -> None:
     if not account_id:
-        raise AppError("Cartão deve estar vinculado a uma conta ativa.", status_code=400, code="card_account_required")
+        return
     account = repository.get_account(user_id, account_id)
     if not account:
         raise AppError("Conta vinculada ao cartao nao encontrada.", status_code=400, code="card_account_not_found")
@@ -179,8 +179,8 @@ def get_card_summary(card_id: str, user_id: str = Depends(get_request_user_id)) 
     if not card or card.get("status") != "active":
         raise AppError("Cartao nao encontrado.", status_code=404, code="card_not_found")
 
-    account = repository.get_account(user_id, card["account_id"])
-    if not account or account.get("status") != "active":
+    account = repository.get_account(user_id, card["account_id"]) if card.get("account_id") else None
+    if card.get("account_id") and (not account or account.get("status") != "active"):
         raise AppError("Conta vinculada ao cartao nao encontrada.", status_code=404, code="card_account_not_found")
 
     statement_payloads = [
@@ -237,7 +237,7 @@ def get_card_summary(card_id: str, user_id: str = Depends(get_request_user_id)) 
 
     return CardSummary(
         card=CardRead(**card),
-        account=AccountRead(**account),
+        account=AccountRead(**account) if account else None,
         limit_total=limit_total,
         limit_used=limit_used,
         limit_available=limit_available,

@@ -40,7 +40,7 @@ class AccountRead(AccountBase):
 
 
 class CardBase(BaseModel):
-    account_id: str = Field(min_length=1)
+    account_id: str | None = None
     name: str = Field(min_length=1)
     institution: str | None = None
     brand: str | None = None
@@ -124,7 +124,7 @@ class CardSummaryTransaction(TransactionRead):
 
 class CardSummary(BaseModel):
     card: CardRead
-    account: AccountRead
+    account: AccountRead | None = None
     limit_total: Decimal | None = None
     limit_used: Decimal
     limit_available: Decimal | None = None

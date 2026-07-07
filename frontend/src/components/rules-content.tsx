@@ -294,7 +294,7 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
       }
       setConfirmingDelete(null);
       setMessage("Regra inativada.");
-      toast.success("Regra inativada.");
+      toast.danger("Regra inativada.");
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Falha ao inativar regra.";
       setError(messageText);

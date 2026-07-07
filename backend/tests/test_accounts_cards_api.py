@@ -125,7 +125,9 @@ def test_cards_crud_validation_and_soft_delete() -> None:
             "status": "active",
         },
     )
-    assert missing_account.status_code == 422
+    assert missing_account.status_code == 200
+    assert missing_account.json()["account_id"] is None
+    assert client.delete(f"/cards/{missing_account.json()['id']}").status_code == 200
 
     invalid_account = client.post(
         "/cards",
@@ -159,7 +161,8 @@ def test_cards_crud_validation_and_soft_delete() -> None:
     assert card["last_digits"] == "6149"
 
     null_account = client.put(f"/cards/{card['id']}", json={"account_id": None})
-    assert null_account.status_code == 400
+    assert null_account.status_code == 200
+    assert null_account.json()["account_id"] is None
 
     updated = client.put(f"/cards/{card['id']}", json={"brand": "Visa", "account_id": account["id"]})
     assert updated.status_code == 200

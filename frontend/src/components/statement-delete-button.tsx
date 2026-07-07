@@ -25,7 +25,7 @@ export function StatementDeleteButton({ statementId, compact = false, redirectTo
     setError(null);
     try {
       await deleteStatement(statementId);
-      toast.success("Fatura excluída.");
+      toast.danger("Fatura excluída.");
       if (redirectTo) {
         router.push(redirectTo);
       } else {

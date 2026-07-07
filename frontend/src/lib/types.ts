@@ -249,7 +249,7 @@ export type CardSummaryTransaction = Transaction;
 
 export interface CardSummary {
   card: Card;
-  account: Account;
+  account: Account | null;
   limit_total: string | null;
   limit_used: string;
   limit_available: string | null;

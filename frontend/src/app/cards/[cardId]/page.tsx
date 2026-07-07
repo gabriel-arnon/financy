@@ -51,6 +51,7 @@ export default async function CardDetailPage({ params }: CardDetailPageProps) {
   const usage = summary.usage_percent === null ? null : Number(summary.usage_percent);
   const tone = usageTone(usage);
   const usageWidth = usage === null ? 0 : Math.min(Math.max(usage, 0), 100);
+  const linkedAccount = summary.account;
   const summaryCards = [
     { label: "Limite total", value: summary.limit_total ? formatCurrency(summary.limit_total) : "Indisponível", helper: summary.limit_total ? "Limite cadastrado" : "Nenhum limite informado.", icon: CreditCard },
     { label: "Utilizado", value: formatCurrency(summary.limit_used), helper: "Soma das faturas abertas e vencidas", icon: ReceiptText },
@@ -70,13 +71,15 @@ export default async function CardDetailPage({ params }: CardDetailPageProps) {
           <div>
             <h1 className="text-3xl font-semibold text-ink">{formatCardName(summary.card)}</h1>
             <p className="mt-2 text-sm text-stone-500">
-              Final {summary.card.last_digits} · {formatAccountName(summary.account)}
+              Final {summary.card.last_digits} · {linkedAccount ? formatAccountName(linkedAccount) : "Sem conta vinculada"}
             </p>
           </div>
-          <Link href={`/accounts/${summary.account.id}`} className="inline-flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-mint shadow-sm">
+          {linkedAccount ? (
+          <Link href={`/accounts/${linkedAccount.id}`} className="inline-flex min-h-10 items-center justify-center gap-2 whitespace-nowrap rounded-md border border-stone-200 bg-white px-4 py-2 text-sm font-medium text-mint shadow-sm">
             Ver conta
             <ArrowRight className="h-4 w-4" />
           </Link>
+          ) : null}
         </div>
       </div>
 
@@ -117,13 +120,19 @@ export default async function CardDetailPage({ params }: CardDetailPageProps) {
             <Landmark className="mt-0.5 h-5 w-5 shrink-0 text-mint" />
             <div className="min-w-0">
               <h2 className="text-base font-semibold text-ink">Conta vinculada</h2>
-              <p className="mt-2 break-words font-medium text-ink">{formatAccountName(summary.account)}</p>
-              <p className="mt-1 text-sm text-stone-500">{summary.account.institution ?? "Instituição não informada"} · {accountTypeLabels[summary.account.type]}</p>
-              <p className="mt-2 text-sm text-stone-600">Saldo {formatCurrency(summary.account.balance)}</p>
-              <Link href={`/accounts/${summary.account.id}`} className="mt-4 inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-mint">
+              {linkedAccount ? (
+              <>
+              <p className="mt-2 break-words font-medium text-ink">{formatAccountName(linkedAccount)}</p>
+              <p className="mt-1 text-sm text-stone-500">{linkedAccount.institution ?? "Instituição não informada"} · {accountTypeLabels[linkedAccount.type]}</p>
+              <p className="mt-2 text-sm text-stone-600">Saldo {formatCurrency(linkedAccount.balance)}</p>
+              <Link href={`/accounts/${linkedAccount.id}`} className="mt-4 inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-mint">
                 Ver conta
                 <ArrowRight className="h-4 w-4" />
               </Link>
+              </>
+              ) : (
+                <p className="mt-2 text-sm text-stone-500">Nenhuma conta vinculada a este cartão.</p>
+              )}
             </div>
           </div>
         </div>

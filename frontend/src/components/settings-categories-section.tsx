@@ -221,7 +221,7 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
       }
       setConfirmingDelete(null);
       setMessage("Categoria inativada.");
-      toast.success("Categoria inativada.");
+      toast.danger("Categoria inativada.");
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Falha ao inativar categoria.";
       setError(messageText);

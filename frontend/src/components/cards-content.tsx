@@ -110,15 +110,10 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
   async function handleCardSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     resetMessages();
-    if (!cardForm.account_id) {
-      setError("Selecione uma conta para vincular o cartão.");
-      toast.error("Selecione uma conta para vincular o cartão.");
-      return;
-    }
     try {
       const payload: CardPayload = {
         ...cardForm,
-        account_id: cardForm.account_id,
+        account_id: cardForm.account_id || null,
         institution: cardForm.institution || null,
         brand: cardForm.brand || null,
         limit_amount: cardForm.limit_amount || null,
@@ -168,7 +163,7 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
     try {
       await deleteCard(cardId);
       setMessage("Cartão inativado.");
-      toast.success("Cartão inativado.");
+      toast.danger("Cartão inativado.");
       await loadData();
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Falha ao inativar cartão.";
@@ -263,15 +258,15 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
                 </label>
               </div>
               <label className="block space-y-1.5">
-                <span className="text-sm font-medium text-ink">Conta vinculada obrigatória</span>
-                <select className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint" value={cardForm.account_id ?? ""} onChange={(event) => setCardForm({ ...cardForm, account_id: event.target.value || null })} required>
-                  <option value="" disabled>Selecione a conta vinculada</option>
+                <span className="text-sm font-medium text-ink">Conta vinculada</span>
+                <select className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint" value={cardForm.account_id ?? ""} onChange={(event) => setCardForm({ ...cardForm, account_id: event.target.value || null })}>
+                  <option value="">Sem conta vinculada</option>
                   {activeAccounts.map((account) => <option key={account.id} value={account.id}>{formatAccountName(account)}</option>)}
                 </select>
               </label>
               {activeAccounts.length === 0 ? (
                 <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  <p>Cadastre uma conta ativa antes de criar cartões.</p>
+                  <p>Você pode criar o cartão agora e vincular uma conta depois.</p>
                   <Link href="/accounts" className="mt-2 inline-flex font-medium text-amber-900 underline underline-offset-2">
                     Criar conta bancária
                   </Link>
@@ -336,9 +331,6 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
                         </div>
                         <p className="mt-1 truncate text-xs text-stone-500">{card.brand ? `Bandeira ${card.brand}` : "Bandeira não informada"}</p>
                       </div>
-                      {!card.account_id ? (
-                        <p className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800">Vincule este cartão a uma conta para usá-lo em importações.</p>
-                      ) : null}
                     </td>
                     <td className="px-3 py-2.5 text-stone-600">
                       <div className="min-w-0">

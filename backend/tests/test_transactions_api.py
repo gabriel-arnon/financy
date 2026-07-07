@@ -9,10 +9,22 @@ from app.main import app
 
 def test_create_manual_transaction_persists_fields() -> None:
     client = TestClient(app)
+    user_id = settings.dev_user_id
+    account = repository.create_account(
+        user_id,
+        {
+            "name": f"Conta Transacao {str(uuid4())[:8]}",
+            "institution": "Banco Teste",
+            "type": "checking",
+            "balance": "0",
+            "status": "active",
+        },
+    )
 
     created = client.post(
         "/transactions",
         json={
+            "account_id": account["id"],
             "transaction_date": "2026-06-10",
             "description": "TRANSACAO MANUAL",
             "original_description": "TRANSACAO MANUAL",
@@ -40,9 +52,21 @@ def test_create_manual_transaction_persists_fields() -> None:
 
 def test_delete_transaction_removes_it_from_listing() -> None:
     client = TestClient(app)
+    user_id = settings.dev_user_id
+    account = repository.create_account(
+        user_id,
+        {
+            "name": f"Conta Excluir {str(uuid4())[:8]}",
+            "institution": "Banco Teste",
+            "type": "checking",
+            "balance": "0",
+            "status": "active",
+        },
+    )
     created = client.post(
         "/transactions",
         json={
+            "account_id": account["id"],
             "transaction_date": "2026-06-09",
             "description": "TRANSACAO PARA EXCLUIR",
             "amount": "42.00",
@@ -63,6 +87,24 @@ def test_delete_transaction_removes_it_from_listing() -> None:
 
     deleted_again = client.delete(f"/transactions/{transaction['id']}")
     assert deleted_again.status_code == 404
+
+
+def test_manual_transaction_requires_origin() -> None:
+    client = TestClient(app)
+
+    created = client.post(
+        "/transactions",
+        json={
+            "transaction_date": "2026-06-10",
+            "description": "TRANSACAO SEM ORIGEM",
+            "amount": "10.00",
+            "type": "expense",
+            "status": "confirmed",
+        },
+    )
+
+    assert created.status_code == 400
+    assert created.json()["error"]["code"] == "transaction_origin_required"
 
 
 def test_manual_card_transaction_attaches_statement_and_updates_card_summary() -> None:
@@ -117,4 +159,5 @@ def test_manual_card_transaction_attaches_statement_and_updates_card_summary() -
     assert body["limit_used"] == "89.90"
     assert body["limit_available"] == "910.10"
     assert body["upcoming_statements"][0]["id"] == transaction["card_statement_id"]
+    assert body["upcoming_statements"][0]["reference_month"] == "2026-07-01"
     assert body["upcoming_statements"][0]["transaction_count"] == 1

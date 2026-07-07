@@ -425,6 +425,11 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
         return;
       }
 
+      if (!manualForm.origin) {
+        showMessage("error", "Selecione uma origem para criar a transação.");
+        return;
+      }
+
       if (!Number.isFinite(amount) || amount <= 0) {
         showMessage("error", "Informe um valor válido maior que zero.");
         return;
@@ -468,6 +473,10 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
       const amount = Number(transaction.amount);
       if (!transaction.transaction_date || !transaction.description.trim() || !Number.isFinite(amount) || amount <= 0) {
         showMessage("error", "Informe data, descrição e valor válido para salvar a transação.");
+        return;
+      }
+      if (!detailForm?.origin) {
+        showMessage("error", "Selecione uma origem para salvar a transação.");
         return;
       }
       const saved = await updateTransaction(transaction.id, {
@@ -522,7 +531,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
       });
       setSelectedTransactionId((current) => (current === transaction.id ? null : current));
       setDrawerTransactionId((current) => (current === transaction.id ? null : current));
-      showMessage("success", "Transação excluída.");
+      toast.danger("Transação excluída.");
       router.refresh();
     });
   }
@@ -597,7 +606,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
       setSelectedIds(new Set());
       setSelectedTransactionId((current) => (current && idsToDelete.has(current) ? null : current));
       setDrawerTransactionId((current) => (current && idsToDelete.has(current) ? null : current));
-      showMessage("success", `${idsToDelete.size} transações excluídas.`);
+      toast.danger(`${idsToDelete.size} transações excluídas.`);
       router.refresh();
     });
   }
@@ -763,6 +772,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
         </div>
       </div>
 
+      {selectedCount > 1 ? (
       <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -789,6 +799,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
           </UiButton>
         </div>
       </div>
+      ) : null}
 
       <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
@@ -966,7 +977,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Origem
-                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={manualForm.origin} onChange={(event) => updateManualForm({ origin: event.target.value })} disabled={isBusy}>
+                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={manualForm.origin} onChange={(event) => updateManualForm({ origin: event.target.value })} disabled={isBusy} required>
                     <option value="">Sem origem</option>
                     {activeAccounts.length > 0 ? <optgroup label="Contas">{activeAccounts.map((item) => <option key={item.id} value={`account:${item.id}`}>{formatAccountName(item)}</option>)}</optgroup> : null}
                     {activeCards.length > 0 ? <optgroup label="Cartões">{activeCards.map((item) => <option key={item.id} value={`card:${item.id}`}>{formatCardWithAccount(item, accounts)}</option>)}</optgroup> : null}
@@ -976,7 +987,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                   Valor
                   <input className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" inputMode="numeric" placeholder="R$ 0,00" value={manualForm.amount} onChange={(event) => updateManualForm({ amount: formatBrlInput(event.target.value) })} disabled={isBusy} />
                 </label>
-                <label className="flex items-center gap-3 rounded-md border border-stone-200 px-3 py-2 text-sm font-medium text-stone-700">
+                <label className="inline-flex w-fit items-center gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm font-medium text-stone-700">
                   <input className="h-4 w-4 rounded border-stone-300" type="checkbox" checked={manualForm.pending} onChange={(event) => updateManualForm({ pending: event.target.checked })} disabled={isBusy} />
                   Pendente
                 </label>
@@ -1045,7 +1056,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Origem
-                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={detailForm?.origin ?? ""} onChange={(event) => updateDetailForm({ origin: event.target.value })} disabled={isBusy}>
+                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={detailForm?.origin ?? ""} onChange={(event) => updateDetailForm({ origin: event.target.value })} disabled={isBusy} required>
                     <option value="">Sem origem</option>
                     {activeAccounts.length > 0 ? <optgroup label="Contas">{activeAccounts.map((item) => <option key={item.id} value={`account:${item.id}`}>{formatAccountName(item)}</option>)}</optgroup> : null}
                     {activeCards.length > 0 ? <optgroup label="Cartões">{activeCards.map((item) => <option key={item.id} value={`card:${item.id}`}>{formatCardWithAccount(item, accounts)}</option>)}</optgroup> : null}
@@ -1055,7 +1066,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                   Valor
                   <input className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" inputMode="numeric" placeholder="R$ 0,00" value={detailForm?.amount ?? ""} onChange={(event) => updateDetailForm({ amount: formatBrlInput(event.target.value) })} disabled={isBusy} />
                 </label>
-                <label className="flex items-center gap-3 rounded-md border border-stone-200 px-3 py-2 text-sm font-medium text-stone-700">
+                <label className="inline-flex w-fit items-center gap-2 rounded-md border border-stone-200 px-3 py-2 text-sm font-medium text-stone-700">
                   <input className="h-4 w-4 rounded border-stone-300" type="checkbox" checked={detailForm?.pending ?? false} onChange={(event) => updateDetailForm({ pending: event.target.checked })} disabled={isBusy} />
                   Pendente
                 </label>

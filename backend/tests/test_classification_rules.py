@@ -173,9 +173,20 @@ def test_transaction_update_classification_respects_manual_category(tmp_path: Pa
         },
     )
     service = TransactionService(repo)
+    account = repo.create_account(
+        USER_ID,
+        {
+            "name": "Conta Teste",
+            "institution": "Banco Teste",
+            "type": "checking",
+            "balance": "0",
+            "status": "active",
+        },
+    )
     created = service.create(
         USER_ID,
         payload_dict={
+            "account_id": account["id"],
             "transaction_date": "2026-06-01",
             "description": "SEM CATEGORIA",
             "original_description": "SEM CATEGORIA",

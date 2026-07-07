@@ -1,10 +1,10 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import { CheckCircle2, Info, X, XCircle } from "lucide-react";
+import { CheckCircle2, Info, Trash2, X, XCircle } from "lucide-react";
 import { cn } from "@/lib/classnames";
 
-type ToastType = "success" | "error" | "info";
+type ToastType = "success" | "error" | "info" | "danger";
 
 interface ToastItem {
   id: number;
@@ -15,6 +15,7 @@ interface ToastItem {
 interface ToastContextValue {
   success: (message: string) => void;
   error: (message: string) => void;
+  danger: (message: string) => void;
   info: (message: string) => void;
 }
 
@@ -23,12 +24,14 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 const toastStyles: Record<ToastType, string> = {
   success: "border-emerald-200 bg-emerald-50 text-emerald-900",
   error: "border-red-200 bg-red-50 text-red-900",
+  danger: "border-red-200 bg-red-50 text-red-900",
   info: "border-stone-200 bg-white text-ink"
 };
 
 const iconStyles: Record<ToastType, string> = {
   success: "text-mint",
   error: "text-red-600",
+  danger: "text-red-600",
   info: "text-stone-500"
 };
 
@@ -36,6 +39,7 @@ function ToastIcon({ type }: { type: ToastType }) {
   const className = cn("mt-0.5 h-4 w-4 shrink-0", iconStyles[type]);
   if (type === "success") return <CheckCircle2 className={className} />;
   if (type === "error") return <XCircle className={className} />;
+  if (type === "danger") return <Trash2 className={className} />;
   return <Info className={className} />;
 }
 
@@ -55,6 +59,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<ToastContextValue>(() => ({
     success: (message) => addToast("success", message),
     error: (message) => addToast("error", message),
+    danger: (message) => addToast("danger", message),
     info: (message) => addToast("info", message)
   }), [addToast]);
 
