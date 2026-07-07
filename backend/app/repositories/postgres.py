@@ -470,6 +470,34 @@ class PostgresRepository:
         }
         return self._insert("transactions", record)
 
+    def create_transactions(self, user_id: str, payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        self._ensure_profile(user_id)
+        if not payloads:
+            return []
+
+        created_at = datetime.now(timezone.utc)
+        records = [
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "user_id": user_id,
+                "normalized_description": normalize_description(payload["description"]),
+                "created_at": created_at,
+                **payload,
+            }
+            for payload in payloads
+        ]
+        columns = sorted({column for record in records for column in record})
+        placeholders = "(" + ", ".join(["%s"] * len(columns)) + ")"
+        names = ", ".join(columns)
+        values_clause = ", ".join([placeholders] * len(records))
+        values = tuple(_adapt(record.get(column)) for record in records for column in columns)
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"insert into transactions ({names}) values {values_clause} returning *",
+                values,
+            )
+            return _records(cur.fetchall())
+
     def update_transaction(self, user_id: str, transaction_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         data = dict(payload)
         if "description" in data and data["description"]:
@@ -485,6 +513,15 @@ class PostgresRepository:
         self._execute(
             "update import_preview_items set status = %s where id = %s and user_id = %s",
             (status.value, preview_item_id, user_id),
+        )
+
+    def mark_preview_statuses(self, user_id: str, preview_item_ids: list[str], status: PreviewStatus) -> None:
+        if not preview_item_ids:
+            return
+        placeholders = ", ".join(["%s"] * len(preview_item_ids))
+        self._execute(
+            f"update import_preview_items set status = %s where user_id = %s and id in ({placeholders})",
+            (status.value, user_id, *preview_item_ids),
         )
 
     def create_card_statement(self, payload: dict[str, Any]) -> dict[str, Any]:

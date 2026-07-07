@@ -224,6 +224,114 @@ def test_confirm_import_creates_and_reuses_card_statement(tmp_path: Path) -> Non
     assert transactions[0]["card_statement_id"] == statements[0]["id"]
 
 
+def test_confirm_import_uses_bulk_writes_for_multiple_items(tmp_path: Path) -> None:
+    repo = LocalJsonRepository(tmp_path)
+    _seed_card(repo)
+    source_file = repo.create_import_file(
+        {
+            "user_id": USER_ID,
+            "filename": "fatura.pdf",
+            "storage_path": "fatura.pdf",
+            "mime_type": "application/pdf",
+            "size_bytes": 10,
+        }
+    )
+    batch = repo.create_import_batch({"user_id": USER_ID, "source_file_id": source_file["id"], "status": "preview"})
+    repo.create_preview_items(
+        import_id=batch["id"],
+        source_file_id=source_file["id"],
+        user_id=USER_ID,
+        items=[
+            {
+                "transaction_date": "2026-05-03",
+                "description": "MERCADO EXEMPLO",
+                "original_description": "MERCADO EXEMPLO",
+                "amount": "55.90",
+                "type": TransactionType.expense.value,
+                "card_id": CARD_ID,
+                "status": PreviewStatus.pending.value,
+            },
+            {
+                "transaction_date": "2026-05-04",
+                "description": "FARMACIA EXEMPLO",
+                "original_description": "FARMACIA EXEMPLO",
+                "amount": "42.10",
+                "type": TransactionType.expense.value,
+                "card_id": CARD_ID,
+                "status": PreviewStatus.pending.value,
+            },
+            {
+                "transaction_date": "2026-05-05",
+                "description": "ITEM IGNORADO",
+                "original_description": "ITEM IGNORADO",
+                "amount": "10.00",
+                "type": TransactionType.expense.value,
+                "card_id": CARD_ID,
+                "status": PreviewStatus.pending.value,
+            },
+        ],
+    )
+    preview_items = repo.get_preview_items(USER_ID, batch["id"])
+    create_calls = []
+    status_calls = []
+    original_create_transactions = repo.create_transactions
+    original_mark_preview_statuses = repo.mark_preview_statuses
+
+    def create_transactions(user_id: str, payloads: list[dict]):
+        create_calls.append(payloads)
+        return original_create_transactions(user_id, payloads)
+
+    def mark_preview_statuses(user_id: str, preview_item_ids: list[str], status: PreviewStatus):
+        status_calls.append((preview_item_ids, status))
+        return original_mark_preview_statuses(user_id, preview_item_ids, status)
+
+    repo.create_transactions = create_transactions  # type: ignore[method-assign]
+    repo.mark_preview_statuses = mark_preview_statuses  # type: ignore[method-assign]
+
+    response = ImportService(repository=repo, upload_dir=tmp_path).confirm(
+        user_id=USER_ID,
+        import_id=batch["id"],
+        payload=ConfirmImportRequest(
+            items=[
+                ConfirmPreviewItem(
+                    preview_item_id=preview_items[0]["id"],
+                    selected=True,
+                    transaction_date="2026-05-03",
+                    description="MERCADO EXEMPLO",
+                    amount=Decimal("55.90"),
+                    type=TransactionType.expense,
+                    card_id=CARD_ID,
+                ),
+                ConfirmPreviewItem(
+                    preview_item_id=preview_items[1]["id"],
+                    selected=True,
+                    transaction_date="2026-05-04",
+                    description="FARMACIA EXEMPLO",
+                    amount=Decimal("42.10"),
+                    type=TransactionType.expense,
+                    card_id=CARD_ID,
+                ),
+                ConfirmPreviewItem(
+                    preview_item_id=preview_items[2]["id"],
+                    selected=False,
+                    transaction_date="2026-05-05",
+                    description="ITEM IGNORADO",
+                    amount=Decimal("10.00"),
+                    type=TransactionType.expense,
+                    card_id=CARD_ID,
+                ),
+            ]
+        ),
+    )
+
+    assert len(create_calls) == 1
+    assert len(create_calls[0]) == 2
+    assert len(response.created_transaction_ids) == 2
+    assert response.ignored_preview_item_ids == [preview_items[2]["id"]]
+    assert any(call == ([preview_items[2]["id"]], PreviewStatus.ignored) for call in status_calls)
+    assert any(call == ([preview_items[0]["id"], preview_items[1]["id"]], PreviewStatus.confirmed) for call in status_calls)
+
+
 def test_confirm_import_reuses_card_statement_without_due_date(tmp_path: Path) -> None:
     repo = LocalJsonRepository(tmp_path)
     statement = repo.find_or_create_card_statement(

@@ -6,9 +6,9 @@ from fastapi import UploadFile
 
 from app.core.errors import AppError
 from app.models.enums import PreviewStatus
+from app.parsers.utils import normalize_description
 from app.parsers.parser_factory import ParserFactory
 from app.schemas.imports import ConfirmImportRequest, ConfirmImportResponse, ImportPreviewResponse, UploadImportResponse
-from app.services.transaction_service import TransactionService
 
 
 class ImportService:
@@ -192,8 +192,12 @@ class ImportService:
             raise AppError("Importacao nao encontrada.", status_code=404, code="import_not_found")
 
         preview_items = {item["id"]: item for item in self.repository.get_preview_items(user_id, import_id)}
-        transaction_service = TransactionService(self.repository)
+        existing_signatures = {self.repository.transaction_signature(item) for item in self.repository.list_transactions(user_id)}
+        reference_cache = self._build_reference_cache(user_id)
+        statement_cache: dict[tuple[str, str, str | None], str] = {}
+        transaction_payloads: list[dict] = []
         created_ids: list[str] = []
+        confirmed_preview_ids: list[str] = []
         duplicates: list[str] = []
         ignored: list[str] = []
 
@@ -202,11 +206,10 @@ class ImportService:
             if not stored_preview:
                 raise AppError("Item de preview nao encontrado.", status_code=404, code="preview_item_not_found")
             if not item.selected:
-                self.repository.mark_preview_status(user_id, item.preview_item_id, PreviewStatus.ignored)
                 ignored.append(item.preview_item_id)
                 continue
 
-            card_statement_id = item.card_statement_id or self._statement_id_for_item(user_id, stored_preview, item)
+            card_statement_id = item.card_statement_id or self._statement_id_for_item(user_id, stored_preview, item, statement_cache)
             tx_payload = {
                 **item.model_dump(exclude={"preview_item_id", "selected"}, mode="json"),
                 "original_description": stored_preview.get("original_description") or item.description,
@@ -214,13 +217,32 @@ class ImportService:
                 "card_statement_id": card_statement_id,
                 "status": "confirmed",
             }
-            transaction = transaction_service.create(user_id=user_id, payload_dict=tx_payload, allow_duplicate=False)
-            if transaction is None:
-                self.repository.mark_preview_status(user_id, item.preview_item_id, PreviewStatus.duplicate)
+            if card_statement_id:
+                reference_cache["statement_ids"].add(card_statement_id)
+            self._validate_transaction_references(user_id, tx_payload, reference_cache)
+            tx_payload["id"] = str(uuid4())
+            tx_payload["normalized_description"] = normalize_description(tx_payload["description"])
+            candidate = {"user_id": user_id, **tx_payload}
+            signature = self.repository.transaction_signature(candidate)
+            if signature in existing_signatures:
                 duplicates.append(item.preview_item_id)
-            else:
-                self.repository.mark_preview_status(user_id, item.preview_item_id, PreviewStatus.confirmed)
-                created_ids.append(transaction["id"])
+                continue
+
+            existing_signatures.add(signature)
+            transaction_payloads.append(tx_payload)
+            created_ids.append(tx_payload["id"])
+            confirmed_preview_ids.append(item.preview_item_id)
+
+        create_transactions = getattr(self.repository, "create_transactions", None)
+        if create_transactions:
+            create_transactions(user_id, transaction_payloads)
+        else:
+            for tx_payload in transaction_payloads:
+                self.repository.create_transaction(user_id=user_id, payload=tx_payload)
+
+        self._mark_preview_statuses(user_id, ignored, PreviewStatus.ignored)
+        self._mark_preview_statuses(user_id, duplicates, PreviewStatus.duplicate)
+        self._mark_preview_statuses(user_id, confirmed_preview_ids, PreviewStatus.confirmed)
 
         return ConfirmImportResponse(
             import_id=import_id,
@@ -230,7 +252,65 @@ class ImportService:
             confirmed_at=datetime.now(timezone.utc),
         )
 
-    def _statement_id_for_item(self, user_id: str, stored_preview: dict, item) -> str | None:
+    def _build_reference_cache(self, user_id: str) -> dict[str, set[str]]:
+        return {
+            "account_ids": {item["id"] for item in self.repository.list_accounts(user_id)},
+            "card_ids": {item["id"] for item in self.repository.list_cards(user_id)},
+            "statement_ids": {item["id"] for item in self.repository.list_card_statements(user_id)},
+            "category_ids": {item["id"] for item in self.repository.categories(user_id)},
+            "source_file_ids": set(),
+            "missing_source_file_ids": set(),
+        }
+
+    def _validate_transaction_references(self, user_id: str, data: dict, reference_cache: dict[str, set[str]] | None = None) -> None:
+        account_id = data.get("account_id")
+        if account_id and reference_cache and account_id not in reference_cache["account_ids"]:
+            raise AppError("Conta da transacao nao encontrada.", status_code=400, code="transaction_account_not_found")
+        if account_id and not reference_cache and not self.repository.get_account(user_id, account_id):
+            raise AppError("Conta da transacao nao encontrada.", status_code=400, code="transaction_account_not_found")
+
+        card_id = data.get("card_id")
+        if card_id and reference_cache and card_id not in reference_cache["card_ids"]:
+            raise AppError("Cartao da transacao nao encontrado.", status_code=400, code="transaction_card_not_found")
+        if card_id and not reference_cache and not self.repository.get_card(user_id, card_id):
+            raise AppError("Cartao da transacao nao encontrado.", status_code=400, code="transaction_card_not_found")
+
+        statement_id = data.get("card_statement_id")
+        if statement_id and reference_cache and statement_id not in reference_cache["statement_ids"]:
+            raise AppError("Fatura da transacao nao encontrada.", status_code=400, code="transaction_statement_not_found")
+        if statement_id and not reference_cache and not self.repository.get_card_statement(user_id, statement_id):
+            raise AppError("Fatura da transacao nao encontrada.", status_code=400, code="transaction_statement_not_found")
+
+        category_id = data.get("category_id")
+        if category_id and reference_cache and category_id not in reference_cache["category_ids"]:
+            raise AppError("Categoria da transacao nao encontrada.", status_code=400, code="transaction_category_not_found")
+        if category_id and not reference_cache and not self.repository.category_exists(category_id, user_id):
+            raise AppError("Categoria da transacao nao encontrada.", status_code=400, code="transaction_category_not_found")
+
+        source_file_id = data.get("source_file_id")
+        get_import_file = getattr(self.repository, "get_import_file", None)
+        if source_file_id and get_import_file and reference_cache:
+            if source_file_id in reference_cache["source_file_ids"]:
+                return
+            if source_file_id in reference_cache["missing_source_file_ids"]:
+                raise AppError("Arquivo de origem da transacao nao encontrado.", status_code=400, code="transaction_source_file_not_found")
+            if get_import_file(user_id, source_file_id):
+                reference_cache["source_file_ids"].add(source_file_id)
+                return
+            reference_cache["missing_source_file_ids"].add(source_file_id)
+            raise AppError("Arquivo de origem da transacao nao encontrado.", status_code=400, code="transaction_source_file_not_found")
+        if source_file_id and get_import_file and not get_import_file(user_id, source_file_id):
+            raise AppError("Arquivo de origem da transacao nao encontrado.", status_code=400, code="transaction_source_file_not_found")
+
+    def _mark_preview_statuses(self, user_id: str, preview_item_ids: list[str], status: PreviewStatus) -> None:
+        mark_many = getattr(self.repository, "mark_preview_statuses", None)
+        if mark_many:
+            mark_many(user_id, preview_item_ids, status)
+            return
+        for preview_item_id in preview_item_ids:
+            self.repository.mark_preview_status(user_id, preview_item_id, status)
+
+    def _statement_id_for_item(self, user_id: str, stored_preview: dict, item, cache: dict[tuple[str, str, str | None], str] | None = None) -> str | None:
         if item.card_statement_id:
             return item.card_statement_id
         if not item.card_id:
@@ -238,6 +318,9 @@ class ImportService:
         reference_month = stored_preview.get("statement_reference_month")
         if not reference_month:
             return None
+        cache_key = (item.card_id, reference_month, stored_preview.get("statement_due_date"))
+        if cache is not None and cache_key in cache:
+            return cache[cache_key]
         statement = self.repository.find_or_create_card_statement(
             user_id=user_id,
             card_id=item.card_id,
@@ -248,4 +331,6 @@ class ImportService:
             minimum_payment_amount=None,
             source_file_id=stored_preview.get("source_file_id"),
         )
+        if cache is not None:
+            cache[cache_key] = statement["id"]
         return statement["id"]

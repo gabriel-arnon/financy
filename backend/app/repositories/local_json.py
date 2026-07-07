@@ -481,6 +481,23 @@ class LocalJsonRepository:
         self._write(data)
         return record
 
+    def create_transactions(self, user_id: str, payloads: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        data = self._read()
+        created_at = datetime.now(timezone.utc).isoformat()
+        records = []
+        for payload in payloads:
+            record = {
+                "id": payload.get("id") or str(uuid4()),
+                "user_id": user_id,
+                "normalized_description": normalize_description(payload["description"]),
+                "created_at": created_at,
+                **payload,
+            }
+            data["transactions"].append(record)
+            records.append(record)
+        self._write(data)
+        return records
+
     def update_transaction(self, user_id: str, transaction_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         data = self._read()
         for index, item in enumerate(data["transactions"]):
@@ -506,6 +523,16 @@ class LocalJsonRepository:
         data = self._read()
         for item in data["import_preview_items"]:
             if item["id"] == preview_item_id and item["user_id"] == user_id:
+                item["status"] = status.value
+        self._write(data)
+
+    def mark_preview_statuses(self, user_id: str, preview_item_ids: list[str], status: PreviewStatus) -> None:
+        if not preview_item_ids:
+            return
+        target_ids = set(preview_item_ids)
+        data = self._read()
+        for item in data["import_preview_items"]:
+            if item["id"] in target_ids and item["user_id"] == user_id:
                 item["status"] = status.value
         self._write(data)
 

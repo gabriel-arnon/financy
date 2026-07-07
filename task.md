@@ -616,12 +616,19 @@ Feito:
 - Parser CSV aceita valores com virgula e ponto decimal.
 - Parser PDF otimizado para evitar extrair tabelas quando texto normal ja existe.
 - Inserts de `import_preview_items` otimizados em lote.
+- Confirmacao de importacao otimizada para criar transacoes e atualizar status de preview em lote.
+- Confirmacao de importacao usa cache de referencias e faturas para reduzir consultas por item.
 - Logs temporarios de diagnostico de importacao removidos.
+- Criado benchmark local em `backend/scripts/benchmark_import_confirm.py`.
+- Benchmark local da confirmacao em lote:
+  - 500 itens: 0.0655s, ~7637 itens/s.
+  - 1000 itens: 0.1199s, ~8338 itens/s.
 
 Pendente:
 
 - Avaliar upgrade do Render Free para instancia sempre ligada/mais CPU.
 - Validar ganho real apos novo deploy em producao.
+- Validar suite PostgreSQL quando o banco local `financy_test` estiver disponivel.
 
 ### [/] PD2 - Storage persistente de uploads
 

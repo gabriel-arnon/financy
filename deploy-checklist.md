@@ -135,10 +135,16 @@ docker compose up --build
 - [x] Parser CSV aceita valores com virgula e ponto decimal.
 - [x] Parser PDF otimizado para evitar extracao de tabelas quando texto normal ja existe.
 - [x] Inserts de `import_preview_items` otimizados em lote.
+- [x] Confirmacao de importacao otimizada com criacao de transacoes em lote.
+- [x] Atualizacao de status de preview otimizada em lote.
+- [x] Cache de referencias/faturas aplicado na confirmacao de importacao.
 - [x] Logs temporarios de diagnostico de importacao removidos.
+- [x] Benchmark local criado em `backend/scripts/benchmark_import_confirm.py`.
+- [x] Benchmark local: 500 itens em 0.0655s e 1000 itens em 0.1199s.
 - [/] Performance melhorou parcialmente, mas ainda ha latencia perceptivel de 3-5 segundos em algumas telas.
 - [/] Importacao PDF funciona, mas ainda pode demorar minutos em PDFs com muitas transacoes.
 - [ ] Avaliar upgrade do Render Free para instancia sempre ligada/mais CPU.
+- [ ] Revalidar tempo real de upload/confirmacao apos deploy do commit de lote.
 
 ## 8. Smoke test de isolamento
 
