@@ -768,3 +768,29 @@ Pendente externo:
 - Monitoramento/logs de erro.
 - Suporte/feedback.
 - Plano de rollback operacional.
+
+### [x] PD8 - UX de edicao inline de regras
+
+Contexto:
+
+- A edicao de categorias abre o formulario diretamente no item/grupo que esta sendo editado.
+- A edicao de regras usa o formulario principal de criacao no topo, o que desloca o usuario e parece menos natural.
+
+Objetivo:
+
+- Fazer a edicao de regras funcionar como categorias: ao clicar em editar, abrir o layout de edicao na propria area da regra selecionada.
+
+Checklist:
+
+- [x] Manter formulario principal apenas para criar nova regra.
+- [x] Renderizar formulario de edicao inline no lugar da regra selecionada.
+- [x] Manter acoes Salvar e Cancelar dentro do formulario inline.
+- [x] Preservar criacao, atualizacao, exclusao/inativacao e recarregamento de regras.
+- [x] Validar typecheck, lint e build do frontend.
+
+Feito:
+
+- Criado formulario reutilizavel para regras.
+- Formulario de criacao permanece no topo somente quando nenhuma regra esta em edicao.
+- Ao clicar em editar, o formulario aparece no lugar da regra selecionada.
+- Cancelar fecha a edicao inline e restaura o formulario de criacao.

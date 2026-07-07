@@ -26,6 +26,15 @@ interface RulesContentProps {
   skipInitialLoad?: boolean;
 }
 
+interface RuleFormProps {
+  categories: Category[];
+  form: ClassificationRulePayload;
+  isEditing: boolean;
+  onCancel?: () => void;
+  onChange: (payload: ClassificationRulePayload) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}
+
 const emptyRule: ClassificationRulePayload = {
   keyword: "",
   category_id: "",
@@ -56,6 +65,77 @@ function RulesListLoading({ embedded }: { embedded: boolean }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function RuleForm({ categories, form, isEditing, onCancel, onChange, onSubmit }: RuleFormProps) {
+  return (
+    <form className="rounded-md border border-stone-100 bg-stone-50 p-4" onSubmit={onSubmit}>
+      <div className="flex items-center gap-2">
+        {isEditing ? <Pencil className="h-5 w-5 text-mint" /> : <Plus className="h-5 w-5 text-mint" />}
+        <h2 className="text-lg font-semibold text-ink">{isEditing ? "Editar regra" : "Nova regra"}</h2>
+      </div>
+      <div className="mt-5 grid gap-3 lg:grid-cols-[1.4fr_1.2fr_1fr_1fr_0.7fr]">
+        <input
+          className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm uppercase outline-none focus:border-mint"
+          onChange={(event) => onChange({ ...form, keyword: event.target.value.toUpperCase() })}
+          placeholder="Keyword, ex: OPENAI"
+          required
+          value={form.keyword}
+        />
+        <select
+          className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint"
+          onChange={(event) => onChange({ ...form, category_id: event.target.value })}
+          required
+          value={form.category_id}
+        >
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+        <select
+          className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint"
+          onChange={(event) => onChange({ ...form, transaction_type: (event.target.value || null) as TransactionType | null })}
+          value={form.transaction_type ?? ""}
+        >
+          <option value="">Qualquer tipo</option>
+          {(["expense", "income", "transfer", "payment", "refund"] as TransactionType[]).map((item) => (
+            <option key={item} value={item}>
+              {translateTransactionType(item)}
+            </option>
+          ))}
+        </select>
+        <select
+          className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint"
+          onChange={(event) => onChange({ ...form, match_scope: event.target.value as ClassificationMatchScope })}
+          value={form.match_scope}
+        >
+          {Object.entries(matchScopeLabels).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <input
+          className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint"
+          onChange={(event) => onChange({ ...form, priority: Number(event.target.value) })}
+          type="number"
+          value={form.priority}
+        />
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <UiButton icon={isEditing ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} type="submit" variant="primary">
+          {isEditing ? "Salvar regra" : "Criar regra"}
+        </UiButton>
+        {isEditing && onCancel ? (
+          <UiButton onClick={onCancel} variant="secondary">
+            Cancelar
+          </UiButton>
+        ) : null}
+      </div>
+    </form>
   );
 }
 
@@ -177,75 +257,11 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
 
       {!isLoading ? (
       <>
-      <form
-        className={embedded ? "rounded-md border border-stone-100 bg-stone-50 p-4" : "rounded-lg border border-stone-200 bg-white p-6 shadow-sm"}
-        onSubmit={handleSubmit}
-      >
-        <div className="flex items-center gap-2">
-          {editingId ? <Pencil className="h-5 w-5 text-mint" /> : <Plus className="h-5 w-5 text-mint" />}
-          <h2 className="text-lg font-semibold text-ink">{editingId ? "Editar regra" : "Nova regra"}</h2>
+      {!editingId ? (
+        <div className={embedded ? "" : "rounded-lg border border-stone-200 bg-white p-6 shadow-sm"}>
+          <RuleForm categories={categories} form={form} isEditing={false} onChange={setForm} onSubmit={handleSubmit} />
         </div>
-        <div className="mt-5 grid gap-3 lg:grid-cols-[1.4fr_1.2fr_1fr_1fr_0.7fr]">
-          <input
-            className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm uppercase outline-none focus:border-mint"
-            onChange={(event) => setForm({ ...form, keyword: event.target.value.toUpperCase() })}
-            placeholder="Keyword, ex: OPENAI"
-            required
-            value={form.keyword}
-          />
-          <select
-            className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint"
-            onChange={(event) => setForm({ ...form, category_id: event.target.value })}
-            required
-            value={form.category_id}
-          >
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
-          <select
-            className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint"
-            onChange={(event) => setForm({ ...form, transaction_type: (event.target.value || null) as TransactionType | null })}
-            value={form.transaction_type ?? ""}
-          >
-            <option value="">Qualquer tipo</option>
-            {(["expense", "income", "transfer", "payment", "refund"] as TransactionType[]).map((item) => (
-              <option key={item} value={item}>
-                {translateTransactionType(item)}
-              </option>
-            ))}
-          </select>
-          <select
-            className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint"
-            onChange={(event) => setForm({ ...form, match_scope: event.target.value as ClassificationMatchScope })}
-            value={form.match_scope}
-          >
-            {Object.entries(matchScopeLabels).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <input
-            className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint"
-            onChange={(event) => setForm({ ...form, priority: Number(event.target.value) })}
-            type="number"
-            value={form.priority}
-          />
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <UiButton icon={editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} type="submit" variant="primary">
-            {editingId ? "Salvar regra" : "Criar regra"}
-          </UiButton>
-          {editingId ? (
-            <UiButton onClick={cancelEdit} variant="secondary">
-              Cancelar
-            </UiButton>
-          ) : null}
-        </div>
-      </form>
+      ) : null}
 
       <article className={embedded ? "rounded-md border border-stone-100 bg-stone-50" : "rounded-lg border border-stone-200 bg-white shadow-sm"}>
         <div className="border-b border-stone-100 px-6 py-4">
@@ -254,6 +270,11 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
         </div>
         <div className="divide-y divide-stone-100 p-4">
           {rules.map((rule) => (
+            editingId === rule.id ? (
+              <div key={rule.id} className="py-3">
+                <RuleForm categories={categories} form={form} isEditing onCancel={cancelEdit} onChange={setForm} onSubmit={handleSubmit} />
+              </div>
+            ) : (
             <div key={rule.id} className="grid gap-3 rounded-md px-2 py-3 sm:grid-cols-[1.1fr_1fr_0.9fr_0.5fr_auto] sm:items-center">
               <div>
                 <p className="font-medium text-ink">{rule.keyword}</p>
@@ -267,6 +288,7 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
                 <IconButton aria-label="Inativar regra" icon={<Trash2 className="h-4 w-4" />} onClick={() => inactivateRule(rule.id)} title="Excluir" variant="danger" />
               </div>
             </div>
+            )
           ))}
           {rules.length === 0 ? <p className="px-4 py-8 text-center text-sm text-stone-500">Nenhuma regra cadastrada.</p> : null}
         </div>
