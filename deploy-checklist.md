@@ -13,12 +13,12 @@ Checklist operacional para publicar ou atualizar o Financy em ambiente privado c
 
 ## 2. Infraestrutura obrigatoria
 
-- [ ] Projeto Supabase criado.
-- [ ] PostgreSQL de producao disponivel.
-- [ ] Frontend publicado, por exemplo Vercel.
-- [ ] Backend publicado, por exemplo Railway/Render/Fly.io.
-- [ ] Dominio/HTTPS configurado para frontend.
-- [ ] Dominio/HTTPS configurado para backend.
+- [x] Projeto Supabase criado.
+- [x] PostgreSQL de producao disponivel via Supabase.
+- [x] Frontend publicado na Vercel: `https://financy-flame.vercel.app`.
+- [x] Backend publicado no Render: `https://financy-api-mpt0.onrender.com`.
+- [x] HTTPS configurado para frontend pela Vercel.
+- [x] HTTPS configurado para backend pelo Render.
 - [ ] Estrategia de uploads definida: volume persistente, Supabase Storage ou Cloudflare R2.
 - [ ] Backups automaticos do banco habilitados.
 - [ ] Backup dos uploads definido.
@@ -27,35 +27,35 @@ Checklist operacional para publicar ou atualizar o Financy em ambiente privado c
 
 ### Backend
 
-- [ ] `APP_NAME`
-- [ ] `APP_ENV=production`
-- [ ] `AUTH_PROVIDER=supabase`
-- [ ] `AUTH_REQUIRED=true`
-- [ ] `AUTH_DEV_BYPASS=false`
-- [ ] `DATABASE_URL`
-- [ ] `STORAGE_BACKEND=postgres`
-- [ ] `JWT_SECRET`
-- [ ] `SUPABASE_URL`
-- [ ] `SUPABASE_JWT_ISSUER`
-- [ ] `SUPABASE_JWKS_URL`
-- [ ] `SUPABASE_AUDIENCE`
-- [ ] `CORS_ORIGINS`
-- [ ] `UPLOAD_STORAGE_PATH` ou configuracao equivalente do storage escolhido.
+- [x] `APP_NAME`
+- [x] `APP_ENV=production`
+- [x] `AUTH_PROVIDER=supabase`
+- [x] `AUTH_REQUIRED=true`
+- [x] `AUTH_DEV_BYPASS=false`
+- [x] `DATABASE_URL`
+- [x] `STORAGE_BACKEND=postgres`
+- [x] `JWT_SECRET`
+- [x] `SUPABASE_URL`
+- [x] `SUPABASE_JWT_ISSUER`
+- [x] `SUPABASE_JWKS_URL`
+- [x] `SUPABASE_AUDIENCE`
+- [x] `CORS_ORIGINS`
+- [x] `UPLOAD_STORAGE_PATH` configurado como `.uploads` no Render.
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` somente para scripts/migracoes/admin.
 
 ### Frontend
 
-- [ ] `NEXT_PUBLIC_API_URL`
-- [ ] `NEXT_PUBLIC_SUPABASE_URL`
-- [ ] `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- [x] `NEXT_PUBLIC_API_URL`
+- [x] `NEXT_PUBLIC_SUPABASE_URL`
+- [x] `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
 ## 4. Pontos ainda pendentes das credenciais atuais
 
-- [ ] Configurar `DATABASE_URL` com a senha real do PostgreSQL no painel do provedor. A senha foi fornecida, mas nao deve ser versionada.
-- [ ] Configurar `JWT_SECRET` real do Supabase no painel do provedor. O valor foi fornecido, mas nao deve ser versionado.
+- [x] Configurar `DATABASE_URL` com a senha real do PostgreSQL no painel do provedor. A senha foi fornecida, mas nao deve ser versionada.
+- [x] Configurar `JWT_SECRET` real do Supabase no painel do provedor. O valor foi fornecido, mas nao deve ser versionado.
 - [x] Substituir `NEXT_PUBLIC_API_URL` local pela URL publica do backend: `https://financy-api-mpt0.onrender.com`.
 - [x] Substituir `CORS_ORIGINS` local pelo dominio publico do frontend: `https://financy-flame.vercel.app`.
-- [ ] Confirmar que o token Supabase recebido usa HS256 com o `JWT_SECRET` configurado; se o projeto usar tokens assimetricos/JWKS, implementar validacao JWKS antes do deploy.
+- [x] Backend valida token Supabase via HS256/JWKS conforme token recebido.
 
 ## 5. Validacao local antes do deploy
 
@@ -66,10 +66,10 @@ cd backend
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-- [ ] Testes backend passaram.
-- [ ] `/health` responde `{"status":"ok"}`.
-- [ ] Rotas financeiras retornam `401` sem token quando auth obrigatoria esta ativa.
-- [ ] `UPLOAD_STORAGE_PATH` aponta para diretorio persistente ou storage escolhido.
+- [x] Testes backend passaram: `45 passed, 1 warning`.
+- [x] `/health` responde `{"status":"ok"}`.
+- [x] Rotas financeiras retornam `401` sem token quando auth obrigatoria esta ativa.
+- [x] `UPLOAD_STORAGE_PATH` aponta para `.uploads` no Render. Pendente trocar para storage persistente.
 
 ### Frontend
 
@@ -80,11 +80,11 @@ npm.cmd run lint
 npm.cmd run build
 ```
 
-- [ ] Typecheck passou.
-- [ ] Lint passou.
-- [ ] Build passou.
-- [ ] `NEXT_PUBLIC_API_URL` aponta para a API correta.
-- [ ] Login/logout Supabase funcionam em ambiente configurado.
+- [x] Typecheck passou.
+- [x] Lint passou.
+- [x] Build passou.
+- [x] `NEXT_PUBLIC_API_URL` aponta para `https://financy-api-mpt0.onrender.com`.
+- [x] Login/logout Supabase funcionam em ambiente configurado.
 
 ### Docker/local
 
@@ -100,30 +100,45 @@ docker compose up --build
 
 ## 6. Banco e migracoes
 
-- [ ] Aplicar migrations no PostgreSQL de producao.
+- [x] Aplicar migrations no PostgreSQL de producao.
 - [ ] Se houver dados locais, executar backup antes da migracao.
 - [ ] Migrar JSON para PostgreSQL, se aplicavel.
 - [ ] Reassociar dados de `DEV_USER_ID` para o usuario real com `backend/scripts/reassign_user_data.py`.
 - [ ] Conferir contagens antes/depois.
 - [ ] Guardar registro do backup e do usuario destino.
+- [x] Backend executa migrations no start command do Render: `python scripts/apply_migrations.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
 
 ## 7. Smoke test funcional pos-deploy
 
 - [x] Abrir frontend publicado: `https://financy-flame.vercel.app`.
-- [ ] Fazer login com usuario real.
-- [ ] Confirmar carregamento do dashboard.
-- [ ] Abrir transacoes.
-- [ ] Editar descricao/categoria de uma transacao.
+- [x] Fazer login com usuario real.
+- [x] Confirmar carregamento do dashboard.
+- [x] Abrir transacoes.
+- [x] Editar descricao/categoria de uma transacao.
 - [ ] Criar uma regra a partir de transacao categorizada.
-- [ ] Abrir contas.
-- [ ] Criar ou editar uma conta.
-- [ ] Abrir cartoes.
-- [ ] Criar ou editar um cartao.
-- [ ] Abrir importacao.
-- [ ] Importar arquivo pequeno de teste.
+- [x] Abrir contas.
+- [x] Criar ou editar uma conta.
+- [x] Abrir cartoes.
+- [x] Criar ou editar um cartao.
+- [x] Abrir importacao.
+- [x] Importar arquivo pequeno de teste.
+- [x] Importar PDF com multiplas transacoes.
 - [x] Confirmar que a API responde `/health`: `https://financy-api-mpt0.onrender.com/health`.
 - [ ] Fazer logout.
 - [ ] Confirmar que rotas protegidas exigem login.
+
+## 7.1 Performance pos-deploy
+
+- [x] Deploy do commit de performance aplicado: `e7e86bd Add Postgres pooling and faster import duplicate checks`.
+- [x] Connection pool Postgres habilitado no backend com `psycopg-pool`.
+- [x] Checagem de duplicidade da importacao otimizada para evitar listar transacoes a cada item.
+- [x] Parser CSV aceita valores com virgula e ponto decimal.
+- [x] Parser PDF otimizado para evitar extracao de tabelas quando texto normal ja existe.
+- [/] Performance melhorou parcialmente, mas ainda ha latencia perceptivel de 3-5 segundos em algumas telas.
+- [/] Importacao PDF funciona, mas ainda pode demorar minutos em PDFs com muitas transacoes.
+- [ ] Avaliar upgrade do Render Free para instancia sempre ligada/mais CPU.
+- [ ] Avaliar otimizacao adicional com inserts em lote para `import_preview_items`.
+- [ ] Remover logs temporarios de diagnostico de importacao apos estabilizacao final.
 
 ## 8. Smoke test de isolamento
 
@@ -146,6 +161,7 @@ docker compose up --build
 - [ ] RLS existe como draft em `docs/supabase/rls_phase3_draft.sql`, mas ainda nao deve ser aplicado sem validacao final.
 - [ ] Storage local em host sem volume persistente pode perder uploads.
 - [ ] Backups locais/manuais nao bastam para producao.
+- [ ] Render Free possui cold start, CPU limitada e latencia perceptivel. Performance ideal provavelmente exige upgrade de instancia ou outro provedor.
 - [ ] Deploy privado ainda exige configuracao manual dos provedores.
 - [ ] Producao publica/SaaS exige LGPD, termos, exportacao/exclusao de dados, rate limiting e suporte.
 
@@ -156,7 +172,7 @@ O deploy privado esta pronto para uso controlado quando:
 - [ ] Credenciais sensiveis foram rotacionadas e configuradas nos provedores.
 - [ ] Variaveis obrigatorias estao configuradas.
 - [ ] Build/testes passaram.
-- [ ] Migrations foram aplicadas.
+- [x] Migrations foram aplicadas.
 - [ ] Dados foram migrados/reassociados, se aplicavel.
 - [ ] Smoke test funcional passou.
 - [ ] Smoke test de isolamento passou.
