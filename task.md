@@ -601,3 +601,73 @@ Resultado:
 - [x] Migracao de ownership documentada/scriptada.
 - [x] RLS preparado como draft nao aplicado automaticamente.
 - [x] Validacoes obrigatorias passam.
+
+## Pendencias pos-deploy - Producao privada
+
+Esta secao registra o que ainda ficou fora da Fase 3 funcional, mas e necessario para estabilizar o uso privado em producao.
+
+### [/] PD1 - Performance em producao
+
+Feito:
+
+- Deploy privado publicado em Render/Vercel.
+- Connection pool Postgres aplicado no backend.
+- Checagem de duplicidade da importacao otimizada para evitar listar transacoes a cada item.
+- Parser CSV aceita valores com virgula e ponto decimal.
+- Parser PDF otimizado para evitar extrair tabelas quando texto normal ja existe.
+
+Pendente:
+
+- Avaliar upgrade do Render Free para instancia sempre ligada/mais CPU.
+- Otimizar inserts em lote para `import_preview_items`, se a importacao continuar lenta.
+- Remover logs temporarios de diagnostico de importacao.
+
+### [ ] PD2 - Storage persistente de uploads
+
+Pendente:
+
+- Escolher estrategia definitiva: Supabase Storage, Cloudflare R2 ou disco persistente.
+- Migrar uploads de `.uploads` local do Render para storage persistente.
+- Garantir que imports antigos continuem acessiveis quando necessario.
+
+### [ ] PD3 - Backups de producao
+
+Pendente:
+
+- Confirmar backup automatico do PostgreSQL/Supabase.
+- Definir backup dos uploads.
+- Executar pelo menos um teste de restauracao em ambiente descartavel.
+
+### [ ] PD4 - Rotacao de segredos
+
+Pendente:
+
+- Rotacionar senha do banco, JWT secret e service role key compartilhados durante o deploy.
+- Atualizar variaveis no Render/Vercel/Supabase.
+- Confirmar que nenhum segredo real esta versionado.
+
+### [ ] PD5 - Smoke test multiusuario em producao
+
+Pendente:
+
+- Criar/usar usuario A e usuario B reais no Supabase.
+- Confirmar que usuario B nao ve contas, cartoes, transacoes, regras, faturas e imports do usuario A.
+- Confirmar que referencias cruzadas retornam erro/404.
+
+### [ ] PD6 - RLS Supabase
+
+Pendente:
+
+- Revisar `docs/supabase/rls_phase3_draft.sql`.
+- Decidir se RLS sera ativado ainda na producao privada ou apenas antes de multiusuario publico.
+- Testar policies em staging antes de aplicar no banco real.
+
+### [ ] PD7 - Checklist de producao publica
+
+Pendente:
+
+- LGPD: termos, politica de privacidade, exportacao e exclusao de dados.
+- Rate limiting.
+- Monitoramento/logs de erro.
+- Suporte/feedback.
+- Plano de rollback operacional.
