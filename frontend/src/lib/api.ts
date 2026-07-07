@@ -20,6 +20,26 @@ import type {
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+const RETRY_DELAYS_MS = [600, 1500, 3000];
+const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function requestMethod(init?: RequestInit) {
+  return (init?.method ?? "GET").toUpperCase();
+}
+
+function canRetry(init?: RequestInit) {
+  const method = requestMethod(init);
+  return method === "GET" || method === "HEAD";
+}
+
+function networkErrorMessage(path: string, err: unknown) {
+  const detail = err instanceof Error && err.message ? ` Detalhe: ${err.message}` : "";
+  return `Falha de conexao com a API em ${path}. Tente novamente em alguns segundos.${detail}`;
+}
 
 async function accessToken(): Promise<string | null> {
   if (typeof window === "undefined" || !isSupabaseConfigured()) return null;
@@ -34,13 +54,34 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...(init?.body instanceof FormData ? init.headers : { "Content-Type": "application/json", ...init?.headers }),
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    headers,
-    cache: "no-store"
-  });
+  const retryable = canRetry(init);
+  const attempts = retryable ? RETRY_DELAYS_MS.length + 1 : 1;
 
-  if (!response.ok) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}${path}`, {
+        ...init,
+        headers,
+        cache: "no-store"
+      });
+    } catch (err) {
+      if (retryable && attempt < attempts - 1) {
+        await sleep(RETRY_DELAYS_MS[attempt]);
+        continue;
+      }
+      throw new Error(networkErrorMessage(path, err));
+    }
+
+    if (response.ok) {
+      return response.json() as Promise<T>;
+    }
+
+    if (retryable && RETRYABLE_STATUS_CODES.has(response.status) && attempt < attempts - 1) {
+      await sleep(RETRY_DELAYS_MS[attempt]);
+      continue;
+    }
+
     const body = await response.json().catch(() => null);
     if (response.status === 401 && typeof window !== "undefined" && isSupabaseConfigured()) {
       const supabase = getSupabaseClient();
@@ -48,10 +89,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       document.cookie = "financy_access_token=; Path=/; Max-Age=0; SameSite=Lax";
       window.location.assign("/login");
     }
-    throw new Error(body?.error?.message ?? "Erro na API");
+    throw new Error(body?.error?.message ?? `Erro na API (${response.status})`);
   }
 
-  return response.json() as Promise<T>;
+  throw new Error("Falha inesperada ao chamar a API.");
 }
 
 export async function uploadImport(file: File): Promise<UploadImportResponse> {

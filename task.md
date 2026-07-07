@@ -606,7 +606,7 @@ Resultado:
 
 Esta secao registra o que ainda ficou fora da Fase 3 funcional, mas e necessario para estabilizar o uso privado em producao.
 
-### [ ] PD0 - Investigar `Failed to fetch` generalizado
+### [/] PD0 - Investigar `Failed to fetch` generalizado
 
 Contexto:
 
@@ -623,16 +623,32 @@ Checklist de investigacao:
 
 - [ ] Abrir DevTools em producao e coletar Network das chamadas com falha.
 - [ ] Registrar URL chamada, metodo, status, timing e mensagem exata do browser.
-- [ ] Verificar se as falhas sao `TypeError: Failed to fetch`, `401`, `403`, `500`, CORS ou timeout.
+- [/] Verificar se as falhas sao `TypeError: Failed to fetch`, `401`, `403`, `500`, CORS ou timeout.
 - [ ] Conferir se `NEXT_PUBLIC_API_URL` na Vercel aponta para `https://financy-api-mpt0.onrender.com`.
 - [ ] Conferir `CORS_ORIGINS` no Render com `https://financy-flame.vercel.app`.
 - [ ] Verificar se o token Bearer esta presente nas chamadas apos login.
 - [ ] Verificar se o token expira/renova corretamente ao trocar de rota.
 - [ ] Conferir logs do Render nos mesmos horarios das falhas.
-- [ ] Testar `/health` e endpoints financeiros diretamente com e sem token.
+- [/] Testar `/health` e endpoints financeiros diretamente com e sem token.
 - [ ] Reproduzir localmente com frontend apontando para backend de producao.
-- [ ] Melhorar mensagens de erro do frontend para exibir status/codigo quando a API responder.
+- [x] Melhorar mensagens de erro do frontend para exibir status/codigo quando a API responder.
+- [x] Adicionar retry automatico para chamadas GET/HEAD client-side.
+- [x] Adicionar retry automatico para chamadas GET server-side.
 - [ ] Definir correcao apos identificar causa raiz.
+
+Feito:
+
+- Cliente web agora tenta novamente chamadas GET/HEAD em falhas transitórias de rede.
+- Chamadas server-side da Vercel para a API tambem fazem retry em falha de rede ou status `408`, `425`, `429`, `500`, `502`, `503`, `504`.
+- Operacoes nao idempotentes, como criacao, exclusao, upload e confirmacao de import, nao recebem retry automatico para evitar duplicidade.
+- Mensagens de erro agora mostram status HTTP quando a API responde e mensagem de conexao quando o browser nao recebe resposta.
+- Teste direto via PowerShell local falhou antes de receber resposta HTTP/TLS, mas esse ambiente apresentou erro de credencial TLS do Windows; precisa confirmar pelo DevTools do navegador em producao.
+
+Pendente:
+
+- Validar em producao se o retry automatico elimina o erro visivel ao trocar de abas.
+- Coletar Network do navegador se o erro continuar apos o deploy.
+- Confirmar se a causa raiz e cold start/latencia Render ou outro problema de infraestrutura.
 
 Hipoteses iniciais:
 
