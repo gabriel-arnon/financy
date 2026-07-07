@@ -606,6 +606,52 @@ Resultado:
 
 Esta secao registra o que ainda ficou fora da Fase 3 funcional, mas e necessario para estabilizar o uso privado em producao.
 
+### [ ] PD0 - Investigar `Failed to fetch` generalizado
+
+Contexto:
+
+- Em producao, diversas areas do app retornam `Failed to fetch`.
+- O erro aparece ao trocar de abas e ao carregar dados de Configuracoes, Regras, Categorias e outras telas que fazem chamadas para a API.
+- O problema parece afetar carregamentos gerais, nao apenas uma feature isolada.
+- Apos clicar em tentar novamente, a mesma tela geralmente carrega corretamente; as vezes exige mais de uma tentativa.
+
+Objetivo:
+
+- Identificar se a causa esta em frontend, backend, CORS, auth/token, cold start/timeouts do Render, variaveis de ambiente ou erro silencioso na API.
+
+Checklist de investigacao:
+
+- [ ] Abrir DevTools em producao e coletar Network das chamadas com falha.
+- [ ] Registrar URL chamada, metodo, status, timing e mensagem exata do browser.
+- [ ] Verificar se as falhas sao `TypeError: Failed to fetch`, `401`, `403`, `500`, CORS ou timeout.
+- [ ] Conferir se `NEXT_PUBLIC_API_URL` na Vercel aponta para `https://financy-api-mpt0.onrender.com`.
+- [ ] Conferir `CORS_ORIGINS` no Render com `https://financy-flame.vercel.app`.
+- [ ] Verificar se o token Bearer esta presente nas chamadas apos login.
+- [ ] Verificar se o token expira/renova corretamente ao trocar de rota.
+- [ ] Conferir logs do Render nos mesmos horarios das falhas.
+- [ ] Testar `/health` e endpoints financeiros diretamente com e sem token.
+- [ ] Reproduzir localmente com frontend apontando para backend de producao.
+- [ ] Melhorar mensagens de erro do frontend para exibir status/codigo quando a API responder.
+- [ ] Definir correcao apos identificar causa raiz.
+
+Hipoteses iniciais:
+
+- Cold start ou limite do Render Free causando timeouts intermitentes.
+- Primeira chamada apos inatividade falha por latencia/cold start e o retry pega o backend ja acordado.
+- Falha intermitente de rede/conexao antes da API responder, sem erro HTTP registrado.
+- CORS divergente entre dominio Vercel e backend Render.
+- Token Supabase ausente/expirado em chamadas client-side.
+- Sessao/token ainda nao esta pronto no primeiro carregamento apos troca de rota, mas fica disponivel no retry.
+- Frontend tratando qualquer erro de API como `Failed to fetch`, escondendo status real.
+- Backend retornando erro sem header CORS em alguma excecao.
+
+Validacao esperada:
+
+- Navegar entre Dashboard, Transacoes, Contas, Cartoes, Importacao e Configuracoes sem `Failed to fetch`.
+- Regras e Categorias carregam de forma consistente.
+- Erros reais exibem status/mensagem acionavel.
+- Logs do Render e Network do navegador ficam consistentes.
+
 ### [/] PD1 - Performance em producao
 
 Feito:
