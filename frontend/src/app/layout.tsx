@@ -3,6 +3,7 @@ import Link from "next/link";
 import { BarChart3, CreditCard, FileUp, LayoutDashboard, Settings, WalletCards } from "lucide-react";
 import { AuthProvider } from "@/components/auth-provider";
 import { AuthStatus } from "@/components/auth-status";
+import { ToastProvider } from "@/components/toast-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -24,6 +25,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="pt-BR">
       <body>
         <AuthProvider>
+          <ToastProvider>
           <div className="min-h-screen bg-paper text-ink">
             <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-stone-200 bg-white px-5 py-6 shadow-sm md:block">
               <Link href="/" className="flex items-center gap-3">
@@ -59,6 +61,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
               <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
             </main>
           </div>
+          </ToastProvider>
         </AuthProvider>
       </body>
     </html>

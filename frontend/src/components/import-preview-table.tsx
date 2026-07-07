@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2 } from "lucide-react";
+import { useToast } from "@/components/toast-provider";
 import { UiButton } from "@/components/ui-button";
 import { confirmImport } from "@/lib/api";
 import { formatAccountName, formatCardWithAccount, translateTransactionType } from "@/lib/labels";
@@ -24,6 +25,7 @@ const transactionTypes: TransactionType[] = ["expense", "income", "transfer", "p
 
 export function ImportPreviewTable({ importId, items, categories, accounts, cards }: ImportPreviewTableProps) {
   const router = useRouter();
+  const toast = useToast();
   const cardsWithAccount = cards.filter((card) => Boolean(card.account_id));
   const suggestedCard = cardsWithAccount.find((card) => items.some((item) => item.card_last_digits === card.last_digits));
   const suggestedAccount = accounts.find((account) =>
@@ -107,10 +109,13 @@ export function ImportPreviewTable({ importId, items, categories, accounts, card
       const response = await confirmImport(importId, payload);
       setMessage(`${response.created_transaction_ids.length} transações adicionadas. Abrindo listagem...`);
       setMessageType("success");
+      toast.success(`${response.created_transaction_ids.length} transações adicionadas.`);
       router.push("/transactions");
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Falha ao confirmar importação.");
+      const messageText = err instanceof Error ? err.message : "Falha ao confirmar importação.";
+      setMessage(messageText);
       setMessageType("error");
+      toast.error(messageText);
     } finally {
       setSaving(false);
     }

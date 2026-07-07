@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ArrowRight, CreditCard, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { IconButton, UiButton } from "@/components/ui-button";
+import { useToast } from "@/components/toast-provider";
 import { createCard, deleteCard, getAccounts, getCards, getStatements, updateCard } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { formatAccountName, isActiveEntity } from "@/lib/labels";
@@ -41,6 +42,7 @@ function isOpenStatement(statement: CardStatementSummary): boolean {
 }
 
 export function CardsContent({ initialAccounts, initialCards, initialStatements }: CardsContentProps) {
+  const toast = useToast();
   const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
   const [cards, setCards] = useState<Card[]>(initialCards);
   const [statements, setStatements] = useState<CardStatementSummary[]>(initialStatements);
@@ -110,6 +112,7 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
     resetMessages();
     if (!cardForm.account_id) {
       setError("Selecione uma conta para vincular o cartão.");
+      toast.error("Selecione uma conta para vincular o cartão.");
       return;
     }
     try {
@@ -126,16 +129,20 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
       if (editingCardId) {
         await updateCard(editingCardId, payload);
         setMessage("Cartão atualizado.");
+        toast.success("Cartão atualizado.");
       } else {
         await createCard(payload);
         setMessage("Cartão cadastrado.");
+        toast.success("Cartão cadastrado.");
       }
       setCardForm(emptyCard);
       setEditingCardId(null);
       setShowCardForm(false);
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao salvar cartão.");
+      const messageText = err instanceof Error ? err.message : "Falha ao salvar cartão.";
+      setError(messageText);
+      toast.error(messageText);
     }
   }
 
@@ -161,9 +168,12 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
     try {
       await deleteCard(cardId);
       setMessage("Cartão inativado.");
+      toast.success("Cartão inativado.");
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao inativar cartão.");
+      const messageText = err instanceof Error ? err.message : "Falha ao inativar cartão.";
+      setError(messageText);
+      toast.error(messageText);
     }
   }
 

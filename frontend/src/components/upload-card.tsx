@@ -3,6 +3,7 @@
 import type { ChangeEvent, DragEvent } from "react";
 import { useState } from "react";
 import { FileUp, Loader2 } from "lucide-react";
+import { useToast } from "@/components/toast-provider";
 import { uploadImport } from "@/lib/api";
 
 const MAX_UPLOAD_SIZE_BYTES = 8 * 1024 * 1024;
@@ -12,6 +13,7 @@ interface UploadCardProps {
 }
 
 export function UploadCard({ onUploaded }: UploadCardProps) {
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -22,6 +24,7 @@ export function UploadCard({ onUploaded }: UploadCardProps) {
     if (file.size > MAX_UPLOAD_SIZE_BYTES) {
       setSuccess(null);
       setError("Arquivo muito grande para o deploy atual. Envie um arquivo de ate 8 MB.");
+      toast.error("Arquivo muito grande para o deploy atual. Envie um arquivo de até 8 MB.");
       return;
     }
     setLoading(true);
@@ -30,9 +33,12 @@ export function UploadCard({ onUploaded }: UploadCardProps) {
     try {
       const response = await uploadImport(file);
       setSuccess("Upload concluído. Abrindo prévia...");
+      toast.success("Upload concluído. Abrindo prévia...");
       onUploaded(response.import_id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao importar arquivo. Tente um arquivo menor ou verifique a conexao.");
+      const messageText = err instanceof Error ? err.message : "Falha ao importar arquivo. Tente um arquivo menor ou verifique a conexão.";
+      setError(messageText);
+      toast.error(messageText);
     } finally {
       setLoading(false);
     }

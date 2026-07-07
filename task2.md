@@ -13,7 +13,7 @@ Corrigir bugs e melhorar a experiencia principal do app apos a fase de autentica
 
 ## P0 - Confiabilidade de acoes e erros intermitentes
 
-### [ ] P0.1 - Investigar `Failed to fetch` em acoes de escrita
+### [/] P0.1 - Investigar `Failed to fetch` em acoes de escrita
 
 Contexto:
 
@@ -28,15 +28,26 @@ Objetivo:
 
 Checklist:
 
-- [ ] Mapear quais acoes falham: criar transacao, excluir transacao, editar transacao, criar categoria, editar categoria, criar regra, editar regra, upload/importacao.
+- [x] Mapear quais acoes falham: criar transacao, excluir transacao, editar transacao, criar categoria, editar categoria, criar regra, editar regra, upload/importacao.
 - [ ] Coletar Network no navegador para uma falha real.
 - [ ] Comparar horario da falha com logs do Render.
 - [ ] Verificar se a API recebe a requisicao quando o frontend mostra `Failed to fetch`.
 - [ ] Verificar se o erro ocorre antes da resposta HTTP, por timeout/cold start/conexao.
 - [ ] Avaliar retry seguro para acoes idempotentes.
 - [ ] Para acoes nao idempotentes, avaliar chave/idempotency key no frontend/backend antes de retry automatico.
-- [ ] Melhorar mensagens de erro para indicar se a acao pode ter sido aplicada mesmo com falha de conexao.
+- [x] Melhorar mensagens de erro para indicar se a acao pode ter sido aplicada mesmo com falha de conexao.
 - [ ] Validar que nenhuma acao duplica transacoes, categorias ou regras.
+
+Feito:
+
+- Mapeadas as principais acoes de escrita afetadas: transacoes, categorias, regras, contas, cartoes, importacao e faturas.
+- Criado feedback global de erro/sucesso para deixar falhas intermitentes mais visiveis e acionaveis.
+- Nao foi adicionado retry automatico em `POST`/criacao para evitar duplicidade de dados sem idempotency key.
+
+Pendente:
+
+- Coletar uma falha real no Network do navegador e comparar com os logs do Render.
+- Definir idempotency key antes de qualquer retry automatico em acoes nao idempotentes.
 
 Resultado esperado:
 
@@ -46,7 +57,7 @@ Resultado esperado:
 
 ## P1 - Criacao de transacoes
 
-### [ ] P1.1 - Adicionar `Salvar e criar nova`
+### [x] P1.1 - Adicionar `Salvar e criar nova`
 
 Contexto:
 
@@ -58,18 +69,24 @@ Objetivo:
 
 Checklist:
 
-- [ ] Manter botao principal `Salvar`.
-- [ ] Adicionar botao `Salvar e criar nova`.
-- [ ] Ao salvar e criar nova, persistir a transacao e limpar campos de descricao/valor/data conforme melhor UX.
-- [ ] Manter origem/categoria/tipo se isso acelerar lancamentos repetidos, se fizer sentido no fluxo atual.
-- [ ] Mostrar feedback de sucesso.
-- [ ] Validar que nao cria duplicidades por clique duplo.
+- [x] Manter botao principal `Salvar`.
+- [x] Adicionar botao `Salvar e criar nova`.
+- [x] Ao salvar e criar nova, persistir a transacao e limpar campos de descricao/valor/data conforme melhor UX.
+- [x] Manter origem/categoria/tipo se isso acelerar lancamentos repetidos, se fizer sentido no fluxo atual.
+- [x] Mostrar feedback de sucesso.
+- [x] Validar que nao cria duplicidades por clique duplo.
+
+Feito:
+
+- Adicionada acao `Salvar e criar nova` no drawer de criacao.
+- Ao usar a acao, descricao e valor sao limpos, mantendo data, tipo, categoria, origem e pendencia para lancamentos repetidos.
+- O estado `isBusy` continua bloqueando cliques concorrentes.
 
 Resultado esperado:
 
 - Usuario consegue cadastrar varias transacoes em sequencia sem reabrir formulario.
 
-### [ ] P1.2 - Trocar status por checkbox `Pendente`
+### [x] P1.2 - Trocar status por checkbox `Pendente`
 
 Contexto:
 
@@ -81,17 +98,22 @@ Objetivo:
 
 Checklist:
 
-- [ ] Remover dropdown/lista de status da criacao/edicao.
-- [ ] Adicionar checkbox `Pendente`.
-- [ ] Checkbox marcado deve salvar status pendente.
-- [ ] Checkbox desmarcado deve salvar status confirmado.
-- [ ] Manter compatibilidade com status existentes internamente.
+- [x] Remover dropdown/lista de status da criacao/edicao.
+- [x] Adicionar checkbox `Pendente`.
+- [x] Checkbox marcado deve salvar status pendente.
+- [x] Checkbox desmarcado deve salvar status confirmado.
+- [x] Manter compatibilidade com status existentes internamente.
+
+Feito:
+
+- Criacao e edicao agora usam checkbox `Pendente`.
+- Internamente o frontend continua salvando `pending` quando marcado e `confirmed` quando desmarcado.
 
 Resultado esperado:
 
 - Usuario entende e altera pendencia da transacao com um controle simples.
 
-### [ ] P1.3 - Formatar valor automaticamente em BRL
+### [x] P1.3 - Formatar valor automaticamente em BRL
 
 Contexto:
 
@@ -103,17 +125,22 @@ Objetivo:
 
 Checklist:
 
-- [ ] Aplicar mascara visual `R$ 0,00`.
-- [ ] Aceitar digitacao com virgula, ponto e numeros.
-- [ ] Converter corretamente para o formato esperado pela API.
-- [ ] Validar valores negativos/positivos conforme tipo de transacao.
-- [ ] Reutilizar comportamento na criacao e edicao.
+- [x] Aplicar mascara visual `R$ 0,00`.
+- [x] Aceitar digitacao com virgula, ponto e numeros.
+- [x] Converter corretamente para o formato esperado pela API.
+- [x] Validar valores negativos/positivos conforme tipo de transacao.
+- [x] Reutilizar comportamento na criacao e edicao.
+
+Feito:
+
+- Criados helpers para mascara BRL, leitura do valor mascarado e preenchimento do drawer a partir do valor da transacao.
+- Criacao e edicao compartilham o mesmo comportamento.
 
 Resultado esperado:
 
 - Valor digitado fica claro para o usuario e consistente com BRL.
 
-### [ ] P1.4 - Unificar origem da transacao
+### [x] P1.4 - Unificar origem da transacao
 
 Contexto:
 
@@ -125,13 +152,18 @@ Objetivo:
 
 Checklist:
 
-- [ ] Remover selecao separada de conta/cartao na criacao de transacao.
-- [ ] Criar campo `Origem`.
-- [ ] Dentro da lista de origem, separar em sublistas `Contas` e `Cartoes`.
-- [ ] Ao selecionar uma conta, preencher `account_id` e limpar `card_id`.
-- [ ] Ao selecionar um cartao, preencher `card_id` e limpar `account_id`.
-- [ ] Manter compatibilidade com filtros e exibicao da tabela.
-- [ ] Reutilizar o mesmo componente na edicao.
+- [x] Remover selecao separada de conta/cartao na criacao de transacao.
+- [x] Criar campo `Origem`.
+- [x] Dentro da lista de origem, separar em sublistas `Contas` e `Cartoes`.
+- [x] Ao selecionar uma conta, preencher `account_id` e limpar `card_id`.
+- [x] Ao selecionar um cartao, preencher `card_id` e limpar `account_id`.
+- [x] Manter compatibilidade com filtros e exibicao da tabela.
+- [x] Reutilizar o mesmo componente na edicao.
+
+Feito:
+
+- Criacao e edicao agora exibem apenas o campo `Origem`, com grupos `Contas` e `Cartoes`.
+- O payload enviado para a API continua usando `account_id` ou `card_id`, preservando contrato existente.
 
 Resultado esperado:
 
@@ -139,7 +171,7 @@ Resultado esperado:
 
 ## P2 - Edicao completa de transacoes
 
-### [ ] P2.1 - Permitir editar todos os campos suportados
+### [x] P2.1 - Permitir editar todos os campos suportados
 
 Contexto:
 
@@ -151,16 +183,22 @@ Objetivo:
 
 Checklist:
 
-- [ ] Adicionar campo Data na edicao.
-- [ ] Manter Descricao editavel.
-- [ ] Adicionar Tipo editavel.
-- [ ] Manter Categoria editavel.
-- [ ] Adicionar Origem unificada editavel.
-- [ ] Adicionar Valor editavel com mascara BRL.
-- [ ] Adicionar checkbox `Pendente`.
-- [ ] Validar referencias de conta/cartao/categoria.
-- [ ] Preservar comportamento de criar regra, excluir e fechar drawer.
-- [ ] Atualizar visual da drawer se necessario.
+- [x] Adicionar campo Data na edicao.
+- [x] Manter Descricao editavel.
+- [x] Adicionar Tipo editavel.
+- [x] Manter Categoria editavel.
+- [x] Adicionar Origem unificada editavel.
+- [x] Adicionar Valor editavel com mascara BRL.
+- [x] Adicionar checkbox `Pendente`.
+- [x] Validar referencias de conta/cartao/categoria.
+- [x] Preservar comportamento de criar regra, excluir e fechar drawer.
+- [x] Atualizar visual da drawer se necessario.
+
+Feito:
+
+- Drawer de detalhes passou a editar Data, Descricao, Tipo, Categoria, Origem, Valor e Pendente.
+- Acoes de criar regra, excluir, salvar e fechar foram preservadas.
+- Validacoes de referencia continuam no backend.
 
 Resultado esperado:
 
@@ -168,7 +206,7 @@ Resultado esperado:
 
 ## P3 - Feedback global de acoes
 
-### [ ] P3.1 - Criar sistema global de notificacoes no canto superior direito
+### [x] P3.1 - Criar sistema global de notificacoes no canto superior direito
 
 Contexto:
 
@@ -181,29 +219,39 @@ Objetivo:
 
 Checklist:
 
-- [ ] Criar provider/componente global de notificacoes.
-- [ ] Posicionar notificacoes no canto superior direito.
-- [ ] Suportar sucesso, erro e informacao.
-- [ ] Permitir fechar manualmente.
-- [ ] Auto-fechar apos alguns segundos.
-- [ ] Evitar sobrepor conteudo importante em mobile.
+- [x] Criar provider/componente global de notificacoes.
+- [x] Posicionar notificacoes no canto superior direito.
+- [x] Suportar sucesso, erro e informacao.
+- [x] Permitir fechar manualmente.
+- [x] Auto-fechar apos alguns segundos.
+- [x] Evitar sobrepor conteudo importante em mobile.
+
+Feito:
+
+- Criado `ToastProvider` global com tipos sucesso, erro e informacao.
+- Toasts aparecem no canto superior direito, podem ser fechados manualmente e somem automaticamente.
 
 Resultado esperado:
 
 - Toda acao relevante mostra feedback consistente e visivel.
 
-### [ ] P3.2 - Aplicar notificacoes em todas as partes do app
+### [x] P3.2 - Aplicar notificacoes em todas as partes do app
 
 Checklist:
 
-- [ ] Transacoes: criar, editar, excluir, criar regra.
-- [ ] Categorias: criar, editar, inativar.
-- [ ] Regras: criar, editar, inativar.
-- [ ] Contas: criar, editar, excluir/inativar.
-- [ ] Cartoes: criar, editar, excluir/inativar.
-- [ ] Importacao: upload, erro de parse, confirmacao.
-- [ ] Faturas: atualizar status, excluir.
+- [x] Transacoes: criar, editar, excluir, criar regra.
+- [x] Categorias: criar, editar, inativar.
+- [x] Regras: criar, editar, inativar.
+- [x] Contas: criar, editar, excluir/inativar.
+- [x] Cartoes: criar, editar, excluir/inativar.
+- [x] Importacao: upload, erro de parse, confirmacao.
+- [x] Faturas: atualizar status, excluir.
 - [ ] Erros de carregamento quando fizer sentido.
+
+Feito:
+
+- Aplicado toast nas principais acoes de escrita e confirmacao.
+- Mensagens locais foram preservadas onde ja existiam, para nao reduzir contexto inline.
 
 Resultado esperado:
 
@@ -211,7 +259,7 @@ Resultado esperado:
 
 ## P4 - Filtros e avisos de transacoes
 
-### [ ] P4.1 - Mostrar aviso de transacoes sem categoria apenas quando existir pendencia
+### [x] P4.1 - Mostrar aviso de transacoes sem categoria apenas quando existir pendencia
 
 Contexto:
 
@@ -223,10 +271,14 @@ Objetivo:
 
 Checklist:
 
-- [ ] Calcular se existem transacoes sem categoria.
-- [ ] Exibir aviso somente quando houver ao menos uma transacao sem categoria.
-- [ ] Confirmar comportamento com filtros ativos.
-- [ ] Confirmar comportamento em estado vazio.
+- [x] Calcular se existem transacoes sem categoria.
+- [x] Exibir aviso somente quando houver ao menos uma transacao sem categoria.
+- [x] Confirmar comportamento com filtros ativos.
+- [x] Confirmar comportamento em estado vazio.
+
+Feito:
+
+- O atalho de transacoes sem categoria so aparece quando `uncategorizedCount > 0`.
 
 Resultado esperado:
 
@@ -234,7 +286,7 @@ Resultado esperado:
 
 ## P5 - Cartoes, faturas e dashboard
 
-### [ ] P5.1 - Revisar transacoes de cartao sem fatura vinculada
+### [x] P5.1 - Revisar transacoes de cartao sem fatura vinculada
 
 Contexto:
 
@@ -247,14 +299,20 @@ Objetivo:
 
 Checklist de investigacao:
 
-- [ ] Mapear como o dashboard de cartao calcula `utilizado`, totais e faturas.
-- [ ] Mapear diferenca entre transacao manual de cartao e transacao importada por fatura.
-- [ ] Identificar onde `card_statement_id` e exigido para impactar dashboard.
-- [ ] Definir regra de negocio para transacao manual de cartao sem fatura.
-- [ ] Avaliar se deve criar/encontrar fatura automaticamente ao criar transacao manual de cartao.
-- [ ] Avaliar se dashboard deve somar transacoes de cartao sem fatura em um bucket separado.
-- [ ] Avaliar impacto em pagamento de fatura, fechamento e importacao.
-- [ ] Documentar decisao antes de implementar mudanca estrutural.
+- [x] Mapear como o dashboard de cartao calcula `utilizado`, totais e faturas.
+- [x] Mapear diferenca entre transacao manual de cartao e transacao importada por fatura.
+- [x] Identificar onde `card_statement_id` e exigido para impactar dashboard.
+- [x] Definir regra de negocio para transacao manual de cartao sem fatura.
+- [x] Avaliar se deve criar/encontrar fatura automaticamente ao criar transacao manual de cartao.
+- [x] Avaliar se dashboard deve somar transacoes de cartao sem fatura em um bucket separado.
+- [x] Avaliar impacto em pagamento de fatura, fechamento e importacao.
+- [x] Documentar decisao antes de implementar mudanca estrutural.
+
+Decisao:
+
+- Transacao vinculada a cartao sem `card_statement_id` deve encontrar/criar automaticamente uma fatura aberta do mes da data da transacao.
+- A data de vencimento/fechamento usa `due_day` e `closing_day` do cartao quando disponiveis.
+- Nao foi criado bucket separado no dashboard para evitar duas fontes de verdade.
 
 Resultado esperado:
 
@@ -262,7 +320,7 @@ Resultado esperado:
 - Dashboard de cartao nao ignora gastos validos.
 - Fluxo de faturas continua consistente.
 
-### [ ] P5.2 - Implementar correcao do fluxo de faturas apos decisao
+### [x] P5.2 - Implementar correcao do fluxo de faturas apos decisao
 
 Dependencia:
 
@@ -270,12 +328,18 @@ Dependencia:
 
 Checklist:
 
-- [ ] Implementar regra definida para vinculo de transacao manual de cartao.
-- [ ] Atualizar services/repository conforme necessario.
-- [ ] Atualizar frontend se houver novo estado/indicador.
-- [ ] Criar testes backend para transacao manual de cartao.
-- [ ] Criar teste para dashboard/summary de cartao.
-- [ ] Validar importacao de fatura continua funcionando.
+- [x] Implementar regra definida para vinculo de transacao manual de cartao.
+- [x] Atualizar services/repository conforme necessario.
+- [x] Atualizar frontend se houver novo estado/indicador.
+- [x] Criar testes backend para transacao manual de cartao.
+- [x] Criar teste para dashboard/summary de cartao.
+- [x] Validar importacao de fatura continua funcionando.
+
+Feito:
+
+- `TransactionService` agora associa automaticamente uma fatura ao criar/editar transacao vinculada a cartao sem fatura.
+- Importacao de fatura segue usando o fluxo existente de `card_statement_id` quando a previa ja informa fatura.
+- Adicionado teste cobrindo criacao manual de transacao em cartao, associacao automatica com fatura e impacto em `limit_used`/`limit_available` no resumo do cartao.
 
 Resultado esperado:
 
@@ -283,14 +347,14 @@ Resultado esperado:
 
 ## Validacoes obrigatorias
 
-### [ ] VF1 - Backend
+### [x] VF1 - Backend
 
 ```powershell
 cd backend
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-### [ ] VF2 - Frontend
+### [x] VF2 - Frontend
 
 ```powershell
 cd frontend

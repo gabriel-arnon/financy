@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { ListChecks, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { IconButton, UiButton } from "@/components/ui-button";
+import { useToast } from "@/components/toast-provider";
 import {
   createClassificationRule,
   deleteClassificationRule,
@@ -191,6 +192,7 @@ function RuleForm({ categories, form, isEditing, isSubmitting, onCancel, onChang
 }
 
 export function RulesContent({ initialRules, initialCategories, embedded = false, skipInitialLoad = false }: RulesContentProps) {
+  const toast = useToast();
   const [rules, setRules] = useState<ClassificationRule[]>(initialRules);
   const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [form, setForm] = useState<ClassificationRulePayload>({ ...emptyRule, category_id: initialCategories[0]?.id ?? "" });
@@ -260,14 +262,18 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
       if (editingId) {
         await updateClassificationRule(editingId, payload);
         setMessage("Regra atualizada.");
+        toast.success("Regra atualizada.");
       } else {
         await createClassificationRule(payload);
         setMessage("Regra criada.");
+        toast.success("Regra criada.");
       }
       await loadData();
       cancelEdit();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao salvar regra.");
+      const messageText = err instanceof Error ? err.message : "Falha ao salvar regra.";
+      setError(messageText);
+      toast.error(messageText);
     } finally {
       setIsSubmitting(false);
     }
@@ -288,8 +294,11 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
       }
       setConfirmingDelete(null);
       setMessage("Regra inativada.");
+      toast.success("Regra inativada.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao inativar regra.");
+      const messageText = err instanceof Error ? err.message : "Falha ao inativar regra.";
+      setError(messageText);
+      toast.error(messageText);
     } finally {
       setIsSubmitting(false);
     }

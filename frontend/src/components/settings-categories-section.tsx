@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Pencil, Plus, Save, Tags, Trash2 } from "lucide-react";
 import { IconButton, UiButton } from "@/components/ui-button";
+import { useToast } from "@/components/toast-provider";
 import { createCategory, deleteCategory, getCategories, updateCategory } from "@/lib/api";
 import type { Category, CategoryPayload, CategoryType } from "@/lib/types";
 
@@ -119,6 +120,7 @@ function CategoryForm({ form, isEditing, isSubmitting, onCancel, onChange, onSub
 }
 
 export function SettingsCategoriesSection({ initialCategories }: { initialCategories: Category[] }) {
+  const toast = useToast();
   const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [form, setForm] = useState<CategoryPayload>({ ...emptyForm });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -185,14 +187,18 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
       if (editingId) {
         await updateCategory(editingId, form);
         setMessage("Categoria atualizada.");
+        toast.success("Categoria atualizada.");
       } else {
         await createCategory(form);
         setMessage("Categoria criada.");
+        toast.success("Categoria criada.");
       }
       await refetchCategories();
       cancelEdit();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao salvar categoria.");
+      const messageText = err instanceof Error ? err.message : "Falha ao salvar categoria.";
+      setError(messageText);
+      toast.error(messageText);
     } finally {
       setIsSubmitting(false);
     }
@@ -215,8 +221,11 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
       }
       setConfirmingDelete(null);
       setMessage("Categoria inativada.");
+      toast.success("Categoria inativada.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao inativar categoria.");
+      const messageText = err instanceof Error ? err.message : "Falha ao inativar categoria.";
+      setError(messageText);
+      toast.error(messageText);
     } finally {
       setIsSubmitting(false);
     }

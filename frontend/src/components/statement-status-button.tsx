@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, RotateCcw } from "lucide-react";
+import { useToast } from "@/components/toast-provider";
 import { UiButton } from "@/components/ui-button";
 import { updateStatementStatus } from "@/lib/api";
 
@@ -14,6 +15,7 @@ interface StatementStatusButtonProps {
 
 export function StatementStatusButton({ statementId, status, compact = false }: StatementStatusButtonProps) {
   const router = useRouter();
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const isPaid = status === "paid";
   const nextStatus = isPaid ? "open" : "paid";
@@ -25,7 +27,10 @@ export function StatementStatusButton({ statementId, status, compact = false }: 
     setLoading(true);
     try {
       await updateStatementStatus(statementId, nextStatus);
+      toast.success(isPaid ? "Fatura reaberta." : "Fatura marcada como paga.");
       router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao atualizar fatura.");
     } finally {
       setLoading(false);
     }

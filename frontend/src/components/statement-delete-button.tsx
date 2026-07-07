@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
+import { useToast } from "@/components/toast-provider";
 import { UiButton } from "@/components/ui-button";
 import { deleteStatement } from "@/lib/api";
 
@@ -14,6 +15,7 @@ interface StatementDeleteButtonProps {
 
 export function StatementDeleteButton({ statementId, compact = false, redirectTo }: StatementDeleteButtonProps) {
   const router = useRouter();
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,13 +25,16 @@ export function StatementDeleteButton({ statementId, compact = false, redirectTo
     setError(null);
     try {
       await deleteStatement(statementId);
+      toast.success("Fatura excluída.");
       if (redirectTo) {
         router.push(redirectTo);
       } else {
         router.refresh();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao excluir fatura.");
+      const messageText = err instanceof Error ? err.message : "Falha ao excluir fatura.";
+      setError(messageText);
+      toast.error(messageText);
     } finally {
       setLoading(false);
     }

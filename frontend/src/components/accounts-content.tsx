@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ArrowRight, CreditCard, Landmark, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { IconButton, UiButton } from "@/components/ui-button";
+import { useToast } from "@/components/toast-provider";
 import { createAccount, deleteAccount, getAccounts, getCards, updateAccount } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { accountTypeLabels, formatAccountName, formatCardName, isActiveEntity } from "@/lib/labels";
@@ -23,6 +24,7 @@ interface AccountsContentProps {
 }
 
 export function AccountsContent({ initialAccounts, initialCards }: AccountsContentProps) {
+  const toast = useToast();
   const [accounts, setAccounts] = useState<Account[]>(initialAccounts);
   const [cards, setCards] = useState<Card[]>(initialCards);
   const [accountForm, setAccountForm] = useState<AccountPayload>(emptyAccount);
@@ -85,16 +87,20 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
       if (editingAccountId) {
         await updateAccount(editingAccountId, payload);
         setMessage("Conta atualizada.");
+        toast.success("Conta atualizada.");
       } else {
         await createAccount(payload);
         setMessage("Conta cadastrada.");
+        toast.success("Conta cadastrada.");
       }
       setAccountForm(emptyAccount);
       setEditingAccountId(null);
       setShowAccountForm(false);
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao salvar conta.");
+      const messageText = err instanceof Error ? err.message : "Falha ao salvar conta.";
+      setError(messageText);
+      toast.error(messageText);
     }
   }
 
@@ -116,9 +122,12 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
     try {
       await deleteAccount(accountId);
       setMessage("Conta inativada.");
+      toast.success("Conta inativada.");
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao inativar conta.");
+      const messageText = err instanceof Error ? err.message : "Falha ao inativar conta.";
+      setError(messageText);
+      toast.error(messageText);
     }
   }
 

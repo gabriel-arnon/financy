@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowUpDown, Pencil, Plus, Save, Search, Trash2, Wand2, X } from "lucide-react";
 import { UiButton } from "@/components/ui-button";
+import { useToast } from "@/components/toast-provider";
 import { createClassificationRule, createTransaction, deleteTransaction, updateTransaction } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { formatAccountName, formatCardName, formatCardWithAccount, getAccountName, getCardNameWithAccount, getCategoryName, isActiveEntity, translateTransactionType } from "@/lib/labels";
@@ -28,9 +29,8 @@ interface ManualTransactionForm {
   amount: string;
   type: TransactionType;
   category_id: string;
-  account_id: string;
-  card_id: string;
-  status: string;
+  origin: string;
+  pending: boolean;
 }
 
 interface ConfirmDialogState {
@@ -42,7 +42,6 @@ interface ConfirmDialogState {
 
 const transactionTypes: Array<TransactionType | "all"> = ["all", "expense", "income", "transfer", "payment", "refund"];
 const manualTransactionTypes: TransactionType[] = ["expense", "income", "transfer", "payment", "refund"];
-const transactionStatuses = ["pending", "confirmed", "reconciled", "ignored"];
 const uncategorizedValue = "__none__";
 const ignoredWords = new Set(["PARC", "COMPRA", "PAGAMENTO", "PGTO", "BR", "SAO"]);
 const incomeTypes = new Set<TransactionType>(["income", "refund"]);
@@ -80,9 +79,51 @@ function defaultManualForm(): ManualTransactionForm {
     amount: "",
     type: "expense",
     category_id: "",
-    account_id: "",
-    card_id: "",
-    status: "confirmed"
+    origin: "",
+    pending: false
+  };
+}
+
+function originFromTransaction(transaction: Pick<Transaction, "account_id" | "card_id">) {
+  if (transaction.card_id) return `card:${transaction.card_id}`;
+  if (transaction.account_id) return `account:${transaction.account_id}`;
+  return "";
+}
+
+function parseOrigin(origin: string) {
+  if (origin.startsWith("account:")) return { account_id: origin.slice("account:".length), card_id: null };
+  if (origin.startsWith("card:")) return { account_id: null, card_id: origin.slice("card:".length) };
+  return { account_id: null, card_id: null };
+}
+
+function formatBrlInput(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const amount = Number(digits) / 100;
+  return amount.toLocaleString("pt-BR", { currency: "BRL", style: "currency" });
+}
+
+function amountToBrlInput(amount: string | number) {
+  const numberValue = Math.abs(Number(amount));
+  if (!Number.isFinite(numberValue)) return "";
+  return formatBrlInput(String(Math.round(numberValue * 100)));
+}
+
+function parseBrlInput(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return Number.NaN;
+  return Number(digits) / 100;
+}
+
+function formFromTransaction(transaction: Transaction): ManualTransactionForm {
+  return {
+    transaction_date: transaction.transaction_date,
+    description: transaction.description,
+    amount: amountToBrlInput(transaction.amount),
+    type: transaction.type,
+    category_id: transaction.category_id ?? "",
+    origin: originFromTransaction(transaction),
+    pending: transaction.status === "pending"
   };
 }
 
@@ -99,6 +140,7 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
 
 export function TransactionsTable({ transactions, categories, accounts, cards, initialCardId = null, initialCardStatementId = null }: TransactionsTableProps) {
   const router = useRouter();
+  const toast = useToast();
   const [rows, setRows] = useState(transactions);
   const [query, setQuery] = useState("");
   const [type, setType] = useState<TransactionType | "all">("all");
@@ -110,8 +152,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   const [endDate, setEndDate] = useState("");
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [drawerTransactionId, setDrawerTransactionId] = useState<string | null>(null);
-  const [draftDescription, setDraftDescription] = useState("");
-  const [draftCategoryId, setDraftCategoryId] = useState("");
+  const [detailForm, setDetailForm] = useState<ManualTransactionForm | null>(null);
   const [visibleCount, setVisibleCount] = useState(pageSize);
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -119,8 +160,6 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   const [bulkCategoryId, setBulkCategoryId] = useState("");
   const [asyncAction, setAsyncAction] = useState<AsyncAction>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-  const [messageType, setMessageType] = useState<"success" | "error">("success");
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
   const [manualForm, setManualForm] = useState<ManualTransactionForm>(() => defaultManualForm());
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
@@ -151,8 +190,11 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   }
 
   function showMessage(typeValue: "success" | "error", text: string) {
-    setMessageType(typeValue);
-    setMessage(text);
+    if (typeValue === "success") {
+      toast.success(text);
+    } else {
+      toast.error(text);
+    }
   }
 
   function resetVisibleList() {
@@ -248,12 +290,12 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
     rememberFocusedElement();
     setSelectedTransactionId(transaction.id);
     setDrawerTransactionId(transaction.id);
-    setDraftDescription(transaction.description);
-    setDraftCategoryId(transaction.category_id ?? "");
+    setDetailForm(formFromTransaction(transaction));
   }
 
   const closeDrawer = useCallback(function closeDrawer(restoreFocus = true) {
     setDrawerTransactionId(null);
+    setDetailForm(null);
     if (restoreFocus) restorePreviousFocus();
   }, [restorePreviousFocus]);
 
@@ -262,7 +304,6 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
     setDrawerTransactionId(null);
     setSelectedTransactionId(null);
     setIsCreateDrawerOpen(true);
-    setMessage(null);
   }
 
   const closeCreateDrawer = useCallback(function closeCreateDrawer(restoreFocus = true) {
@@ -317,11 +358,24 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
     setManualForm((current) => ({ ...current, ...patch }));
   }
 
+  function updateDetailForm(patch: Partial<ManualTransactionForm>) {
+    setDetailForm((current) => (current ? { ...current, ...patch } : current));
+  }
+
   function drawerDraftTransaction(transaction: Transaction): Transaction {
+    if (!detailForm) return transaction;
+    const origin = parseOrigin(detailForm.origin);
+    const amount = parseBrlInput(detailForm.amount);
     return {
       ...transaction,
-      description: draftDescription,
-      category_id: draftCategoryId || null
+      transaction_date: detailForm.transaction_date,
+      description: detailForm.description,
+      amount: Number.isFinite(amount) ? amount.toFixed(2) : transaction.amount,
+      type: detailForm.type,
+      category_id: detailForm.category_id || null,
+      account_id: origin.account_id,
+      card_id: origin.card_id,
+      status: detailForm.pending ? "pending" : "confirmed"
     };
   }
 
@@ -360,10 +414,11 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
     }
   }
 
-  async function createManualTransaction() {
+  async function createManualTransaction(options: { createAnother?: boolean } = {}) {
     await runAsync("create", async () => {
       const description = manualForm.description.trim();
-      const amount = Number(manualForm.amount.replace(",", "."));
+      const amount = parseBrlInput(manualForm.amount);
+      const origin = parseOrigin(manualForm.origin);
 
       if (!manualForm.transaction_date || !description || !manualForm.amount.trim()) {
         showMessage("error", "Informe data, descrição e valor para criar a transação.");
@@ -382,23 +437,26 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
         amount: amount.toFixed(2),
         type: manualForm.type,
         category_id: manualForm.category_id || null,
-        account_id: manualForm.account_id || null,
-        card_id: manualForm.card_id || null,
+        account_id: origin.account_id,
+        card_id: origin.card_id,
         card_statement_id: null,
         source_file_id: null,
         installment_current: null,
         installment_total: null,
-        status: manualForm.status
+        status: manualForm.pending ? "pending" : "confirmed"
       };
 
       const created = await createTransaction(payload);
       setRows((current) => [created, ...current]);
-      setManualForm(defaultManualForm());
-      closeCreateDrawer(false);
-      setSelectedTransactionId(created.id);
-      setDrawerTransactionId(created.id);
-      setDraftDescription(created.description);
-      setDraftCategoryId(created.category_id ?? "");
+      if (options.createAnother) {
+        setManualForm((current) => ({ ...current, description: "", amount: "" }));
+      } else {
+        setManualForm(defaultManualForm());
+        closeCreateDrawer(false);
+        setSelectedTransactionId(created.id);
+        setDrawerTransactionId(created.id);
+        setDetailForm(formFromTransaction(created));
+      }
       resetVisibleList();
       showMessage("success", "Transação criada.");
       router.refresh();
@@ -407,15 +465,25 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
 
   async function saveRow(transaction: Transaction) {
     await runAsync("save", async () => {
+      const amount = Number(transaction.amount);
+      if (!transaction.transaction_date || !transaction.description.trim() || !Number.isFinite(amount) || amount <= 0) {
+        showMessage("error", "Informe data, descrição e valor válido para salvar a transação.");
+        return;
+      }
       const saved = await updateTransaction(transaction.id, {
+        transaction_date: transaction.transaction_date,
         description: transaction.description,
+        amount: amount.toFixed(2),
         category_id: transaction.category_id,
-        type: transaction.type
+        type: transaction.type,
+        account_id: transaction.account_id,
+        card_id: transaction.card_id,
+        status: transaction.status
       });
       updateRow(transaction.id, saved);
-      setDraftDescription(saved.description);
-      setDraftCategoryId(saved.category_id ?? "");
+      setDetailForm(formFromTransaction(saved));
       showMessage("success", "Transação atualizada.");
+      router.refresh();
     });
   }
 
@@ -558,15 +626,6 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
 
   return (
     <div className="space-y-4">
-      {message ? (
-        <p
-          aria-live="polite"
-          className={`rounded-md px-3 py-2 text-sm ${messageType === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}
-          role={messageType === "error" ? "alert" : "status"}
-        >
-          {message}
-        </p>
-      ) : null}
       {initialCardStatementId ? (
         <p className="rounded-md border border-mint/20 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           Exibindo apenas transações vinculadas à fatura selecionada.
@@ -607,6 +666,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
         </div>
       </div>
 
+      {uncategorizedCount > 0 ? (
       <button
         aria-pressed={category === uncategorizedValue}
         className={`w-full rounded-lg border p-4 text-left shadow-sm transition focus:outline-none focus:ring-2 focus:ring-mint/60 ${
@@ -625,6 +685,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
           </span>
         </div>
       </button>
+      ) : null}
 
       <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -904,28 +965,20 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                   </select>
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
-                  Conta
-                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={manualForm.account_id} onChange={(event) => updateManualForm({ account_id: event.target.value, card_id: "" })} disabled={isBusy}>
-                    <option value="">Sem conta</option>
-                    {activeAccounts.map((item) => <option key={item.id} value={item.id}>{formatAccountName(item)}</option>)}
-                  </select>
-                </label>
-                <label className="grid gap-1.5 text-xs font-medium text-stone-500">
-                  Cartão
-                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={manualForm.card_id} onChange={(event) => updateManualForm({ card_id: event.target.value, account_id: "" })} disabled={isBusy}>
-                    <option value="">Sem cartão</option>
-                    {activeCards.map((item) => <option key={item.id} value={item.id}>{formatCardWithAccount(item, accounts)}</option>)}
+                  Origem
+                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={manualForm.origin} onChange={(event) => updateManualForm({ origin: event.target.value })} disabled={isBusy}>
+                    <option value="">Sem origem</option>
+                    {activeAccounts.length > 0 ? <optgroup label="Contas">{activeAccounts.map((item) => <option key={item.id} value={`account:${item.id}`}>{formatAccountName(item)}</option>)}</optgroup> : null}
+                    {activeCards.length > 0 ? <optgroup label="Cartões">{activeCards.map((item) => <option key={item.id} value={`card:${item.id}`}>{formatCardWithAccount(item, accounts)}</option>)}</optgroup> : null}
                   </select>
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Valor
-                  <input className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" inputMode="decimal" placeholder="0,00" value={manualForm.amount} onChange={(event) => updateManualForm({ amount: event.target.value })} disabled={isBusy} />
+                  <input className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" inputMode="numeric" placeholder="R$ 0,00" value={manualForm.amount} onChange={(event) => updateManualForm({ amount: formatBrlInput(event.target.value) })} disabled={isBusy} />
                 </label>
-                <label className="grid gap-1.5 text-xs font-medium text-stone-500">
-                  Status
-                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={manualForm.status} onChange={(event) => updateManualForm({ status: event.target.value })} disabled={isBusy}>
-                    {transactionStatuses.map((item) => <option key={item} value={item}>{item}</option>)}
-                  </select>
+                <label className="flex items-center gap-3 rounded-md border border-stone-200 px-3 py-2 text-sm font-medium text-stone-700">
+                  <input className="h-4 w-4 rounded border-stone-300" type="checkbox" checked={manualForm.pending} onChange={(event) => updateManualForm({ pending: event.target.checked })} disabled={isBusy} />
+                  Pendente
                 </label>
               </div>
             </div>
@@ -933,6 +986,9 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
             <div className="space-y-3 border-t border-stone-200 bg-white px-5 py-4">
               <UiButton className="w-full" icon={<Plus className="h-4 w-4" />} onClick={() => { void createManualTransaction(); }} variant="primary" disabled={isBusy}>
                 {asyncAction === "create" ? "Criando..." : "Criar transação"}
+              </UiButton>
+              <UiButton className="w-full" icon={<Save className="h-4 w-4" />} onClick={() => { void createManualTransaction({ createAnother: true }); }} variant="secondary" disabled={isBusy}>
+                {asyncAction === "create" ? "Criando..." : "Salvar e criar nova"}
               </UiButton>
               <UiButton className="w-full" icon={<X className="h-4 w-4" />} onClick={() => closeCreateDrawer()} variant="ghost" disabled={isBusy}>
                 Fechar
@@ -960,44 +1016,48 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
               <div className="grid gap-4">
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Data
-                  <input className="h-10 rounded-md border border-stone-200 bg-stone-50 px-3 text-sm font-normal text-stone-600" value={formatDate(drawerTransaction.transaction_date)} readOnly />
+                  <input className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" type="date" value={detailForm?.transaction_date ?? ""} onChange={(event) => updateDetailForm({ transaction_date: event.target.value })} disabled={isBusy} />
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Descrição
                   <input
                     ref={detailDescriptionRef}
                     className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint"
-                    value={draftDescription}
-                    onChange={(event) => setDraftDescription(event.target.value)}
+                    value={detailForm?.description ?? ""}
+                    onChange={(event) => updateDetailForm({ description: event.target.value })}
                     disabled={isBusy}
                   />
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Tipo
-                  <input className="h-10 rounded-md border border-stone-200 bg-stone-50 px-3 text-sm font-normal text-stone-600" value={translateTransactionType(drawerTransaction.type)} readOnly />
+                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={detailForm?.type ?? "expense"} onChange={(event) => updateDetailForm({ type: event.target.value as TransactionType })} disabled={isBusy}>
+                    {manualTransactionTypes.map((item) => (
+                      <option key={item} value={item}>{translateTransactionType(item)}</option>
+                    ))}
+                  </select>
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Categoria
-                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={draftCategoryId} onChange={(event) => setDraftCategoryId(event.target.value)} disabled={isBusy}>
+                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={detailForm?.category_id ?? ""} onChange={(event) => updateDetailForm({ category_id: event.target.value })} disabled={isBusy}>
                     <option value="">Sem categoria</option>
                     {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
-                  Conta
-                  <input className="h-10 rounded-md border border-stone-200 bg-stone-50 px-3 text-sm font-normal text-stone-600" value={getAccountName(drawerTransaction.account_id, accounts)} readOnly />
-                </label>
-                <label className="grid gap-1.5 text-xs font-medium text-stone-500">
-                  Cartão
-                  <input className="h-10 rounded-md border border-stone-200 bg-stone-50 px-3 text-sm font-normal text-stone-600" value={getCardNameWithAccount(drawerTransaction.card_id, cards, accounts)} readOnly />
+                  Origem
+                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={detailForm?.origin ?? ""} onChange={(event) => updateDetailForm({ origin: event.target.value })} disabled={isBusy}>
+                    <option value="">Sem origem</option>
+                    {activeAccounts.length > 0 ? <optgroup label="Contas">{activeAccounts.map((item) => <option key={item.id} value={`account:${item.id}`}>{formatAccountName(item)}</option>)}</optgroup> : null}
+                    {activeCards.length > 0 ? <optgroup label="Cartões">{activeCards.map((item) => <option key={item.id} value={`card:${item.id}`}>{formatCardWithAccount(item, accounts)}</option>)}</optgroup> : null}
+                  </select>
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Valor
-                  <input className="h-10 rounded-md border border-stone-200 bg-stone-50 px-3 text-sm font-normal text-stone-600" value={`${drawerAmount.prefix}${formatCurrency(drawerAmount.value)}`} readOnly />
+                  <input className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" inputMode="numeric" placeholder="R$ 0,00" value={detailForm?.amount ?? ""} onChange={(event) => updateDetailForm({ amount: formatBrlInput(event.target.value) })} disabled={isBusy} />
                 </label>
-                <label className="grid gap-1.5 text-xs font-medium text-stone-500">
-                  Status
-                  <input className="h-10 rounded-md border border-stone-200 bg-stone-50 px-3 text-sm font-normal text-stone-600" value={drawerTransaction.status} readOnly />
+                <label className="flex items-center gap-3 rounded-md border border-stone-200 px-3 py-2 text-sm font-medium text-stone-700">
+                  <input className="h-4 w-4 rounded border-stone-300" type="checkbox" checked={detailForm?.pending ?? false} onChange={(event) => updateDetailForm({ pending: event.target.checked })} disabled={isBusy} />
+                  Pendente
                 </label>
               </div>
             </div>
