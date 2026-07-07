@@ -23,6 +23,7 @@ interface RulesContentProps {
   initialRules: ClassificationRule[];
   initialCategories: Category[];
   embedded?: boolean;
+  skipInitialLoad?: boolean;
 }
 
 const emptyRule: ClassificationRulePayload = {
@@ -41,13 +42,31 @@ const matchScopeLabels: Record<ClassificationMatchScope, string> = {
   both: "Ambas",
 };
 
-export function RulesContent({ initialRules, initialCategories, embedded = false }: RulesContentProps) {
+function RulesListLoading({ embedded }: { embedded: boolean }) {
+  return (
+    <div className={embedded ? "rounded-md border border-stone-100 bg-stone-50 p-4" : "rounded-lg border border-stone-200 bg-white p-6 shadow-sm"}>
+      <div className="grid gap-3 lg:grid-cols-[1.4fr_1.2fr_1fr_1fr_0.7fr]">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="h-10 animate-pulse rounded-md bg-stone-100" />
+        ))}
+      </div>
+      <div className="mt-5 space-y-3">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="h-12 animate-pulse rounded-md bg-stone-100" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function RulesContent({ initialRules, initialCategories, embedded = false, skipInitialLoad = false }: RulesContentProps) {
   const [rules, setRules] = useState<ClassificationRule[]>(initialRules);
   const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [form, setForm] = useState<ClassificationRulePayload>({ ...emptyRule, category_id: initialCategories[0]?.id ?? "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(!skipInitialLoad);
 
   async function loadData() {
     const [nextRules, nextCategories] = await Promise.all([getClassificationRules(), getCategories()]);
@@ -57,10 +76,14 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
   }
 
   useEffect(() => {
+    if (skipInitialLoad) {
+      return;
+    }
     void Promise.resolve()
       .then(loadData)
-      .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar regras."));
-  }, []);
+      .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar regras."))
+      .finally(() => setIsLoading(false));
+  }, [skipInitialLoad]);
 
   async function handleReload() {
     setMessage(null);
@@ -150,7 +173,10 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
     <>
       {message ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
       {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+      {isLoading ? <RulesListLoading embedded={embedded} /> : null}
 
+      {!isLoading ? (
+      <>
       <form
         className={embedded ? "rounded-md border border-stone-100 bg-stone-50 p-4" : "rounded-lg border border-stone-200 bg-white p-6 shadow-sm"}
         onSubmit={handleSubmit}
@@ -245,6 +271,8 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
           {rules.length === 0 ? <p className="px-4 py-8 text-center text-sm text-stone-500">Nenhuma regra cadastrada.</p> : null}
         </div>
       </article>
+      </>
+      ) : null}
     </>
   );
 

@@ -125,6 +125,7 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState<Category | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(initialCategories.length === 0);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -134,10 +135,14 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
   }
 
   useEffect(() => {
+    if (initialCategories.length > 0) {
+      return;
+    }
     void Promise.resolve()
       .then(refetchCategories)
-      .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar categorias."));
-  }, []);
+      .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar categorias."))
+      .finally(() => setIsLoading(false));
+  }, [initialCategories.length]);
 
   function startCreate() {
     setMessage(null);
@@ -249,6 +254,23 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
         </div>
       ) : null}
 
+      {isLoading ? (
+        <div className="mt-5 space-y-5" aria-busy="true" aria-live="polite">
+          {categoryGroups.map((group) => (
+            <section key={group.key} className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-ink">{group.title}</h3>
+                <span className="h-7 w-9 animate-pulse rounded-full bg-stone-100" />
+              </div>
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={index} className="h-14 animate-pulse rounded-md bg-stone-100" />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : (
       <div className="mt-5 space-y-5">
         {categoryGroups.map((group) => {
           const groupCategories = (categories as CategoryWithOptionalType[]).filter((category) => getCategoryGroupKey(category) === group.key);
@@ -326,6 +348,7 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
           );
         })}
       </div>
+      )}
     </article>
     {confirmingDelete ? (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6">
