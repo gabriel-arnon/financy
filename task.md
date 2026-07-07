@@ -794,3 +794,35 @@ Feito:
 - Formulario de criacao permanece no topo somente quando nenhuma regra esta em edicao.
 - Ao clicar em editar, o formulario aparece no lugar da regra selecionada.
 - Cancelar fecha a edicao inline e restaura o formulario de criacao.
+
+### [x] PD9 - Padronizar UX de regras com categorias
+
+Contexto:
+
+- Categorias e regras tinham padroes visuais diferentes.
+- Categorias ja usavam botao para abrir criacao, grupos por tipo com contagem, edicao inline e modal de inativacao.
+- Regras ainda tinham formulario de criacao sempre visivel, lista unica, botao de recarregar e confirmacao nativa do navegador.
+
+Objetivo:
+
+- Padronizar Regras para seguir o mesmo modelo de Categorias.
+
+Checklist:
+
+- [x] Esconder formulario de criacao de regras por padrao.
+- [x] Criar botao `Adicionar regra`.
+- [x] Agrupar regras em Receitas, Despesas e Ambas.
+- [x] Mostrar quantidade de regras por grupo.
+- [x] Remover botao de recarregar regras.
+- [x] Atualizar lista automaticamente apos criar, editar ou inativar regra.
+- [x] Trocar `window.confirm` por popup/modal de inativacao.
+- [x] Manter edicao inline no lugar da regra selecionada.
+- [x] Padronizar cards, espacos, botoes e mensagens com categorias.
+
+Feito:
+
+- `RulesContent` agora usa o mesmo padrao visual de `SettingsCategoriesSection`.
+- Criacao de regra abre somente ao clicar em `Adicionar regra`.
+- Regras sao exibidas por grupo com contadores.
+- Exclusao/inativacao abre modal com explicacao e acoes Cancelar/Inativar.
+- Recarregamento manual foi removido; a lista atualiza depois das acoes.
