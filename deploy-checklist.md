@@ -134,11 +134,11 @@ docker compose up --build
 - [x] Checagem de duplicidade da importacao otimizada para evitar listar transacoes a cada item.
 - [x] Parser CSV aceita valores com virgula e ponto decimal.
 - [x] Parser PDF otimizado para evitar extracao de tabelas quando texto normal ja existe.
+- [x] Inserts de `import_preview_items` otimizados em lote.
+- [x] Logs temporarios de diagnostico de importacao removidos.
 - [/] Performance melhorou parcialmente, mas ainda ha latencia perceptivel de 3-5 segundos em algumas telas.
 - [/] Importacao PDF funciona, mas ainda pode demorar minutos em PDFs com muitas transacoes.
 - [ ] Avaliar upgrade do Render Free para instancia sempre ligada/mais CPU.
-- [ ] Avaliar otimizacao adicional com inserts em lote para `import_preview_items`.
-- [ ] Remover logs temporarios de diagnostico de importacao apos estabilizacao final.
 
 ## 8. Smoke test de isolamento
 
@@ -164,6 +164,7 @@ docker compose up --build
 - [ ] Render Free possui cold start, CPU limitada e latencia perceptivel. Performance ideal provavelmente exige upgrade de instancia ou outro provedor.
 - [ ] Deploy privado ainda exige configuracao manual dos provedores.
 - [ ] Producao publica/SaaS exige LGPD, termos, exportacao/exclusao de dados, rate limiting e suporte.
+- [x] Runbook pos-deploy criado em `docs/production-readiness-runbook.md`.
 
 ## 11. Criterio de pronto
 

@@ -615,56 +615,84 @@ Feito:
 - Checagem de duplicidade da importacao otimizada para evitar listar transacoes a cada item.
 - Parser CSV aceita valores com virgula e ponto decimal.
 - Parser PDF otimizado para evitar extrair tabelas quando texto normal ja existe.
+- Inserts de `import_preview_items` otimizados em lote.
+- Logs temporarios de diagnostico de importacao removidos.
 
 Pendente:
 
 - Avaliar upgrade do Render Free para instancia sempre ligada/mais CPU.
-- Otimizar inserts em lote para `import_preview_items`, se a importacao continuar lenta.
-- Remover logs temporarios de diagnostico de importacao.
+- Validar ganho real apos novo deploy em producao.
 
-### [ ] PD2 - Storage persistente de uploads
+### [/] PD2 - Storage persistente de uploads
 
-Pendente:
+Feito:
+
+- Criado runbook operacional em `docs/production-readiness-runbook.md`.
+- Recomendacao registrada: Supabase Storage como primeira opcao, mantendo paths por usuario.
+
+Pendente externo:
 
 - Escolher estrategia definitiva: Supabase Storage, Cloudflare R2 ou disco persistente.
 - Migrar uploads de `.uploads` local do Render para storage persistente.
 - Garantir que imports antigos continuem acessiveis quando necessario.
 
-### [ ] PD3 - Backups de producao
+### [/] PD3 - Backups de producao
 
-Pendente:
+Feito:
+
+- Criado checklist de backup e restore em `docs/production-readiness-runbook.md`.
+
+Pendente externo:
 
 - Confirmar backup automatico do PostgreSQL/Supabase.
 - Definir backup dos uploads.
 - Executar pelo menos um teste de restauracao em ambiente descartavel.
 
-### [ ] PD4 - Rotacao de segredos
+### [/] PD4 - Rotacao de segredos
 
-Pendente:
+Feito:
+
+- Criado checklist de rotacao em `docs/production-readiness-runbook.md`.
+- Lista de segredos a rotacionar documentada sem expor valores.
+
+Pendente externo:
 
 - Rotacionar senha do banco, JWT secret e service role key compartilhados durante o deploy.
 - Atualizar variaveis no Render/Vercel/Supabase.
 - Confirmar que nenhum segredo real esta versionado.
 
-### [ ] PD5 - Smoke test multiusuario em producao
+### [/] PD5 - Smoke test multiusuario em producao
 
-Pendente:
+Feito:
+
+- Criado roteiro de smoke multiusuario em `docs/production-readiness-runbook.md`.
+
+Pendente externo:
 
 - Criar/usar usuario A e usuario B reais no Supabase.
 - Confirmar que usuario B nao ve contas, cartoes, transacoes, regras, faturas e imports do usuario A.
 - Confirmar que referencias cruzadas retornam erro/404.
 
-### [ ] PD6 - RLS Supabase
+### [/] PD6 - RLS Supabase
 
-Pendente:
+Feito:
+
+- Draft de RLS ja existe em `docs/supabase/rls_phase3_draft.sql`.
+- Ordem segura de ativacao registrada em `docs/production-readiness-runbook.md`.
+
+Pendente externo:
 
 - Revisar `docs/supabase/rls_phase3_draft.sql`.
 - Decidir se RLS sera ativado ainda na producao privada ou apenas antes de multiusuario publico.
 - Testar policies em staging antes de aplicar no banco real.
 
-### [ ] PD7 - Checklist de producao publica
+### [/] PD7 - Checklist de producao publica
 
-Pendente:
+Feito:
+
+- Checklist de producao publica criado em `docs/production-readiness-runbook.md`.
+
+Pendente externo:
 
 - LGPD: termos, politica de privacidade, exportacao e exclusao de dados.
 - Rate limiting.

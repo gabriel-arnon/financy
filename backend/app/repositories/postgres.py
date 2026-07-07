@@ -379,33 +379,38 @@ class PostgresRepository:
         items: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         self._ensure_profile(user_id)
+        if not items:
+            return []
+
         records = []
         existing_signatures = {self.transaction_signature(item) for item in self.list_transactions(user_id)}
-        with self._connect() as conn:
-            for item in items:
-                record = {
-                    "id": item.get("id") or str(uuid4()),
-                    "import_batch_id": import_id,
-                    "source_file_id": source_file_id,
-                    "user_id": user_id,
-                    "created_at": datetime.now(timezone.utc),
-                    **item,
-                }
-                if self.transaction_signature(record) in existing_signatures:
-                    record["duplicate_candidate"] = True
-                    record["default_selected"] = False
-                    record["excluded_reason"] = "duplicate"
-                columns = list(record.keys())
-                placeholders = ", ".join(["%s"] * len(columns))
-                names = ", ".join(columns)
-                values = tuple(_adapt(record[column]) for column in columns)
-                with conn.cursor() as cur:
-                    cur.execute(
-                        f"insert into import_preview_items ({names}) values ({placeholders}) returning *",
-                        values,
-                    )
-                    records.append(_record(cur.fetchone()) or {})
-        return records
+        created_at = datetime.now(timezone.utc)
+        for item in items:
+            record = {
+                "id": item.get("id") or str(uuid4()),
+                "import_batch_id": import_id,
+                "source_file_id": source_file_id,
+                "user_id": user_id,
+                "created_at": created_at,
+                **item,
+            }
+            if self.transaction_signature(record) in existing_signatures:
+                record["duplicate_candidate"] = True
+                record["default_selected"] = False
+                record["excluded_reason"] = "duplicate"
+            records.append(record)
+
+        columns = sorted({column for record in records for column in record})
+        placeholders = "(" + ", ".join(["%s"] * len(columns)) + ")"
+        names = ", ".join(columns)
+        values_clause = ", ".join([placeholders] * len(records))
+        values = tuple(_adapt(record.get(column)) for record in records for column in columns)
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                f"insert into import_preview_items ({names}) values {values_clause} returning *",
+                values,
+            )
+            return _records(cur.fetchall())
 
     def get_preview_items(self, user_id: str, import_id: str) -> list[dict[str, Any]]:
         return self._fetch_all(

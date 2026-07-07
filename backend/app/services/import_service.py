@@ -20,21 +20,15 @@ class ImportService:
         if not file.filename:
             raise AppError("Arquivo sem nome.", code="invalid_upload")
 
-        print("IMPORT_SERVICE_UPLOAD_START", {"filename": file.filename, "content_type": file.content_type}, flush=True)
         user_upload_dir = self.upload_dir / user_id
         user_upload_dir.mkdir(parents=True, exist_ok=True)
         storage_name = f"{uuid4()}{Path(file.filename).suffix.lower()}"
         path = user_upload_dir / storage_name
-        print("IMPORT_SERVICE_READ_START", flush=True)
         content = await file.read()
-        print("IMPORT_SERVICE_READ_END", {"size_bytes": len(content)}, flush=True)
         if not content:
             raise AppError("Arquivo vazio.", code="empty_upload")
-        print("IMPORT_SERVICE_WRITE_START", {"path": str(path)}, flush=True)
         path.write_bytes(content)
-        print("IMPORT_SERVICE_WRITE_END", flush=True)
 
-        print("IMPORT_SERVICE_CREATE_FILE_START", flush=True)
         import_file = self.repository.create_import_file(
             {
                 "user_id": user_id,
@@ -44,8 +38,6 @@ class ImportService:
                 "size_bytes": len(content),
             }
         )
-        print("IMPORT_SERVICE_CREATE_FILE_END", {"file_id": import_file["id"]}, flush=True)
-        print("IMPORT_SERVICE_CREATE_BATCH_START", flush=True)
         batch = self.repository.create_import_batch(
             {
                 "user_id": user_id,
@@ -53,16 +45,10 @@ class ImportService:
                 "status": "preview",
             }
         )
-        print("IMPORT_SERVICE_CREATE_BATCH_END", {"import_id": batch["id"]}, flush=True)
 
-        print("IMPORT_SERVICE_PARSE_START", {"filename": file.filename}, flush=True)
         parsed_result = ParserFactory.parse(path=path, filename=file.filename, mime_type=file.content_type)
-        print("IMPORT_SERVICE_PARSE_END", {"items": len(parsed_result.items)}, flush=True)
-        print("IMPORT_SERVICE_CLASSIFICATION_LOAD_START", flush=True)
         rules = self.repository.list_classification_rules(user_id)
         categories_by_id = {category["id"]: category["name"] for category in self.repository.categories(user_id)}
-        print("IMPORT_SERVICE_CLASSIFICATION_LOAD_END", {"rules": len(rules), "categories": len(categories_by_id)}, flush=True)
-        print("IMPORT_SERVICE_CLASSIFICATION_APPLY_START", {"items": len(parsed_result.items)}, flush=True)
         parsed_items = [
             self._apply_classification_from_rules(
                 item=item.model_dump(mode="json"),
@@ -71,18 +57,13 @@ class ImportService:
             )
             for item in parsed_result.items
         ]
-        print("IMPORT_SERVICE_CLASSIFICATION_APPLY_END", {"items": len(parsed_items)}, flush=True)
-        print("IMPORT_SERVICE_ATTACH_ACCOUNT_START", flush=True)
         self._attach_existing_detected_account(user_id, parsed_items)
-        print("IMPORT_SERVICE_ATTACH_ACCOUNT_END", flush=True)
-        print("IMPORT_SERVICE_CREATE_PREVIEW_START", {"items": len(parsed_items)}, flush=True)
         records = self.repository.create_preview_items(
             import_id=batch["id"],
             source_file_id=import_file["id"],
             user_id=user_id,
             items=parsed_items,
         )
-        print("IMPORT_SERVICE_CREATE_PREVIEW_END", {"records": len(records)}, flush=True)
 
         return UploadImportResponse(
             import_id=batch["id"],
