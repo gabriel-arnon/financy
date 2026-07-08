@@ -72,6 +72,22 @@ function isTransactionUncategorized(transaction: Transaction, categoryIds: Set<s
   return !transaction.category_id || !categoryIds.has(transaction.category_id);
 }
 
+function categoryMatchesTransactionType(categoryItem: Category, transactionType: TransactionType) {
+  if (transactionType === "income") return categoryItem.type === "income" || categoryItem.type === "both";
+  if (transactionType === "expense") return categoryItem.type === "expense" || categoryItem.type === "both";
+  return true;
+}
+
+function filterCategoriesByTransactionType(categoryList: Category[], transactionType: TransactionType) {
+  return categoryList.filter((categoryItem) => categoryMatchesTransactionType(categoryItem, transactionType));
+}
+
+function categoryIsAllowedForTransactionType(categoryList: Category[], categoryId: string, transactionType: TransactionType) {
+  if (!categoryId) return true;
+  const categoryItem = categoryList.find((item) => item.id === categoryId);
+  return categoryItem ? categoryMatchesTransactionType(categoryItem, transactionType) : false;
+}
+
 function defaultManualForm(): ManualTransactionForm {
   return {
     transaction_date: new Date().toISOString().slice(0, 10),
@@ -169,6 +185,11 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   const debouncedQuery = useDebouncedValue(query, 250);
 
   const categoryIds = useMemo(() => new Set(categories.map((item) => item.id)), [categories]);
+  const manualCategories = useMemo(() => filterCategoriesByTransactionType(categories, manualForm.type), [categories, manualForm.type]);
+  const detailCategories = useMemo(
+    () => filterCategoriesByTransactionType(categories, detailForm?.type ?? "expense"),
+    [categories, detailForm?.type]
+  );
   const activeAccounts = useMemo(() => accounts.filter(isActiveEntity), [accounts]);
   const activeCards = useMemo(() => cards.filter(isActiveEntity), [cards]);
   const cardAccountById = useMemo(() => new Map(cards.map((item) => [item.id, item.account_id])), [cards]);
@@ -962,7 +983,18 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Tipo
-                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={manualForm.type} onChange={(event) => updateManualForm({ type: event.target.value as TransactionType })} disabled={isBusy}>
+                  <select
+                    className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint"
+                    value={manualForm.type}
+                    onChange={(event) => {
+                      const nextType = event.target.value as TransactionType;
+                      updateManualForm({
+                        type: nextType,
+                        category_id: categoryIsAllowedForTransactionType(categories, manualForm.category_id, nextType) ? manualForm.category_id : ""
+                      });
+                    }}
+                    disabled={isBusy}
+                  >
                     {manualTransactionTypes.map((item) => (
                       <option key={item} value={item}>{translateTransactionType(item)}</option>
                     ))}
@@ -972,7 +1004,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                   Categoria
                   <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={manualForm.category_id} onChange={(event) => updateManualForm({ category_id: event.target.value })} disabled={isBusy}>
                     <option value="">Sem categoria</option>
-                    {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    {manualCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
@@ -1041,7 +1073,19 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Tipo
-                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={detailForm?.type ?? "expense"} onChange={(event) => updateDetailForm({ type: event.target.value as TransactionType })} disabled={isBusy}>
+                  <select
+                    className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint"
+                    value={detailForm?.type ?? "expense"}
+                    onChange={(event) => {
+                      const nextType = event.target.value as TransactionType;
+                      const currentCategoryId = detailForm?.category_id ?? "";
+                      updateDetailForm({
+                        type: nextType,
+                        category_id: categoryIsAllowedForTransactionType(categories, currentCategoryId, nextType) ? currentCategoryId : ""
+                      });
+                    }}
+                    disabled={isBusy}
+                  >
                     {manualTransactionTypes.map((item) => (
                       <option key={item} value={item}>{translateTransactionType(item)}</option>
                     ))}
@@ -1051,7 +1095,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                   Categoria
                   <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={detailForm?.category_id ?? ""} onChange={(event) => updateDetailForm({ category_id: event.target.value })} disabled={isBusy}>
                     <option value="">Sem categoria</option>
-                    {categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    {detailCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
