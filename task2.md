@@ -347,6 +347,52 @@ Resultado esperado:
 
 - Cartoes, faturas e dashboards ficam consistentes para transacoes importadas e manuais.
 
+### [x] P5.3 - Adicionar suporte ao padrao de fatura Cartoes CAIXA
+
+Contexto:
+
+- Foi analisada uma fatura PDF da CAIXA com vencimento em 17/06/2026.
+- A fatura possui valor total, limite, melhor data de compra, dados de boleto e demonstrativo por cartao.
+- O demonstrativo separa compras por final de cartao, por exemplo cartao 6823 e cartao 7164.
+- As transacoes aparecem com Data, Descricao, Cidade/Pais e Credito/Debito em formato brasileiro, como `12,67D` e `542,37C`.
+- Hoje esse padrao deve ser reconhecido corretamente na importacao para gerar preview/transacoes confiaveis.
+
+Objetivo:
+
+- Adicionar suporte explicito ao layout de faturas Cartoes CAIXA no parser/importador, preservando o fluxo atual de upload, preview, confirmacao e vinculo com fatura/cartao.
+
+Checklist:
+
+- [x] Criar ou ajustar detector de layout para identificar faturas CAIXA por textos como `Central de Atendimento Cartoes Caixa`, `CARTOES CAIXA`, `Valor total desta fatura` e blocos `Cartao`.
+- [x] Extrair metadados da fatura: vencimento, valor total, limite total, limite utilizado, limite disponivel e melhor data para compra quando disponiveis.
+- [x] Separar blocos por final de cartao, mantendo o final do cartao como referencia de origem.
+- [x] Extrair compras por linha com data, descricao, cidade/pais quando houver, valor e tipo debito/credito.
+- [x] Ignorar linhas de resumo, pagamento anterior, totais, encargos, boleto e opcoes de parcelamento que nao devem virar transacao de compra.
+- [x] Tratar valores com sufixo `D` como despesa e valores com sufixo `C` como credito/estorno nao selecionado por padrao.
+- [x] Criar preview de importacao com categoria pendente/classificacao automatica existente.
+- [x] Vincular transacoes importadas ao cartao e a fatura correta quando o cartao existir no cadastro.
+- [x] Se houver mais de um cartao na mesma fatura, preservar separacao por final de cartao.
+- [x] Adicionar testes com fixture anonima baseada no padrao da fatura CAIXA.
+- [x] Validar que faturas PDF ja suportadas continuam funcionando.
+
+Feito:
+
+- Criado detector dedicado para faturas Cartoes CAIXA no parser de PDF.
+- Parser CAIXA extrai vencimento, valor total da fatura, referencia, instituicao, limite total e final do cartao principal.
+- Compras sao extraidas por bloco `COMPRAS (Cartao XXXX)`, preservando o final do cartao em cada item.
+- Linhas de pagamento anterior, totais, informativos, encargos, boleto e parcelamento ficam fora da selecao de transacoes.
+- Linhas misturadas por extracao do PDF, como `MULTA ... 26/05 ... 15,00D`, tambem sao reconhecidas quando estao dentro do bloco de compras.
+- Valores `D` entram como despesas selecionadas por padrao; valores `C` entram como estorno/credito nao selecionado por padrao.
+- Importacao agora tenta preencher `card_id` automaticamente quando `card_last_digits` bate com um cartao cadastrado do usuario.
+- Validado com a fatura real `fatura-0.pdf`: 20 compras extraidas, finais 6823 e 7164 preservados, total selecionado R$ 492,59.
+- Adicionados testes de parser CAIXA e auto-vinculo por final de cartao no import service.
+
+Resultado esperado:
+
+- Upload de fatura CAIXA gera preview com as compras corretas por cartao.
+- Confirmacao da importacao cria transacoes vinculadas a fatura/cartao, afetando dashboard e utilizado do cartao.
+- O app nao transforma boleto, parcelamento, encargos ou totais duplicados em transacoes indevidas.
+
 ## Validacoes obrigatorias
 
 ### [x] VF1 - Backend

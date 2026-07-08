@@ -86,6 +86,15 @@ DATE_AMOUNT_RE = re.compile(
     re.IGNORECASE,
 )
 
+CAIXA_CARD_TRANSACTION_RE = re.compile(
+    r"^(?:.*?\s)?(?P<date>\d{2}/\d{2})\s+"
+    r"(?P<body>.+?)\s+"
+    r"(?P<amount>\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})(?P<sign>[DC])$",
+    re.IGNORECASE,
+)
+
+CAIXA_CARD_BLOCK_RE = re.compile(r"\(CARTAO\s+(?P<digits>\d{4})\)", re.IGNORECASE)
+
 BANK_STATEMENT_TRANSACTION_RE = re.compile(
     r"^(?P<date>\d{2}/\d{2}/\d{4})\s+(?P<body>.*?)\s+(?P<amount>\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})\s+\((?P<sign>[+-])\)$"
 )
@@ -187,6 +196,15 @@ def _extract_text(path: Path) -> str:
 def _is_bank_statement(text: str) -> bool:
     normalized = normalize_description(text)
     return "EXTRATO DE CONTA CORRENTE" in normalized and "AGENCIA" in normalized and "CONTA" in normalized
+
+
+def _is_caixa_card_statement(text: str) -> bool:
+    normalized = normalize_description(text)
+    return (
+        "CARTOES CAIXA" in normalized
+        or "CENTRAL DE ATENDIMENTO CARTOES CAIXA" in normalized
+        or ("VALOR TOTAL DESTA FATURA" in normalized and "CARTAO" in normalized and "CAIXA" in normalized)
+    )
 
 
 def _bank_statement_metadata(text: str) -> StatementMetadata:
@@ -338,6 +356,18 @@ def _extract_card_limit(text: str) -> Decimal | None:
     return None
 
 
+def _extract_caixa_card_limit(text: str) -> Decimal | None:
+    money_pattern = r"(?:R\$\s*)?\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}"
+    for raw_line in text.splitlines():
+        line = _clean(raw_line)
+        normalized = normalize_description(line)
+        if re.match(r"^TOTAL\s+R\$", line, re.IGNORECASE):
+            match = re.search(rf"(?P<amount>{money_pattern})", line, re.IGNORECASE)
+            if match:
+                return parse_brazilian_money(match.group("amount"))
+    return None
+
+
 def _statement_metadata(text: str, fallback_year: int) -> StatementMetadata:
     metadata = StatementMetadata()
 
@@ -419,6 +449,33 @@ def _statement_metadata(text: str, fallback_year: int) -> StatementMetadata:
     return metadata
 
 
+def _caixa_statement_metadata(text: str, fallback_year: int) -> StatementMetadata:
+    metadata = _statement_metadata(text, fallback_year)
+    metadata.card_institution = "Caixa"
+    metadata.card_limit_amount = _extract_caixa_card_limit(text) or metadata.card_limit_amount
+
+    total_match = re.search(
+        r"VALOR TOTAL DESTA FATURA\s+(?:R\$\s*)?(?P<amount>\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})",
+        text,
+        re.IGNORECASE,
+    )
+    if total_match:
+        metadata.statement_total_amount = parse_brazilian_money(total_match.group("amount"))
+
+    due_match = re.search(r"VENCIMENTO\s+(?P<date>\d{2}/\d{2}/\d{4})", text, re.IGNORECASE)
+    if due_match:
+        metadata.statement_due_date = _parse_date(due_match.group("date"), fallback_year)
+
+    card_match = re.search(r"(?P<digits>\d{4})\s*$", text.splitlines()[0].strip()) if text.splitlines() else None
+    if card_match:
+        metadata.card_last_digits = card_match.group("digits")
+
+    if metadata.statement_reference_month is None and metadata.statement_due_date:
+        metadata.statement_reference_month = date(metadata.statement_due_date.year, metadata.statement_due_date.month, 1)
+
+    return metadata
+
+
 def _split_country(body: str) -> tuple[str, str | None]:
     body = re.sub(r"\bR\$\s*$", "", body).strip()
     parts = body.rsplit(" ", 1)
@@ -456,10 +513,148 @@ def _confidence(section: str | None, country: str | None, installment_total: int
     return float(min(score, Decimal("0.95")))
 
 
+def _is_caixa_ignored_line(line: str) -> ExcludedReason | None:
+    normalized = normalize_description(line)
+    if not normalized:
+        return ExcludedReason.informativo
+    if normalized.startswith("TOTAL COMPRAS") or normalized.startswith("TOTAL FINAL") or normalized.startswith("VALOR TOTAL DESTA FATURA"):
+        return ExcludedReason.total
+    if "TOTAL DA FATURA ANTERIOR" in normalized:
+        return ExcludedReason.saldo_anterior
+    if "OBRIGADO PELO PAGAMENTO" in normalized:
+        return ExcludedReason.payment
+    if any(
+        keyword in normalized
+        for keyword in (
+            "CENTRAL DE ATENDIMENTO",
+            "INFORMACOES COMPLEMENTARES",
+            "LIMITES",
+            "SALDO PREVISTO",
+            "DESPESAS A VENCER",
+            "DEMONSTRATIVO",
+            "GUIA DE CONSUMO",
+            "ANUIDADE",
+            "ENCARGOS",
+            "MULTA",
+            "MORA",
+            "PARCELAMENTO",
+            "CET",
+            "ROTATIVO",
+            "SAC CAIXA",
+            "OUVIDORIA",
+            "BOLETO",
+            "BENEFICIARIO",
+            "PAGADOR",
+            "LOCAL DE PAGAMENTO",
+        )
+    ):
+        return ExcludedReason.informativo
+    return None
+
+
+def _parse_caixa_card_statement(text: str) -> ParserResult:
+    fallback_year = _statement_year(text)
+    metadata = _caixa_statement_metadata(text, fallback_year)
+    previews: list[NormalizedTransactionPreview] = []
+    ignored_lines: list[IgnoredPdfLine] = []
+    current_card_digits = metadata.card_last_digits
+    in_purchases = False
+    seen_transactions: set[tuple[str, str, str, str | None]] = set()
+
+    for raw_line in text.splitlines():
+        line = _clean(raw_line)
+        if not line:
+            continue
+
+        normalized = normalize_description(line)
+        card_match = CAIXA_CARD_BLOCK_RE.search(normalized)
+        if card_match:
+            current_card_digits = card_match.group("digits")
+            in_purchases = "COMPRAS" in normalized
+            continue
+
+        if normalized.startswith("COMPRAS"):
+            in_purchases = True
+            continue
+
+        match = CAIXA_CARD_TRANSACTION_RE.match(line)
+        if not match:
+            ignored_reason = _is_caixa_ignored_line(line)
+            if ignored_reason:
+                ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ignored_reason))
+                if ignored_reason == ExcludedReason.total:
+                    in_purchases = False
+                continue
+            if DATE_AMOUNT_RE.match(line):
+                ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ExcludedReason.low_confidence))
+            continue
+
+        if not in_purchases:
+            ignored_lines.append(
+                IgnoredPdfLine(raw_text=line, excluded_reason=_is_caixa_ignored_line(line) or ExcludedReason.informativo)
+            )
+            continue
+
+        sign = match.group("sign").upper()
+        body = match.group("body").strip()
+        description, city_or_country = _split_country(body)
+        description = normalize_description(description.title())
+        if not description:
+            ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ExcludedReason.low_confidence))
+            continue
+
+        amount = abs(parse_brazilian_money(match.group("amount")))
+        tx_type = TransactionType.expense if sign == "D" else TransactionType.refund
+        excluded_reason = ExcludedReason.refund if tx_type == TransactionType.refund else None
+        signature = (match.group("date"), normalize_description(description), str(amount), current_card_digits)
+        if signature in seen_transactions:
+            ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ExcludedReason.duplicate))
+            continue
+        seen_transactions.add(signature)
+
+        item_metadata = metadata.model_copy()
+        if current_card_digits:
+            item_metadata.card_last_digits = current_card_digits
+
+        previews.append(
+            NormalizedTransactionPreview(
+                transaction_date=_parse_date(match.group("date"), fallback_year),
+                description=description,
+                original_description=body,
+                amount=amount,
+                type=tx_type,
+                merchant_country=city_or_country,
+                raw_text=line,
+                raw_row={
+                    "line": line,
+                    "card_last_digits": current_card_digits,
+                    "city_or_country": city_or_country,
+                    "parser": "caixa_card_statement_line_v1",
+                },
+                parser_confidence=0.9 if current_card_digits else 0.82,
+                needs_review=False,
+                default_selected=tx_type == TransactionType.expense,
+                excluded_reason=excluded_reason,
+                statement_total_amount=item_metadata.statement_total_amount,
+                statement_due_date=item_metadata.statement_due_date,
+                statement_reference_month=item_metadata.statement_reference_month,
+                card_last_digits=item_metadata.card_last_digits,
+                card_name=item_metadata.card_name,
+                card_brand=item_metadata.card_brand,
+                card_institution=item_metadata.card_institution,
+                card_limit_amount=item_metadata.card_limit_amount,
+            )
+        )
+
+    return ParserResult(items=previews, ignored_lines=ignored_lines, statement_metadata=metadata)
+
+
 def parse(path: Path, mime_type: str | None = None) -> ParserResult:
     text = _extract_text(path)
     if _is_bank_statement(text):
         return _parse_bank_statement(text)
+    if _is_caixa_card_statement(text):
+        return _parse_caixa_card_statement(text)
 
     fallback_year = _statement_year(text)
     metadata = _statement_metadata(text, fallback_year)

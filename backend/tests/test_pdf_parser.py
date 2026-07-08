@@ -151,3 +151,62 @@ def test_pdf_parser_extracts_banco_do_brasil_checking_statement(tmp_path: Path) 
     assert result.items[2].description.endswith("07/05 16:17 GABRIEL A F ALMEIDA")
     assert result.items[3].description.endswith("CARTOES CAIXA ELO PF")
     assert all(item.account_agency == "3970-5" for item in result.items)
+
+
+def test_pdf_parser_extracts_caixa_card_statement(tmp_path: Path) -> None:
+    path = tmp_path / "caixa-fatura-anonimizada.pdf"
+    _make_pdf(
+        path,
+        [
+            "Central de Atendimento Cartoes Caixa",
+            "6505.XXXX.XXXX.6823",
+            "VENCIMENTO",
+            "17/06/2026",
+            "VALOR TOTAL DESTA FATURA",
+            "R$ 492,59",
+            "Limites Melhor data para compra: 08/07/2026",
+            "TOTAL R$ 950,00",
+            "UTILIZADO R$ 492,59",
+            "DISPONIVEL R$ 457,41",
+            "Guia de Consumo 07/05 TOTAL DA FATURA ANTERIOR 542,37D",
+            "08/05 OBRIGADO PELO PAGAMENTO 542,37C",
+            "GABRIEL A F ALMEIDA (Cartao 6823)",
+            "COMPRAS (Cartao 6823)",
+            "08/05 REST CARAVELAS BERTIOGA 12,67D",
+            "09/05 MP MERCADAKAMPAI OSASCO 10,49D",
+            "MULTA 2,00% 26/05 FLORICULTURA TAQUARI SAO PAULO 15,00D",
+            "Total COMPRAS 38,16D",
+            "GABRIEL A F ALMEIDA (Cartao 7164)",
+            "COMPRAS (Cartao 7164)",
+            "16/05 99Food Top Cookie Moo Sao Paulo 21,30D",
+            "16/05 99APP 99App Sao Paulo 31,50D",
+            "Total COMPRAS 52,80D",
+            "Valor total desta fatura R$ 492,59 D",
+        ],
+    )
+
+    result = parse(path)
+    items = result.items
+
+    assert [item.description for item in items] == [
+        "REST CARAVELAS BERTIOGA",
+        "MP MERCADAKAMPAI OSASCO",
+        "FLORICULTURA TAQUARI SAO PAULO",
+        "99FOOD TOP COOKIE MOO SAO PAULO",
+        "99APP 99APP SAO PAULO",
+    ]
+    assert [item.card_last_digits for item in items] == ["6823", "6823", "6823", "7164", "7164"]
+    assert all(item.type == TransactionType.expense for item in items)
+    assert all(item.default_selected for item in items)
+    assert sum(item.amount for item in items) == Decimal("90.96")
+    assert result.statement_metadata.statement_total_amount == Decimal("492.59")
+    assert result.statement_metadata.statement_due_date.isoformat() == "2026-06-17"
+    assert result.statement_metadata.statement_reference_month.isoformat() == "2026-06-01"
+    assert result.statement_metadata.card_last_digits == "6823"
+    assert result.statement_metadata.card_institution == "Caixa"
+    assert result.statement_metadata.card_limit_amount == Decimal("950.00")
+    assert items[0].raw_row["parser"] == "caixa_card_statement_line_v1"
+    ignored_reasons = [line.excluded_reason for line in result.ignored_lines]
+    assert ExcludedReason.saldo_anterior in ignored_reasons
+    assert ExcludedReason.payment in ignored_reasons
+    assert ExcludedReason.total in ignored_reasons

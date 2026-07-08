@@ -418,3 +418,31 @@ def test_import_service_updates_existing_manual_account_from_bank_statement_meta
     assert accounts[0]["account_number"] == "29537-X"
     assert accounts[0]["balance"] == "233.26"
     assert items[0]["account_id"] == existing["id"]
+
+
+def test_import_service_attaches_existing_cards_from_detected_last_digits(tmp_path: Path) -> None:
+    repo = LocalJsonRepository(tmp_path)
+    _seed_card(repo)
+    items = [
+        {
+            "transaction_date": "2026-05-08",
+            "description": "REST CARAVELAS BERTIOGA",
+            "original_description": "REST CARAVELAS BERTIOGA",
+            "amount": "12.67",
+            "type": TransactionType.expense.value,
+            "card_last_digits": "1111",
+        },
+        {
+            "transaction_date": "2026-05-16",
+            "description": "99APP 99APP SAO PAULO",
+            "original_description": "99APP 99APP SAO PAULO",
+            "amount": "31.50",
+            "type": TransactionType.expense.value,
+            "card_last_digits": "2222",
+        },
+    ]
+
+    ImportService(repository=repo, upload_dir=tmp_path)._attach_existing_detected_cards(USER_ID, items)
+
+    assert items[0]["card_id"] == CARD_ID
+    assert "card_id" not in items[1]

@@ -58,6 +58,7 @@ class ImportService:
             for item in parsed_result.items
         ]
         self._attach_existing_detected_account(user_id, parsed_items)
+        self._attach_existing_detected_cards(user_id, parsed_items)
         records = self.repository.create_preview_items(
             import_id=batch["id"],
             source_file_id=import_file["id"],
@@ -186,6 +187,30 @@ class ImportService:
         for item in items:
             if item.get("account_agency") == agency and item.get("account_number") == account_number:
                 item["account_id"] = account["id"]
+
+    def _attach_existing_detected_cards(self, user_id: str, items: list[dict]) -> None:
+        items_by_digits: dict[str, list[dict]] = {}
+        for item in items:
+            digits = item.get("card_last_digits")
+            if not digits or item.get("card_id"):
+                continue
+            items_by_digits.setdefault(str(digits), []).append(item)
+
+        if not items_by_digits:
+            return
+
+        cards_by_digits: dict[str, dict] = {}
+        for card in self.repository.list_cards(user_id):
+            digits = card.get("last_digits")
+            if digits:
+                cards_by_digits[str(digits)] = card
+
+        for digits, detected_items in items_by_digits.items():
+            card = cards_by_digits.get(digits)
+            if not card:
+                continue
+            for item in detected_items:
+                item["card_id"] = card["id"]
 
     def confirm(self, user_id: str, import_id: str, payload: ConfirmImportRequest) -> ConfirmImportResponse:
         if not self.repository.get_import_batch(user_id, import_id):
