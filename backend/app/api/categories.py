@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 
 from app.api.deps import get_request_user_id, repository
 from app.core.errors import AppError
@@ -14,8 +14,22 @@ def list_categories(user_id: str = Depends(get_request_user_id)) -> list[Categor
 
 
 @router.post("", response_model=CategoryRead)
-def create_category(payload: CategoryCreate, user_id: str = Depends(get_request_user_id)) -> CategoryRead:
-    record = repository.create_category(user_id, payload.model_dump(mode="json"))
+def create_category(
+    payload: CategoryCreate,
+    response: Response,
+    user_id: str = Depends(get_request_user_id),
+) -> CategoryRead:
+    data = payload.model_dump(mode="json")
+    existing = repository.find_category_by_name(user_id, data["name"])
+    if existing and existing.get("status") == "active":
+        raise AppError("Essa categoria já existe.", status_code=409, code="category_already_exists")
+    if existing and not existing.get("is_system"):
+        record = repository.update_category(user_id, existing["id"], {**data, "status": "active"})
+        response.headers["X-Financy-Category-Action"] = "reactivated"
+        return CategoryRead(**record)
+
+    record = repository.create_category(user_id, data)
+    response.headers["X-Financy-Category-Action"] = "created"
     return CategoryRead(**record)
 
 

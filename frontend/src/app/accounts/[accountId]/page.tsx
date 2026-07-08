@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowRight, CreditCard, Landmark, ReceiptText, Wallet } from "lucide-react";
+import { NavigatingLink } from "@/components/navigating-link";
 import { StatementDeleteButton } from "@/components/statement-delete-button";
 import { serverGetAccountSummary, serverGetCategories } from "@/lib/server-api";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -204,10 +205,10 @@ export default async function AccountDetailPage({ params, searchParams }: Accoun
                     <p className="mt-2 text-xs text-stone-500">
                       {card.open_statement_count} faturas abertas · {formatCurrency(card.open_statement_total)}
                     </p>
-                    <Link href={`/cards/${card.id}`} className="mt-3 inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-mint">
+                    <NavigatingLink href={`/cards/${card.id}`} className="mt-3 inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-mint">
                       Ver cartão
                       <ArrowRight className="h-4 w-4" />
-                    </Link>
+                    </NavigatingLink>
                   </div>
                 </div>
               </article>

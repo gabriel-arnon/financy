@@ -165,6 +165,13 @@ class LocalJsonRepository:
                 return category
         return None
 
+    def find_category_by_name(self, user_id: str, name: str) -> dict[str, Any] | None:
+        normalized_name = name.strip().casefold()
+        for category in self._all_categories(user_id):
+            if category.get("name", "").strip().casefold() == normalized_name:
+                return category
+        return None
+
     def create_category(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         data = self._read()
         data.setdefault("categories", [])

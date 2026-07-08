@@ -128,8 +128,6 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
   const [confirmingDelete, setConfirmingDelete] = useState<Category | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(initialCategories.length === 0);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   async function refetchCategories() {
     const nextCategories = await getCategories();
@@ -142,13 +140,11 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
     }
     void Promise.resolve()
       .then(refetchCategories)
-      .catch((err) => setError(err instanceof Error ? err.message : "Falha ao carregar categorias."))
+      .catch((err) => toast.error(err instanceof Error ? err.message : "Falha ao carregar categorias."))
       .finally(() => setIsLoading(false));
-  }, [initialCategories.length]);
+  }, [initialCategories.length, toast]);
 
   function startCreate() {
-    setMessage(null);
-    setError(null);
     setEditingId(null);
     setConfirmingDelete(null);
     setForm({ ...emptyForm });
@@ -159,8 +155,6 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
     if (category.is_system) {
       return;
     }
-    setMessage(null);
-    setError(null);
     setShowCreateForm(false);
     setConfirmingDelete(null);
     setEditingId(category.id);
@@ -179,25 +173,21 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage(null);
-    setError(null);
     setIsSubmitting(true);
 
     try {
       if (editingId) {
         await updateCategory(editingId, form);
-        setMessage("Categoria atualizada.");
         toast.success("Categoria atualizada.");
       } else {
-        await createCategory(form);
-        setMessage("Categoria criada.");
-        toast.success("Categoria criada.");
+        const category = await createCategory(form);
+        const successMessage = category.action === "reactivated" ? "Categoria reativada." : "Categoria criada.";
+        toast.success(successMessage);
       }
       await refetchCategories();
       cancelEdit();
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Falha ao salvar categoria.";
-      setError(messageText);
       toast.error(messageText);
     } finally {
       setIsSubmitting(false);
@@ -209,8 +199,6 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
       return;
     }
 
-    setMessage(null);
-    setError(null);
     setIsSubmitting(true);
 
     try {
@@ -220,11 +208,9 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
         cancelEdit();
       }
       setConfirmingDelete(null);
-      setMessage("Categoria inativada.");
       toast.danger("Categoria inativada.");
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Falha ao inativar categoria.";
-      setError(messageText);
       toast.error(messageText);
     } finally {
       setIsSubmitting(false);
@@ -246,9 +232,6 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
       <p className="mt-4 text-sm leading-6 text-stone-600">
         Categorias disponíveis para organizar seus lançamentos financeiros.
       </p>
-
-      {message ? <p className="mt-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
-      {error ? <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
 
       {showCreateForm ? (
         <div className="mt-5">
@@ -339,8 +322,6 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
                               disabled={isSubmitting}
                               icon={<Trash2 className="h-4 w-4" />}
                               onClick={() => {
-                                setMessage(null);
-                                setError(null);
                                 setConfirmingDelete(category);
                               }}
                               title="Excluir"

@@ -72,6 +72,42 @@ def test_create_update_and_soft_delete_category() -> None:
     assert created["id"] not in ids
 
 
+def test_create_category_rejects_duplicate_active_name() -> None:
+    client = TestClient(app)
+    category_name = f"Categoria duplicada {uuid4()}"
+
+    first = client.post("/categories", json={"name": category_name, "type": "expense", "status": "active"})
+    duplicate = client.post("/categories", json={"name": f"  {category_name.upper()}  ", "type": "income", "status": "active"})
+
+    assert first.status_code == 200
+    assert duplicate.status_code == 409
+    assert duplicate.json()["error"]["code"] == "category_already_exists"
+    assert duplicate.json()["error"]["message"] == "Essa categoria já existe."
+    matches = [category for category in repository._all_categories(get_user_id()) if category["name"].strip().casefold() == category_name.casefold()]
+    assert len(matches) == 1
+
+
+def test_create_category_reactivates_inactive_name_without_duplicate() -> None:
+    client = TestClient(app)
+    category_name = f"Categoria reativada {uuid4()}"
+
+    create_response = client.post("/categories", json={"name": category_name, "type": "expense", "status": "active"})
+    created = create_response.json()
+    delete_response = client.delete(f"/categories/{created['id']}")
+    reactivate_response = client.post("/categories", json={"name": f" {category_name} ", "type": "income", "status": "active"})
+
+    assert create_response.status_code == 200
+    assert delete_response.status_code == 200
+    assert reactivate_response.status_code == 200
+    assert reactivate_response.headers["X-Financy-Category-Action"] == "reactivated"
+    reactivated = reactivate_response.json()
+    assert reactivated["id"] == created["id"]
+    assert reactivated["status"] == "active"
+    assert reactivated["type"] == "income"
+    matches = [category for category in repository._all_categories(get_user_id()) if category["name"].strip().casefold() == category_name.casefold()]
+    assert len(matches) == 1
+
+
 def test_system_category_cannot_be_updated_or_deleted() -> None:
     client = TestClient(app)
     categories = client.get("/categories").json()

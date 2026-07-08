@@ -49,6 +49,11 @@ async function accessToken(): Promise<string | null> {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const { data } = await requestWithResponse<T>(path, init);
+  return data;
+}
+
+async function requestWithResponse<T>(path: string, init?: RequestInit): Promise<{ data: T; response: Response }> {
   const token = await accessToken();
   const headers: HeadersInit = {
     ...(init?.body instanceof FormData ? init.headers : { "Content-Type": "application/json", ...init?.headers }),
@@ -74,7 +79,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
 
     if (response.ok) {
-      return response.json() as Promise<T>;
+      return { data: await response.json() as T, response };
     }
 
     if (retryable && RETRYABLE_STATUS_CODES.has(response.status) && attempt < attempts - 1) {
@@ -132,8 +137,10 @@ export async function getCategories(): Promise<Category[]> {
   return request<Category[]>("/categories");
 }
 
-export async function createCategory(payload: CategoryPayload): Promise<Category> {
-  return request<Category>("/categories", { method: "POST", body: JSON.stringify(payload) });
+export async function createCategory(payload: CategoryPayload): Promise<Category & { action?: "created" | "reactivated" }> {
+  const { data, response } = await requestWithResponse<Category>("/categories", { method: "POST", body: JSON.stringify(payload) });
+  const action = response.headers.get("X-Financy-Category-Action");
+  return { ...data, action: action === "reactivated" ? "reactivated" : "created" };
 }
 
 export async function updateCategory(categoryId: string, payload: Partial<CategoryPayload>): Promise<Category> {

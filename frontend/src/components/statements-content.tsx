@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { ArrowRight } from "lucide-react";
+import { NavigatingLink } from "@/components/navigating-link";
 import { StatementDeleteButton } from "@/components/statement-delete-button";
 import { StatementStatusButton } from "@/components/statement-status-button";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -151,9 +152,9 @@ export function StatementsContent({ statements, accounts, cards }: StatementsCon
                   <StatementDeleteButton compact statementId={statement.id} />
                 ) : null}
                 {card ? (
-                  <Link href={`/cards/${card.id}`} className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-2.5 py-2 text-sm font-medium text-mint">
+                  <NavigatingLink href={`/cards/${card.id}`} className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-2.5 py-2 text-sm font-medium text-mint">
                     Ver cartão
-                  </Link>
+                  </NavigatingLink>
                 ) : null}
                 <Link href={`/statements/${statement.id}`} className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-2.5 py-2 text-sm font-medium text-mint">
                   Detalhes
@@ -215,9 +216,9 @@ export function StatementsContent({ statements, accounts, cards }: StatementsCon
                           <StatementDeleteButton compact statementId={statement.id} />
                         ) : null}
                         {card ? (
-                          <Link href={`/cards/${card.id}`} className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-2.5 py-2 text-sm font-medium text-mint">
+                          <NavigatingLink href={`/cards/${card.id}`} className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-2.5 py-2 text-sm font-medium text-mint">
                             Ver cartão
-                          </Link>
+                          </NavigatingLink>
                         ) : null}
                         <Link href={`/statements/${statement.id}`} className="inline-flex min-h-9 min-w-0 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-2.5 py-2 text-sm font-medium text-mint">
                           Detalhes

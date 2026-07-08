@@ -148,6 +148,17 @@ class PostgresRepository:
             (category_id, user_id),
         )
 
+    def find_category_by_name(self, user_id: str, name: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            """
+            select * from categories
+            where lower(trim(name)) = lower(trim(%s)) and (user_id is null or user_id = %s)
+            order by is_system desc, status = 'active' desc, created_at desc
+            limit 1
+            """,
+            (name, user_id),
+        )
+
     def create_category(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         self._ensure_profile(user_id)
         return self._insert(

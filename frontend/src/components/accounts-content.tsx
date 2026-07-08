@@ -30,8 +30,6 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
   const [accountForm, setAccountForm] = useState<AccountPayload>(emptyAccount);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [showAccountForm, setShowAccountForm] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const activeAccounts = useMemo(() => accounts.filter(isActiveEntity), [accounts]);
   const activeCards = useMemo(() => cards.filter(isActiveEntity), [cards]);
@@ -62,21 +60,15 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
         setCards(nextCards);
       })
       .catch((err) => {
-        if (active && initialAccounts.length === 0) setError(err instanceof Error ? err.message : "Falha ao carregar contas bancárias.");
+        if (active && initialAccounts.length === 0) toast.error(err instanceof Error ? err.message : "Falha ao carregar contas bancárias.");
       });
     return () => {
       active = false;
     };
-  }, [initialAccounts.length]);
-
-  function resetMessages() {
-    setMessage(null);
-    setError(null);
-  }
+  }, [initialAccounts.length, toast]);
 
   async function handleAccountSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    resetMessages();
     try {
       const payload = {
         ...accountForm,
@@ -86,11 +78,9 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
       };
       if (editingAccountId) {
         await updateAccount(editingAccountId, payload);
-        setMessage("Conta atualizada.");
         toast.success("Conta atualizada.");
       } else {
         await createAccount(payload);
-        setMessage("Conta cadastrada.");
         toast.success("Conta cadastrada.");
       }
       setAccountForm(emptyAccount);
@@ -99,7 +89,6 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
       await loadData();
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Falha ao salvar conta.";
-      setError(messageText);
       toast.error(messageText);
     }
   }
@@ -118,15 +107,12 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
 
   async function inactivateAccount(accountId: string) {
     if (!window.confirm("Inativar esta conta? Ela não aparecerá mais nas listagens.")) return;
-    resetMessages();
     try {
       await deleteAccount(accountId);
-      setMessage("Conta inativada.");
       toast.danger("Conta inativada.");
       await loadData();
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Falha ao inativar conta.";
-      setError(messageText);
       toast.error(messageText);
     }
   }
@@ -138,7 +124,6 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
   }
 
   function startNewAccount() {
-    resetMessages();
     setEditingAccountId(null);
     setAccountForm(emptyAccount);
     setShowAccountForm(true);
@@ -156,9 +141,6 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
           Nova conta
         </UiButton>
       </div>
-
-      {message ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
-      {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="min-h-[92px] rounded-lg border border-stone-200 bg-white p-4 shadow-sm">

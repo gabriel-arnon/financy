@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ArrowRight, CreditCard, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { NavigatingLink } from "@/components/navigating-link";
 import { IconButton, UiButton } from "@/components/ui-button";
 import { useToast } from "@/components/toast-provider";
 import { createCard, deleteCard, getAccounts, getCards, getStatements, updateCard } from "@/lib/api";
@@ -49,8 +50,6 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
   const [cardForm, setCardForm] = useState<CardPayload>(emptyCard);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
   const [showCardForm, setShowCardForm] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
   const activeAccounts = useMemo(() => accounts.filter(isActiveEntity), [accounts]);
   const activeCards = useMemo(() => cards.filter(isActiveEntity), [cards]);
@@ -95,21 +94,15 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
         setStatements(nextStatements);
       })
       .catch((err) => {
-        if (active && initialCards.length === 0) setError(err instanceof Error ? err.message : "Falha ao carregar cartões.");
+        if (active && initialCards.length === 0) toast.error(err instanceof Error ? err.message : "Falha ao carregar cartões.");
       });
     return () => {
       active = false;
     };
-  }, [initialCards.length]);
-
-  function resetMessages() {
-    setMessage(null);
-    setError(null);
-  }
+  }, [initialCards.length, toast]);
 
   async function handleCardSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    resetMessages();
     try {
       const payload: CardPayload = {
         ...cardForm,
@@ -123,11 +116,9 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
       };
       if (editingCardId) {
         await updateCard(editingCardId, payload);
-        setMessage("Cartão atualizado.");
         toast.success("Cartão atualizado.");
       } else {
         await createCard(payload);
-        setMessage("Cartão cadastrado.");
         toast.success("Cartão cadastrado.");
       }
       setCardForm(emptyCard);
@@ -136,7 +127,6 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
       await loadData();
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Falha ao salvar cartão.";
-      setError(messageText);
       toast.error(messageText);
     }
   }
@@ -159,15 +149,12 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
 
   async function inactivateCard(cardId: string) {
     if (!window.confirm("Inativar este cartão? Ele não aparecerá mais nas listagens.")) return;
-    resetMessages();
     try {
       await deleteCard(cardId);
-      setMessage("Cartão inativado.");
       toast.danger("Cartão inativado.");
       await loadData();
     } catch (err) {
       const messageText = err instanceof Error ? err.message : "Falha ao inativar cartão.";
-      setError(messageText);
       toast.error(messageText);
     }
   }
@@ -179,7 +166,6 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
   }
 
   function startNewCard() {
-    resetMessages();
     setEditingCardId(null);
     setCardForm(emptyCard);
     setShowCardForm(true);
@@ -197,9 +183,6 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
           Novo cartão
         </UiButton>
       </div>
-
-      {message ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p> : null}
-      {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="min-h-[92px] rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
@@ -353,10 +336,10 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
                     <td className="whitespace-nowrap px-3 py-2.5 text-stone-600">{usagePercent === null ? "Indisponível" : `${usagePercent.toFixed(2)}%`}</td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1.5">
-                        <Link href={`/cards/${card.id}`} className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-stone-300 bg-white px-2.5 text-xs font-medium text-ink shadow-sm hover:bg-stone-50">
+                        <NavigatingLink href={`/cards/${card.id}`} className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-stone-300 bg-white px-2.5 text-xs font-medium text-ink shadow-sm hover:bg-stone-50">
                           Ver cartão
                           <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-                        </Link>
+                        </NavigatingLink>
                         <IconButton aria-label="Editar cartão" icon={<Pencil className="h-4 w-4" />} onClick={() => editCard(card)} title="Editar" variant="secondary" />
                         <IconButton aria-label="Inativar cartão" icon={<Trash2 className="h-4 w-4" />} onClick={() => inactivateCard(card.id)} title="Excluir" variant="danger" />
                       </div>

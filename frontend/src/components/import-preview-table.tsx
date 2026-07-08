@@ -6,6 +6,7 @@ import { Check, Loader2 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { UiButton } from "@/components/ui-button";
 import { confirmImport } from "@/lib/api";
+import { formatCurrency } from "@/lib/format";
 import { formatAccountName, formatCardWithAccount, translateTransactionType } from "@/lib/labels";
 import type { Account, Card, Category, ImportPreviewItem, TransactionType } from "@/lib/types";
 
@@ -125,7 +126,7 @@ export function ImportPreviewTable({ importId, items, categories, accounts, card
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-stone-600">
-          {selectedCount} de {rows.length} selecionadas · Total selecionado R$ {selectedTotal.toFixed(2)}
+          {selectedCount} de {rows.length} selecionadas · Total selecionado {formatCurrency(selectedTotal)}
         </p>
         <div className="flex flex-wrap gap-2">
           <UiButton onClick={selectAllConfirmable} size="sm" variant="secondary">
