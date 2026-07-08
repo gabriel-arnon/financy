@@ -393,6 +393,57 @@ Resultado esperado:
 - Confirmacao da importacao cria transacoes vinculadas a fatura/cartao, afetando dashboard e utilizado do cartao.
 - O app nao transforma boleto, parcelamento, encargos ou totais duplicados em transacoes indevidas.
 
+### [x] P5.4 - Adicionar suporte aos padroes de fatura Inter e Mercado Pago
+
+Contexto:
+
+- Foram analisadas faturas PDF do Banco Inter e do Mercado Pago.
+- A fatura Inter possui resumo, vencimento, valor total, limite, pagamento minimo, detalhes por cartao e boleto.
+- No Inter, uma mesma fatura pode trazer mais de um cartao, por exemplo `2306****8928` e `2306****1140`, com totais separados por cartao.
+- A fatura Mercado Pago possui resumo, vencimento, total a pagar, limite, pagamento minimo, pagamentos/creditos e detalhes por cartao Visa.
+- No Mercado Pago, uma mesma fatura pode trazer mais de um cartao, por exemplo `************2812` e `************2008`, com compras parceladas e totais separados.
+- Hoje esses padroes devem ser reconhecidos na importacao para gerar preview/transacoes confiaveis.
+
+Objetivo:
+
+- Adicionar suporte explicito aos layouts de fatura Inter e Mercado Pago no parser/importador, preservando upload, preview, confirmacao, classificacao automatica e vinculo com cartao/fatura.
+
+Checklist:
+
+- [x] Criar ou ajustar detector de layout para identificar faturas Inter por textos como `inter`, `Resumo da fatura`, `Despesas da fatura`, `CARTAO` e `Valor total`.
+- [x] Criar ou ajustar detector de layout para identificar faturas Mercado Pago por textos como `mercado pago`, `Essa e sua fatura`, `Detalhes de consumo`, `Cartao Visa` e `Total a pagar`.
+- [x] Extrair metadados da fatura Inter: vencimento, valor total, limite total, pagamento minimo, data de corte/proxima fatura e valores de limite utilizado/disponivel quando disponiveis.
+- [x] Extrair metadados da fatura Mercado Pago: emissao, vencimento, total a pagar, limite total, pagamento minimo, fechamento, proximo fechamento, limite utilizado/disponivel e lancamentos futuros quando disponiveis.
+- [x] Separar blocos por final de cartao em ambos os layouts.
+- [x] Extrair transacoes Inter por linha com data, descricao, parcela quando houver, valor e tipo despesa/credito.
+- [x] Extrair transacoes Mercado Pago por linha com data, descricao, parcela quando houver, valor e tipo despesa/credito.
+- [x] Ignorar pagamentos de fatura, boleto, resumos, totais, encargos, opcoes de parcelamento e textos informativos que nao devem virar compra.
+- [x] Tratar pagamentos/creditos como credito/estorno e nao selecionar por padrao quando fizer sentido.
+- [x] Vincular automaticamente ao cartao cadastrado quando `card_last_digits` bater com o final do cartao.
+- [x] Se houver mais de um cartao na mesma fatura, preservar separacao por final de cartao no preview.
+- [x] Criar fixtures anonimas baseadas nos padroes Inter e Mercado Pago.
+- [x] Adicionar testes de parser para Inter e Mercado Pago.
+- [x] Adicionar testes de import service garantindo auto-vinculo por final de cartao.
+- [x] Validar que CAIXA e demais PDFs ja suportados continuam funcionando.
+
+Feito:
+
+- Criados detectores dedicados para faturas Inter e Mercado Pago no parser de PDF.
+- Parser Inter extrai vencimento, valor total, limite total, referencia, instituicao e blocos por final de cartao.
+- Parser Mercado Pago extrai vencimento, valor total, limite total, referencia, instituicao, bandeira Visa e blocos por final de cartao.
+- Compras parceladas em formato `Parcela X de Y` sao normalizadas com `installment_current` e `installment_total`.
+- Pagamentos de fatura, linhas de total, resumos, boletos, encargos, parcelamento e textos informativos sao ignorados para nao gerar compras duplicadas.
+- Confirmado com PDFs reais analisados:
+  - Inter: 7 compras extraidas, finais 8928 e 1140 preservados, total R$ 637,14.
+  - Mercado Pago: 4 compras extraidas, finais 2812 e 2008 preservados, total R$ 351,96.
+- Adicionados testes de parser para os dois padroes e teste de auto-vinculo no import service.
+
+Resultado esperado:
+
+- Upload de faturas Inter e Mercado Pago gera preview correto por cartao.
+- Confirmacao da importacao cria transacoes vinculadas a fatura/cartao quando o cartao existir.
+- Pagamentos, boleto, parcelamento, encargos e totais duplicados nao viram transacoes indevidas.
+
 ## Validacoes obrigatorias
 
 ### [x] VF1 - Backend

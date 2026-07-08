@@ -210,3 +210,113 @@ def test_pdf_parser_extracts_caixa_card_statement(tmp_path: Path) -> None:
     assert ExcludedReason.saldo_anterior in ignored_reasons
     assert ExcludedReason.payment in ignored_reasons
     assert ExcludedReason.total in ignored_reasons
+
+
+def test_pdf_parser_extracts_inter_card_statement(tmp_path: Path) -> None:
+    path = tmp_path / "inter-fatura-anonimizada.pdf"
+    _make_pdf(
+        path,
+        [
+            "Banco Inter",
+            "Resumo da fatura",
+            "Limite de credito total Total da sua fatura",
+            "R$ 3.500,00",
+            "R$ 637,14",
+            "2306****8928 12/06/2026 R$ 637,14",
+            "Despesas da fatura",
+            "CARTAO 2306****8928",
+            "Data Movimentacao Beneficiario Valor",
+            "24 de dez. 2025 HNA*OBOTICARIO (Parcela 06 de 06) - R$ 82,17",
+            "08 de mai. 2026 PAGAMENTO ON LINE - + R$ 735,61",
+            "16 de mai. 2026 MP *BRUNOJOSESILV - R$ 50,00",
+            "Total CARTAO 2306****8928 R$ 132,17",
+            "CARTAO 2306****1140",
+            "21 de mar. 2026 ZP *OLX GABRIEL RIBEIR (Parcela 03 de 03) - R$ 126,16",
+            "10 de mai. 2026 SEGURO CARTAO CTP - R$ 5,90",
+            "14 de mai. 2026 ADEMICON IMOVEIS - R$ 348,06",
+            "18 de mai. 2026 IFD*IFOOD CLUB - R$ 4,95",
+            "18 de mai. 2026 Google Crunchyroll An - R$ 19,90",
+            "Total CARTAO 2306****1140 R$ 504,97",
+        ],
+    )
+
+    result = parse(path)
+    items = result.items
+
+    assert [item.description for item in items] == [
+        "HNA*OBOTICARIO",
+        "MP *BRUNOJOSESILV",
+        "ZP *OLX GABRIEL RIBEIR",
+        "SEGURO CARTAO CTP",
+        "ADEMICON IMOVEIS",
+        "IFD*IFOOD CLUB",
+        "GOOGLE CRUNCHYROLL AN",
+    ]
+    assert [item.card_last_digits for item in items] == ["8928", "8928", "1140", "1140", "1140", "1140", "1140"]
+    assert all(item.type == TransactionType.expense for item in items)
+    assert all(item.default_selected for item in items)
+    assert sum(item.amount for item in items) == Decimal("637.14")
+    assert items[0].installment_current == 6
+    assert items[0].installment_total == 6
+    assert result.statement_metadata.statement_total_amount == Decimal("637.14")
+    assert result.statement_metadata.statement_due_date.isoformat() == "2026-06-12"
+    assert result.statement_metadata.statement_reference_month.isoformat() == "2026-06-01"
+    assert result.statement_metadata.card_limit_amount == Decimal("3500.00")
+    assert result.statement_metadata.card_institution == "Banco Inter"
+    assert items[0].raw_row["parser"] == "inter_card_statement_line_v1"
+    ignored_reasons = [line.excluded_reason for line in result.ignored_lines]
+    assert ExcludedReason.payment in ignored_reasons
+    assert ExcludedReason.total in ignored_reasons
+
+
+def test_pdf_parser_extracts_mercado_pago_card_statement(tmp_path: Path) -> None:
+    path = tmp_path / "mercado-pago-fatura-anonimizada.pdf"
+    _make_pdf(
+        path,
+        [
+            "Mercado Pago",
+            "Emitida em: 06/07/2026",
+            "Essa e sua fatura de julho",
+            "Total a pagar Vence em Limite total Saque total",
+            "R$ 351,96 10/07/2026 R$ 2.400,00 R$ 50,00",
+            "Detalhes de consumo",
+            "Movimentacoes na fatura",
+            "Data Movimentacoes Valor em R$",
+            "08/06 Pagamento da fatura de junho/2026 R$ 554,80",
+            "Cartao Visa [************2812]",
+            "Data Movimentacoes Valor em R$",
+            "13/04 MERCADOLIVRE*MERCADOLIVRE Parcela 3 de 5 R$ 11,31",
+            "13/05 PORTO SEGURO CIA SEG G Parcela 2 de 10 R$ 120,65",
+            "Total R$ 131,96",
+            "Cartao Visa [************2008]",
+            "14/06 REDE CONFIANCA R$ 200,00",
+            "04/07 AUTO POSTO BETMAR R$ 20,00",
+            "Total R$ 220,00",
+        ],
+    )
+
+    result = parse(path)
+    items = result.items
+
+    assert [item.description for item in items] == [
+        "MERCADOLIVRE*MERCADOLIVRE",
+        "PORTO SEGURO CIA SEG G",
+        "REDE CONFIANCA",
+        "AUTO POSTO BETMAR",
+    ]
+    assert [item.card_last_digits for item in items] == ["2812", "2812", "2008", "2008"]
+    assert all(item.type == TransactionType.expense for item in items)
+    assert all(item.default_selected for item in items)
+    assert sum(item.amount for item in items) == Decimal("351.96")
+    assert items[0].installment_current == 3
+    assert items[0].installment_total == 5
+    assert result.statement_metadata.statement_total_amount == Decimal("351.96")
+    assert result.statement_metadata.statement_due_date.isoformat() == "2026-07-10"
+    assert result.statement_metadata.statement_reference_month.isoformat() == "2026-07-01"
+    assert result.statement_metadata.card_limit_amount == Decimal("2400.00")
+    assert result.statement_metadata.card_institution == "Mercado Pago"
+    assert result.statement_metadata.card_brand == "Visa"
+    assert items[0].raw_row["parser"] == "mercado_pago_card_statement_line_v1"
+    ignored_reasons = [line.excluded_reason for line in result.ignored_lines]
+    assert ExcludedReason.payment in ignored_reasons
+    assert ExcludedReason.total in ignored_reasons

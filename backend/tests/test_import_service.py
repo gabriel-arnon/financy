@@ -446,3 +446,33 @@ def test_import_service_attaches_existing_cards_from_detected_last_digits(tmp_pa
 
     assert items[0]["card_id"] == CARD_ID
     assert "card_id" not in items[1]
+
+
+def test_import_service_attaches_existing_cards_from_inter_and_mercado_pago_items(tmp_path: Path) -> None:
+    repo = LocalJsonRepository(tmp_path)
+    _seed_card(repo)
+    items = [
+        {
+            "transaction_date": "2026-06-14",
+            "description": "REDE CONFIANCA",
+            "original_description": "REDE CONFIANCA",
+            "amount": "200.00",
+            "type": TransactionType.expense.value,
+            "card_last_digits": "1111",
+            "raw_row": {"parser": "mercado_pago_card_statement_line_v1"},
+        },
+        {
+            "transaction_date": "2026-05-16",
+            "description": "MP *BRUNOJOSESILV",
+            "original_description": "MP *BRUNOJOSESILV",
+            "amount": "50.00",
+            "type": TransactionType.expense.value,
+            "card_last_digits": "1111",
+            "raw_row": {"parser": "inter_card_statement_line_v1"},
+        },
+    ]
+
+    ImportService(repository=repo, upload_dir=tmp_path)._attach_existing_detected_cards(USER_ID, items)
+
+    assert items[0]["card_id"] == CARD_ID
+    assert items[1]["card_id"] == CARD_ID

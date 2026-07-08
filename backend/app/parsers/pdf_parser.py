@@ -124,6 +124,34 @@ MONTHS = {
     "dezembro": 12,
 }
 
+SHORT_MONTHS = {
+    "jan": 1,
+    "fev": 2,
+    "mar": 3,
+    "abr": 4,
+    "mai": 5,
+    "jun": 6,
+    "jul": 7,
+    "ago": 8,
+    "set": 9,
+    "out": 10,
+    "nov": 11,
+    "dez": 12,
+}
+
+INTER_CARD_BLOCK_RE = re.compile(r"^CART[AÃ]O\s+\d{4}\*+(?P<digits>\d{4})", re.IGNORECASE)
+INTER_CARD_TRANSACTION_RE = re.compile(
+    r"^(?P<day>\d{1,2})\s+de\s+(?P<month>[A-Za-zÃ§Ã‡]{3,})\.?\s+(?P<year>\d{4})\s+"
+    r"(?P<body>.+?)\s+-\s+(?P<sign>\+)?\s*R\$\s*(?P<amount>\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})$",
+    re.IGNORECASE,
+)
+MERCADO_PAGO_CARD_BLOCK_RE = re.compile(r"Cart[aÃ]o\s+(?P<brand>[A-Za-z]+)\s+\[\*+(?P<digits>\d{4})\]", re.IGNORECASE)
+MERCADO_PAGO_TRANSACTION_RE = re.compile(
+    r"^(?P<date>\d{2}/\d{2})\s+(?P<body>.+?)\s+R\$\s*(?P<amount>\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})$",
+    re.IGNORECASE,
+)
+MERCADO_PAGO_INSTALLMENT_RE = re.compile(r"\s+Parcela\s+(?P<current>\d{1,2})\s+de\s+(?P<total>\d{1,2})\s*$", re.IGNORECASE)
+
 
 def _clean(line: str) -> str:
     return re.sub(r"\s+", " ", line).strip()
@@ -205,6 +233,16 @@ def _is_caixa_card_statement(text: str) -> bool:
         or "CENTRAL DE ATENDIMENTO CARTOES CAIXA" in normalized
         or ("VALOR TOTAL DESTA FATURA" in normalized and "CARTAO" in normalized and "CAIXA" in normalized)
     )
+
+
+def _is_inter_card_statement(text: str) -> bool:
+    normalized = normalize_description(text)
+    return "DESPESAS DA FATURA" in normalized and "CARTAO" in normalized and (" INTER" in f" {normalized}" or "BANCO INTER" in normalized)
+
+
+def _is_mercado_pago_card_statement(text: str) -> bool:
+    normalized = normalize_description(text)
+    return "MERCADO PAGO" in normalized and "DETALHES DE CONSUMO" in normalized and "CARTAO VISA" in normalized
 
 
 def _bank_statement_metadata(text: str) -> StatementMetadata:
@@ -491,6 +529,16 @@ def _installment(description: str) -> tuple[int | None, int | None]:
     return detect_installment(description)
 
 
+def _extract_invoice_installment(description: str) -> tuple[str, int | None, int | None]:
+    match = re.search(r"\(?\bParcela\s+(?P<current>\d{1,2})\s+de\s+(?P<total>\d{1,2})\)?", description, re.IGNORECASE)
+    if match:
+        cleaned = f"{description[:match.start()]} {description[match.end():]}".strip()
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" -")
+        return cleaned, int(match.group("current")), int(match.group("total"))
+    installment_current, installment_total = _installment(description)
+    return description, installment_current, installment_total
+
+
 def _transaction_type(description: str) -> tuple[TransactionType, ExcludedReason | None]:
     normalized = normalize_description(description)
     if re.search(r"\b(PGTO|PAGAMENTO)\b", normalized):
@@ -649,12 +697,330 @@ def _parse_caixa_card_statement(text: str) -> ParserResult:
     return ParserResult(items=previews, ignored_lines=ignored_lines, statement_metadata=metadata)
 
 
+def _inter_statement_metadata(text: str, fallback_year: int) -> StatementMetadata:
+    metadata = _statement_metadata(text, fallback_year)
+    metadata.card_institution = "Banco Inter"
+    metadata.card_name = "Inter"
+    metadata.card_brand = None
+
+    header_match = re.search(
+        r"(?P<digits>\d{4}\*+\d{4})\s+(?P<due>\d{2}/\d{2}/\d{4})\s+R\$\s*(?P<total>\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})",
+        text,
+        re.IGNORECASE,
+    )
+    if header_match:
+        metadata.card_last_digits = header_match.group("digits")[-4:]
+        metadata.statement_due_date = _parse_date(header_match.group("due"), fallback_year)
+        metadata.statement_total_amount = parse_brazilian_money(header_match.group("total"))
+
+    limit_total_match = re.search(
+        r"Limite de cr.dito total.*?R\$\s*(?P<limit>\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if limit_total_match:
+        metadata.card_limit_amount = parse_brazilian_money(limit_total_match.group("limit"))
+
+    if metadata.statement_reference_month is None and metadata.statement_due_date:
+        metadata.statement_reference_month = date(metadata.statement_due_date.year, metadata.statement_due_date.month, 1)
+
+    return metadata
+
+
+def _is_inter_ignored_line(line: str) -> ExcludedReason | None:
+    normalized = normalize_description(line)
+    if not normalized:
+        return ExcludedReason.informativo
+    if normalized.startswith("TOTAL CARTAO") or normalized.startswith("TOTAL A PAGAR") or normalized.startswith("FATURA ATUAL"):
+        return ExcludedReason.total
+    if "PAGAMENTO ON LINE" in normalized or "PAGAMENTO DA FATURA" in normalized:
+        return ExcludedReason.payment
+    if any(
+        keyword in normalized
+        for keyword in (
+            "RESUMO DA FATURA",
+            "SUA FATURA CHEGOU",
+            "LIMITE DE CREDITO",
+            "DATA DE VENCIMENTO",
+            "PAGAMENTO MINIMO",
+            "ENCARGOS",
+            "IOF",
+            "ROTATIVO",
+            "PAGAMENTO VIA",
+            "BOLETO",
+            "PIX",
+            "PARCELAMENTO",
+            "DESCRITIVO DETALHADO",
+            "PROXIMA FATURA",
+            "FALE COM A GENTE",
+            "LOCAL DE PAGAMENTO",
+            "BENEFICIARIO",
+            "PAGADOR",
+            "AUTENTICACAO MECANICA",
+        )
+    ):
+        return ExcludedReason.informativo
+    return None
+
+
+def _parse_inter_card_statement(text: str) -> ParserResult:
+    fallback_year = _statement_year(text)
+    metadata = _inter_statement_metadata(text, fallback_year)
+    previews: list[NormalizedTransactionPreview] = []
+    ignored_lines: list[IgnoredPdfLine] = []
+    current_card_digits = metadata.card_last_digits
+    seen_transactions: set[tuple[str, str, str, str | None]] = set()
+
+    for raw_line in text.splitlines():
+        line = _clean(raw_line)
+        if not line:
+            continue
+
+        card_match = INTER_CARD_BLOCK_RE.search(line)
+        if card_match:
+            current_card_digits = card_match.group("digits")
+            continue
+
+        match = INTER_CARD_TRANSACTION_RE.match(line)
+        if not match:
+            ignored_reason = _is_inter_ignored_line(line)
+            if ignored_reason:
+                ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ignored_reason))
+            elif DATE_AMOUNT_RE.match(line):
+                ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ExcludedReason.low_confidence))
+            continue
+
+        body = match.group("body").strip()
+        normalized_body = normalize_description(body)
+        sign = match.group("sign")
+        if sign or "PAGAMENTO" in normalized_body:
+            ignored_lines.append(
+                IgnoredPdfLine(raw_text=line, excluded_reason=ExcludedReason.payment if "PAGAMENTO" in normalized_body else ExcludedReason.refund)
+            )
+            continue
+
+        description, installment_current, installment_total = _extract_invoice_installment(body)
+        description = normalize_description(description)
+        if not description:
+            ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ExcludedReason.low_confidence))
+            continue
+
+        amount = abs(parse_brazilian_money(match.group("amount")))
+        tx_date = date(int(match.group("year")), SHORT_MONTHS.get(normalize_description(match.group("month")).lower()[:3], 1), int(match.group("day")))
+        signature = (tx_date.isoformat(), description, str(amount), current_card_digits)
+        if signature in seen_transactions:
+            ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ExcludedReason.duplicate))
+            continue
+        seen_transactions.add(signature)
+
+        item_metadata = metadata.model_copy()
+        if current_card_digits:
+            item_metadata.card_last_digits = current_card_digits
+
+        previews.append(
+            NormalizedTransactionPreview(
+                transaction_date=tx_date,
+                description=description,
+                original_description=body,
+                amount=amount,
+                type=TransactionType.expense,
+                installment_current=installment_current,
+                installment_total=installment_total,
+                raw_text=line,
+                raw_row={
+                    "line": line,
+                    "card_last_digits": current_card_digits,
+                    "parser": "inter_card_statement_line_v1",
+                },
+                parser_confidence=0.9 if current_card_digits else 0.82,
+                needs_review=False,
+                default_selected=True,
+                statement_total_amount=item_metadata.statement_total_amount,
+                statement_due_date=item_metadata.statement_due_date,
+                statement_reference_month=item_metadata.statement_reference_month,
+                card_last_digits=item_metadata.card_last_digits,
+                card_name=item_metadata.card_name,
+                card_brand=item_metadata.card_brand,
+                card_institution=item_metadata.card_institution,
+                card_limit_amount=item_metadata.card_limit_amount,
+            )
+        )
+
+    return ParserResult(items=previews, ignored_lines=ignored_lines, statement_metadata=metadata)
+
+
+def _mercado_pago_statement_metadata(text: str, fallback_year: int) -> StatementMetadata:
+    metadata = _statement_metadata(text, fallback_year)
+    metadata.card_institution = "Mercado Pago"
+    metadata.card_name = "Mercado Pago Visa"
+    metadata.card_brand = "Visa"
+
+    summary_match = re.search(
+        r"Total a pagar\s+Vence em\s+Limite total.*?R\$\s*(?P<total>\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})\s+"
+        r"(?P<due>\d{2}/\d{2}/\d{4})\s+R\$\s*(?P<limit>\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if summary_match:
+        metadata.statement_total_amount = parse_brazilian_money(summary_match.group("total"))
+        metadata.statement_due_date = _parse_date(summary_match.group("due"), fallback_year)
+        metadata.card_limit_amount = parse_brazilian_money(summary_match.group("limit"))
+
+    due_match = re.search(r"Vencimento:\s*(?P<due>\d{2}/\d{2}/\d{4})", text, re.IGNORECASE)
+    if due_match:
+        metadata.statement_due_date = _parse_date(due_match.group("due"), fallback_year)
+
+    first_card_match = MERCADO_PAGO_CARD_BLOCK_RE.search(text)
+    if first_card_match:
+        metadata.card_last_digits = first_card_match.group("digits")
+        brand = first_card_match.group("brand").upper()
+        metadata.card_brand = CARD_BRANDS.get(brand, first_card_match.group("brand").title())
+        metadata.card_name = f"Mercado Pago {metadata.card_brand}"
+
+    if metadata.statement_reference_month is None and metadata.statement_due_date:
+        metadata.statement_reference_month = date(metadata.statement_due_date.year, metadata.statement_due_date.month, 1)
+
+    return metadata
+
+
+def _is_mercado_pago_ignored_line(line: str) -> ExcludedReason | None:
+    normalized = normalize_description(line)
+    if not normalized:
+        return ExcludedReason.informativo
+    if normalized.startswith("TOTAL"):
+        return ExcludedReason.total
+    if "PAGAMENTO DA FATURA" in normalized:
+        return ExcludedReason.payment
+    if any(
+        keyword in normalized
+        for keyword in (
+            "TOTAL A PAGAR",
+            "ESSA E SUA FATURA",
+            "PARCELAMENTO DE FATURA",
+            "PAGAMENTO MINIMO",
+            "JUROS",
+            "IOF",
+            "CET",
+            "INFORMACOES COMPLEMENTARES",
+            "RESUMO DA FATURA",
+            "DETALHES DE CONSUMO",
+            "MOVIMENTACOES NA FATURA",
+            "SEU CARTAO DE CREDITO",
+            "DATAS IMPORTANTES",
+            "LIMITE DO CARTAO",
+            "SAQUES COM SEU CARTAO",
+            "LANCAMENTOS FUTUROS",
+            "OPCOES DE PAGAMENTO",
+            "COMPRAS INTERNACIONAIS",
+            "FALE COM A GENTE",
+            "DECLARACAO ANUAL",
+        )
+    ):
+        return ExcludedReason.informativo
+    return None
+
+
+def _parse_mercado_pago_card_statement(text: str) -> ParserResult:
+    fallback_year = _statement_year(text)
+    metadata = _mercado_pago_statement_metadata(text, fallback_year)
+    previews: list[NormalizedTransactionPreview] = []
+    ignored_lines: list[IgnoredPdfLine] = []
+    current_card_digits = metadata.card_last_digits
+    current_card_brand = metadata.card_brand
+    in_card_block = False
+    seen_transactions: set[tuple[str, str, str, str | None]] = set()
+
+    for raw_line in text.splitlines():
+        line = _clean(raw_line)
+        if not line:
+            continue
+
+        card_match = MERCADO_PAGO_CARD_BLOCK_RE.search(line)
+        if card_match:
+            current_card_digits = card_match.group("digits")
+            brand_key = normalize_description(card_match.group("brand"))
+            current_card_brand = CARD_BRANDS.get(brand_key, card_match.group("brand").title())
+            in_card_block = True
+            continue
+
+        match = MERCADO_PAGO_TRANSACTION_RE.match(line)
+        if not match:
+            ignored_reason = _is_mercado_pago_ignored_line(line)
+            if ignored_reason:
+                ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ignored_reason))
+            elif DATE_AMOUNT_RE.match(line):
+                ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ExcludedReason.low_confidence))
+            continue
+
+        body = match.group("body").strip()
+        normalized_body = normalize_description(body)
+        if not in_card_block or "PAGAMENTO DA FATURA" in normalized_body:
+            ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ExcludedReason.payment))
+            continue
+
+        description, installment_current, installment_total = _extract_invoice_installment(body)
+        description = normalize_description(description)
+        if not description:
+            ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ExcludedReason.low_confidence))
+            continue
+
+        amount = abs(parse_brazilian_money(match.group("amount")))
+        tx_date = _parse_date(match.group("date"), fallback_year)
+        signature = (tx_date.isoformat(), description, str(amount), current_card_digits)
+        if signature in seen_transactions:
+            ignored_lines.append(IgnoredPdfLine(raw_text=line, excluded_reason=ExcludedReason.duplicate))
+            continue
+        seen_transactions.add(signature)
+
+        item_metadata = metadata.model_copy()
+        if current_card_digits:
+            item_metadata.card_last_digits = current_card_digits
+        if current_card_brand:
+            item_metadata.card_brand = current_card_brand
+            item_metadata.card_name = f"Mercado Pago {current_card_brand}"
+
+        previews.append(
+            NormalizedTransactionPreview(
+                transaction_date=tx_date,
+                description=description,
+                original_description=body,
+                amount=amount,
+                type=TransactionType.expense,
+                installment_current=installment_current,
+                installment_total=installment_total,
+                raw_text=line,
+                raw_row={
+                    "line": line,
+                    "card_last_digits": current_card_digits,
+                    "parser": "mercado_pago_card_statement_line_v1",
+                },
+                parser_confidence=0.9 if current_card_digits else 0.82,
+                needs_review=False,
+                default_selected=True,
+                statement_total_amount=item_metadata.statement_total_amount,
+                statement_due_date=item_metadata.statement_due_date,
+                statement_reference_month=item_metadata.statement_reference_month,
+                card_last_digits=item_metadata.card_last_digits,
+                card_name=item_metadata.card_name,
+                card_brand=item_metadata.card_brand,
+                card_institution=item_metadata.card_institution,
+                card_limit_amount=item_metadata.card_limit_amount,
+            )
+        )
+
+    return ParserResult(items=previews, ignored_lines=ignored_lines, statement_metadata=metadata)
+
+
 def parse(path: Path, mime_type: str | None = None) -> ParserResult:
     text = _extract_text(path)
     if _is_bank_statement(text):
         return _parse_bank_statement(text)
     if _is_caixa_card_statement(text):
         return _parse_caixa_card_statement(text)
+    if _is_inter_card_statement(text):
+        return _parse_inter_card_statement(text)
+    if _is_mercado_pago_card_statement(text):
+        return _parse_mercado_pago_card_statement(text)
 
     fallback_year = _statement_year(text)
     metadata = _statement_metadata(text, fallback_year)
