@@ -110,6 +110,7 @@ export interface ImportPreviewItem {
   installment_current: number | null;
   installment_total: number | null;
   raw_text: string | null;
+  raw_row: Record<string, unknown> | null;
   parser_confidence: number;
   needs_review: boolean;
   duplicate_candidate: boolean;
@@ -132,10 +133,27 @@ export interface ImportPreviewItem {
   status: PreviewStatus;
 }
 
+export interface ImportAnalysisSummary {
+  item_count: number;
+  selected_count: number;
+  selected_total: string;
+  statement_total_amount: string | null;
+  difference: string | null;
+  needs_review_count: number;
+  duplicate_count: number;
+  ai_item_count: number;
+  ai_enriched_count: number;
+  card_last_digits: string[];
+  consistency_status: "ok" | "warning" | "unknown" | string;
+  consistency_message: string | null;
+  ai_summary: string | null;
+}
+
 export interface ImportPreviewResponse {
   import_id: string;
   items: ImportPreviewItem[];
   categories: Category[];
+  analysis_summary: ImportAnalysisSummary | null;
 }
 
 export interface UploadImportResponse {

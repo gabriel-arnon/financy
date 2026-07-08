@@ -1,6 +1,8 @@
 from datetime import datetime
 from decimal import Decimal
 
+from typing import Any
+
 from pydantic import BaseModel
 
 from app.models.enums import ExcludedReason, PreviewStatus, TransactionType
@@ -36,6 +38,7 @@ class ImportPreviewItemRead(BaseModel):
     installment_current: int | None = None
     installment_total: int | None = None
     raw_text: str | None = None
+    raw_row: dict[str, Any] | None = None
     parser_confidence: float = 0.75
     needs_review: bool = False
     duplicate_candidate: bool = False
@@ -58,10 +61,27 @@ class ImportPreviewItemRead(BaseModel):
     status: PreviewStatus
 
 
+class ImportAnalysisSummary(BaseModel):
+    item_count: int
+    selected_count: int
+    selected_total: Decimal
+    statement_total_amount: Decimal | None = None
+    difference: Decimal | None = None
+    needs_review_count: int
+    duplicate_count: int
+    ai_item_count: int
+    ai_enriched_count: int
+    card_last_digits: list[str]
+    consistency_status: str = "unknown"
+    consistency_message: str | None = None
+    ai_summary: str | None = None
+
+
 class ImportPreviewResponse(BaseModel):
     import_id: str
     items: list[ImportPreviewItemRead]
     categories: list[CategoryRead]
+    analysis_summary: ImportAnalysisSummary | None = None
 
 
 class ConfirmPreviewItem(BaseModel):

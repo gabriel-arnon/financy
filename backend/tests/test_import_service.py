@@ -5,6 +5,7 @@ from app.models.enums import PreviewStatus, TransactionType
 from app.repositories.local_json import LocalJsonRepository
 from app.schemas.common import NormalizedTransactionPreview, ParserResult
 from app.schemas.imports import ConfirmImportRequest, ConfirmPreviewItem
+from app.services.ai_import_service import AiItemEnrichment, AiPreviewEnrichment
 from app.services.import_service import ImportService
 
 
@@ -500,6 +501,9 @@ class FakeAiAnalyzer:
             ]
         )
 
+    def enrich_preview_items(self, items: list[dict], categories: list[dict], total_amount=None) -> AiPreviewEnrichment:
+        return AiPreviewEnrichment()
+
 
 def test_import_service_analyze_with_ai_creates_review_preview_items(tmp_path: Path) -> None:
     repo = LocalJsonRepository(tmp_path)
@@ -537,3 +541,123 @@ def test_import_service_analyze_with_ai_skips_when_preview_already_has_items(tmp
 
     assert result.created_preview_count == 0
     assert result.skipped is True
+
+
+class FakePreviewEnrichmentAnalyzer:
+    enabled = True
+
+    def enrich_preview_items(self, items: list[dict], categories: list[dict], total_amount=None) -> AiPreviewEnrichment:
+        return AiPreviewEnrichment(
+            summary="Compra recorrente e possivel duplicidade identificadas.",
+            consistency_status="warning",
+            consistency_message="A soma selecionada difere do total da fatura.",
+            items=[
+                AiItemEnrichment(
+                    index=0,
+                    suggested_category="Mercado",
+                    normalized_description="Mercado Exemplo",
+                    confidence=0.91,
+                    explanation="Descricao indica compra em supermercado.",
+                    installment_current=2,
+                    installment_total=3,
+                ),
+                AiItemEnrichment(
+                    index=1,
+                    confidence=0.82,
+                    duplicate_candidate=True,
+                    duplicate_reason="Mesmo valor e descricao de outro item da previa.",
+                    needs_review=True,
+                ),
+            ],
+        )
+
+
+def test_import_service_enriches_preview_items_with_ai_suggestions(tmp_path: Path) -> None:
+    repo = LocalJsonRepository(tmp_path)
+    category = repo.create_category(USER_ID, {"name": "Mercado", "type": "expense", "status": "active"})
+    service = ImportService(repository=repo, upload_dir=tmp_path, ai_analyzer=FakePreviewEnrichmentAnalyzer())
+
+    items = service._prepare_parsed_items(
+        USER_ID,
+        [
+            NormalizedTransactionPreview(
+                transaction_date="2026-07-04",
+                description="MERCADO EXEMPLO",
+                original_description="MERCADO EXEMPLO",
+                amount="120.00",
+                type=TransactionType.expense,
+                statement_total_amount="220.00",
+            ),
+            NormalizedTransactionPreview(
+                transaction_date="2026-07-04",
+                description="MERCADO EXEMPLO",
+                original_description="MERCADO EXEMPLO",
+                amount="120.00",
+                type=TransactionType.expense,
+                statement_total_amount="220.00",
+            ),
+        ],
+    )
+
+    assert items[0]["category_id"] == category["id"]
+    assert items[0]["classification_label"] == "IA: Mercado"
+    assert items[0]["suggested_category"] == "Mercado"
+    assert items[0]["installment_current"] == 2
+    assert items[0]["installment_total"] == 3
+    assert items[0]["raw_row"]["ai_enrichment"]["normalized_description"] == "Mercado Exemplo"
+    assert items[1]["duplicate_candidate"] is True
+    assert items[1]["default_selected"] is False
+    assert items[1]["excluded_reason"] == "duplicate"
+    assert items[1]["needs_review"] is True
+
+
+def test_import_service_preview_summary_includes_ai_enrichment(tmp_path: Path) -> None:
+    repo = LocalJsonRepository(tmp_path)
+    source_file = repo.create_import_file(
+        {
+            "user_id": USER_ID,
+            "filename": "fatura.pdf",
+            "storage_path": "fatura.pdf",
+            "mime_type": "application/pdf",
+            "size_bytes": 10,
+        }
+    )
+    batch = repo.create_import_batch({"user_id": USER_ID, "source_file_id": source_file["id"], "status": "preview"})
+    repo.create_preview_items(
+        import_id=batch["id"],
+        source_file_id=source_file["id"],
+        user_id=USER_ID,
+        items=[
+            {
+                "transaction_date": "2026-07-04",
+                "description": "MERCADO EXEMPLO",
+                "original_description": "MERCADO EXEMPLO",
+                "amount": "120.00",
+                "type": TransactionType.expense.value,
+                "card_last_digits": "1111",
+                "default_selected": True,
+                "needs_review": True,
+                "statement_total_amount": "220.00",
+                "raw_row": {
+                    "ai_enrichment": {
+                        "summary": "Resumo por IA",
+                        "consistency_status": "warning",
+                        "consistency_message": "Diferenca encontrada.",
+                    }
+                },
+                "status": PreviewStatus.pending.value,
+            }
+        ],
+    )
+
+    preview = ImportService(repository=repo, upload_dir=tmp_path).get_preview(USER_ID, batch["id"])
+
+    assert preview.analysis_summary is not None
+    assert preview.analysis_summary.item_count == 1
+    assert preview.analysis_summary.selected_total == Decimal("120.00")
+    assert preview.analysis_summary.statement_total_amount == Decimal("220.00")
+    assert preview.analysis_summary.difference == Decimal("-100.00")
+    assert preview.analysis_summary.needs_review_count == 1
+    assert preview.analysis_summary.ai_enriched_count == 1
+    assert preview.analysis_summary.card_last_digits == ["1111"]
+    assert preview.analysis_summary.consistency_message == "Diferenca encontrada."

@@ -8,7 +8,7 @@ import { UiButton } from "@/components/ui-button";
 import { confirmImport } from "@/lib/api";
 import { formatCurrency } from "@/lib/format";
 import { formatAccountName, formatCardWithAccount, translateTransactionType } from "@/lib/labels";
-import type { Account, Card, Category, ImportPreviewItem, TransactionType } from "@/lib/types";
+import type { Account, Card, Category, ImportAnalysisSummary, ImportPreviewItem, TransactionType } from "@/lib/types";
 
 interface EditableItem extends ImportPreviewItem {
   selected: boolean;
@@ -18,13 +18,29 @@ interface ImportPreviewTableProps {
   importId: string;
   items: ImportPreviewItem[];
   categories: Category[];
+  analysisSummary?: ImportAnalysisSummary | null;
   accounts: Account[];
   cards: Card[];
 }
 
 const transactionTypes: TransactionType[] = ["expense", "income", "transfer", "payment", "refund"];
 
-export function ImportPreviewTable({ importId, items, categories, accounts, cards }: ImportPreviewTableProps) {
+interface AiEnrichment {
+  suggested_category?: string;
+  normalized_description?: string;
+  confidence?: number;
+  explanation?: string;
+  duplicate_reason?: string;
+}
+
+function getAiEnrichment(row: ImportPreviewItem): AiEnrichment | null {
+  const rawRow = row.raw_row;
+  if (!rawRow || typeof rawRow !== "object" || !("ai_enrichment" in rawRow)) return null;
+  const enrichment = rawRow.ai_enrichment;
+  return enrichment && typeof enrichment === "object" ? enrichment as AiEnrichment : null;
+}
+
+export function ImportPreviewTable({ importId, items, categories, analysisSummary, accounts, cards }: ImportPreviewTableProps) {
   const router = useRouter();
   const toast = useToast();
   const cardsWithAccount = cards.filter((card) => Boolean(card.account_id));
@@ -58,6 +74,7 @@ export function ImportPreviewTable({ importId, items, categories, accounts, card
     () => rows.filter((item) => item.selected).reduce((total, item) => total + Number(item.amount), 0),
     [rows]
   );
+  const summaryDifference = analysisSummary?.difference ? Number(analysisSummary.difference) : null;
 
   function updateRow(id: string, patch: Partial<EditableItem>) {
     setRows((current) => current.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -147,6 +164,35 @@ export function ImportPreviewTable({ importId, items, categories, accounts, card
         </div>
       </div>
 
+      {analysisSummary ? (
+        <div className="grid gap-3 rounded-lg border border-stone-200 bg-white p-4 shadow-sm md:grid-cols-4">
+          <div>
+            <p className="text-xs font-medium uppercase text-stone-500">Itens</p>
+            <p className="mt-1 text-lg font-semibold text-ink">{analysisSummary.item_count}</p>
+            <p className="text-xs text-stone-500">{analysisSummary.selected_count} selecionados</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase text-stone-500">Total selecionado</p>
+            <p className="mt-1 text-lg font-semibold text-ink">{formatCurrency(Number(analysisSummary.selected_total))}</p>
+            {analysisSummary.statement_total_amount ? <p className="text-xs text-stone-500">Fatura {formatCurrency(Number(analysisSummary.statement_total_amount))}</p> : null}
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase text-stone-500">Revisao</p>
+            <p className="mt-1 text-lg font-semibold text-ink">{analysisSummary.needs_review_count}</p>
+            <p className="text-xs text-stone-500">{analysisSummary.duplicate_count} possiveis duplicatas</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase text-stone-500">Analise</p>
+            <p className={`mt-1 text-sm font-semibold ${analysisSummary.consistency_status === "warning" ? "text-amber-700" : analysisSummary.consistency_status === "ok" ? "text-emerald-700" : "text-ink"}`}>
+              {analysisSummary.consistency_message ?? "Sem divergencias automaticas"}
+            </p>
+            {summaryDifference !== null ? <p className="text-xs text-stone-500">Diferenca {formatCurrency(summaryDifference)}</p> : null}
+            {analysisSummary.ai_enriched_count > 0 ? <p className="text-xs text-stone-500">{analysisSummary.ai_enriched_count} itens enriquecidos por IA</p> : null}
+          </div>
+          {analysisSummary.ai_summary ? <p className="text-sm text-stone-600 md:col-span-4">{analysisSummary.ai_summary}</p> : null}
+        </div>
+      ) : null}
+
       {(accounts.length > 0 || cardsWithAccount.length > 0) ? (
         <div className="grid gap-3 rounded-lg border border-stone-200 bg-white p-4 shadow-sm lg:grid-cols-2">
           <label className="space-y-2">
@@ -187,7 +233,11 @@ export function ImportPreviewTable({ importId, items, categories, accounts, card
             </tr>
           </thead>
           <tbody className="divide-y divide-stone-100">
-            {rows.map((row) => (
+            {rows.map((row) => {
+              const ai = getAiEnrichment(row);
+              const normalizedSuggestion = ai?.normalized_description?.trim();
+              const showNormalizedSuggestion = Boolean(normalizedSuggestion && normalizedSuggestion !== row.description);
+              return (
               <tr key={row.id} className={row.needs_review ? "bg-amber-50" : undefined}>
                 <td className="px-3 py-2">
                   <input type="checkbox" checked={row.selected} onChange={(event) => updateRow(row.id, { selected: event.target.checked })} />
@@ -208,14 +258,26 @@ export function ImportPreviewTable({ importId, items, categories, accounts, card
                     onInput={(event) => updateRow(row.id, { description: event.currentTarget.value })}
                     onChange={(event) => updateRow(row.id, { description: event.target.value })}
                   />
+                  {showNormalizedSuggestion ? (
+                    <button
+                      type="button"
+                      className="mt-1 block text-left text-xs font-medium text-mint hover:underline"
+                      onClick={() => updateRow(row.id, { description: normalizedSuggestion })}
+                    >
+                      Usar sugestao: {normalizedSuggestion}
+                    </button>
+                  ) : null}
                 </td>
-                <td className="px-3 py-2 text-stone-700">{row.suggested_category ?? "-"}</td>
+                <td className="px-3 py-2 text-stone-700">
+                  {row.suggested_category ?? ai?.suggested_category ?? "-"}
+                  {ai?.confidence !== undefined ? <span className="ml-2 rounded-md bg-mint/10 px-1.5 py-0.5 text-xs text-mint">{Math.round(ai.confidence * 100)}%</span> : null}
+                </td>
                 <td className="px-3 py-2 text-stone-700">
                   {row.classification_label ? (
                     <span className={row.needs_review && row.suggested_category ? "rounded-md bg-amber-100 px-2 py-1 text-xs text-amber-800" : undefined}>
                       {row.classification_label}
                     </span>
-                  ) : "-"}
+                  ) : ai?.suggested_category ? "IA" : "-"}
                 </td>
                 <td className="px-3 py-2 text-stone-700">{row.merchant_country ?? "-"}</td>
                 <td className="px-3 py-2 text-stone-700">
@@ -243,12 +305,13 @@ export function ImportPreviewTable({ importId, items, categories, accounts, card
                 <td className="px-3 py-2">
                   <span className="rounded-md bg-stone-100 px-2 py-1 text-xs text-stone-700">{Math.round(row.parser_confidence * 100)}%</span>
                 </td>
-                <td className="px-3 py-2 text-stone-600">{row.excluded_reason ?? (row.needs_review ? "revisar" : "-")}</td>
+                <td className="px-3 py-2 text-stone-600">{row.excluded_reason ?? ai?.duplicate_reason ?? ai?.explanation ?? (row.needs_review ? "revisar" : "-")}</td>
                 <td className="px-3 py-2">
                   <span className="rounded-md bg-stone-100 px-2 py-1 text-xs text-stone-700">{row.duplicate_candidate ? "duplicate" : row.status}</span>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

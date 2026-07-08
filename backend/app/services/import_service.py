@@ -1,3 +1,4 @@
+from decimal import Decimal
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -5,10 +6,10 @@ from uuid import uuid4
 from fastapi import UploadFile
 
 from app.core.errors import AppError
-from app.models.enums import PreviewStatus
+from app.models.enums import ExcludedReason, PreviewStatus
 from app.parsers.utils import normalize_description
 from app.parsers.parser_factory import ParserFactory
-from app.schemas.imports import AiImportAnalysisResponse, ConfirmImportRequest, ConfirmImportResponse, ImportPreviewResponse, UploadImportResponse
+from app.schemas.imports import AiImportAnalysisResponse, ConfirmImportRequest, ConfirmImportResponse, ImportAnalysisSummary, ImportPreviewResponse, UploadImportResponse
 
 
 class ImportService:
@@ -111,6 +112,7 @@ class ImportService:
         ]
         self._attach_existing_detected_account(user_id, parsed_items)
         self._attach_existing_detected_cards(user_id, parsed_items)
+        self._apply_ai_enrichment(user_id, parsed_items)
         return parsed_items
 
     def _apply_classification(self, user_id: str, item: dict) -> dict:
@@ -175,7 +177,112 @@ class ImportService:
         if not self.repository.get_import_batch(user_id, import_id):
             raise AppError("Importacao nao encontrada.", status_code=404, code="import_not_found")
         items = self.repository.get_preview_items(user_id, import_id)
-        return ImportPreviewResponse(import_id=import_id, items=items, categories=self.repository.categories(user_id))
+        return ImportPreviewResponse(
+            import_id=import_id,
+            items=items,
+            categories=self.repository.categories(user_id),
+            analysis_summary=self._build_analysis_summary(items),
+        )
+
+    def _apply_ai_enrichment(self, user_id: str, items: list[dict]) -> None:
+        enrich = getattr(self.ai_analyzer, "enrich_preview_items", None)
+        if not items or not enrich or not getattr(self.ai_analyzer, "enabled", False):
+            return
+
+        categories = self.repository.categories(user_id)
+        total_amount = next((item.get("statement_total_amount") for item in items if item.get("statement_total_amount") is not None), None)
+        try:
+            enrichment = enrich(items, categories, total_amount)
+        except Exception:
+            return
+        active_categories_by_name = {
+            normalize_description(category["name"]): category
+            for category in categories
+            if category.get("status") == "active" and category.get("name")
+        }
+
+        for suggestion in enrichment.items:
+            if suggestion.index < 0 or suggestion.index >= len(items):
+                continue
+            item = items[suggestion.index]
+            raw_row = item.get("raw_row") if isinstance(item.get("raw_row"), dict) else {}
+            ai_data = {
+                "source": "ai_enrichment_v1",
+                "suggested_category": suggestion.suggested_category,
+                "normalized_description": suggestion.normalized_description,
+                "confidence": suggestion.confidence,
+                "explanation": suggestion.explanation,
+                "duplicate_candidate": suggestion.duplicate_candidate,
+                "duplicate_reason": suggestion.duplicate_reason,
+                "summary": enrichment.summary,
+                "consistency_status": enrichment.consistency_status,
+                "consistency_message": enrichment.consistency_message,
+            }
+            raw_row["ai_enrichment"] = {key: value for key, value in ai_data.items() if value not in (None, "")}
+            item["raw_row"] = raw_row
+
+            if suggestion.suggested_category and not item.get("category_id"):
+                category = active_categories_by_name.get(normalize_description(suggestion.suggested_category))
+                if category:
+                    item["category_id"] = category["id"]
+                    item["suggested_category"] = category["name"]
+                    item["classification_label"] = f"IA: {category['name']}"
+
+            if suggestion.normalized_description and not item.get("description"):
+                item["description"] = suggestion.normalized_description
+
+            if suggestion.installment_current and not item.get("installment_current"):
+                item["installment_current"] = suggestion.installment_current
+            if suggestion.installment_total and not item.get("installment_total"):
+                item["installment_total"] = suggestion.installment_total
+
+            if suggestion.duplicate_candidate:
+                item["duplicate_candidate"] = True
+                item["default_selected"] = False
+                item["excluded_reason"] = ExcludedReason.duplicate.value
+
+            if suggestion.needs_review or suggestion.confidence < 0.75:
+                item["needs_review"] = True
+                item["parser_confidence"] = min(float(item.get("parser_confidence") or 0.75), suggestion.confidence)
+
+    def _build_analysis_summary(self, items: list[dict]) -> ImportAnalysisSummary:
+        selected_items = [item for item in items if item.get("default_selected", True)]
+        selected_total = sum((Decimal(str(item.get("amount") or "0")) for item in selected_items), Decimal("0"))
+        statement_total = next((item.get("statement_total_amount") for item in items if item.get("statement_total_amount") is not None), None)
+        statement_total_decimal = Decimal(str(statement_total)) if statement_total is not None else None
+        difference = (selected_total - statement_total_decimal) if statement_total_decimal is not None else None
+        card_last_digits = sorted({str(item["card_last_digits"]) for item in items if item.get("card_last_digits")})
+        ai_enrichments = [
+            item.get("raw_row", {}).get("ai_enrichment")
+            for item in items
+            if isinstance(item.get("raw_row"), dict) and isinstance(item.get("raw_row", {}).get("ai_enrichment"), dict)
+        ]
+        first_enrichment = ai_enrichments[0] if ai_enrichments else {}
+        consistency_status = first_enrichment.get("consistency_status") or "unknown"
+        consistency_message = first_enrichment.get("consistency_message")
+        if not consistency_message and statement_total_decimal is not None:
+            consistency_message = (
+                "Soma selecionada confere com o total encontrado."
+                if abs(difference or Decimal("0")) <= Decimal("0.01")
+                else "Soma selecionada difere do total encontrado."
+            )
+            consistency_status = "ok" if abs(difference or Decimal("0")) <= Decimal("0.01") else "warning"
+
+        return ImportAnalysisSummary(
+            item_count=len(items),
+            selected_count=len(selected_items),
+            selected_total=selected_total,
+            statement_total_amount=statement_total_decimal,
+            difference=difference,
+            needs_review_count=sum(1 for item in items if item.get("needs_review")),
+            duplicate_count=sum(1 for item in items if item.get("duplicate_candidate") or item.get("excluded_reason") == ExcludedReason.duplicate.value),
+            ai_item_count=sum(1 for item in items if isinstance(item.get("raw_row"), dict) and item.get("raw_row", {}).get("source") == "ai"),
+            ai_enriched_count=len(ai_enrichments),
+            card_last_digits=card_last_digits,
+            consistency_status=consistency_status,
+            consistency_message=consistency_message,
+            ai_summary=first_enrichment.get("summary"),
+        )
 
     def _attach_existing_detected_account(self, user_id: str, items: list[dict]) -> None:
         item_with_account = next((item for item in items if item.get("account_agency") or item.get("account_number")), None)

@@ -284,6 +284,7 @@ export function ImportPreviewPanel({ importId }: { importId: string }) {
         importId={importId}
         items={data.items}
         categories={data.categories}
+        analysisSummary={data.analysis_summary}
         accounts={accounts}
         cards={cards}
       />

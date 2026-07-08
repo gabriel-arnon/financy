@@ -71,6 +71,26 @@ class AiInvoiceExtraction(BaseModel):
     confidence: float = Field(default=0.5, ge=0, le=1)
 
 
+class AiItemEnrichment(BaseModel):
+    index: int
+    suggested_category: str | None = None
+    normalized_description: str | None = None
+    confidence: float = Field(default=0.5, ge=0, le=1)
+    explanation: str | None = None
+    duplicate_candidate: bool = False
+    duplicate_reason: str | None = None
+    installment_current: int | None = None
+    installment_total: int | None = None
+    needs_review: bool = False
+
+
+class AiPreviewEnrichment(BaseModel):
+    summary: str | None = None
+    consistency_status: Literal["ok", "warning", "unknown"] = "unknown"
+    consistency_message: str | None = None
+    items: list[AiItemEnrichment] = Field(default_factory=list)
+
+
 def _parse_ai_date(value: str | None) -> date | None:
     if not value:
         return None
@@ -161,6 +181,63 @@ Retorne somente JSON valido com este formato:
     ]
 
 
+def _prompt_for_preview_items(items: list[dict[str, Any]], categories: list[dict[str, Any]], total_amount: Any | None) -> list[dict[str, str]]:
+    compact_items = [
+        {
+            "index": index,
+            "date": item.get("transaction_date"),
+            "description": item.get("description"),
+            "original_description": item.get("original_description"),
+            "amount": str(item.get("amount")),
+            "type": item.get("type"),
+            "installment_current": item.get("installment_current"),
+            "installment_total": item.get("installment_total"),
+            "card_last_digits": item.get("card_last_digits"),
+            "selected": item.get("default_selected", True),
+            "needs_review": item.get("needs_review", False),
+        }
+        for index, item in enumerate(items)
+    ]
+    category_names = [category.get("name") for category in categories if category.get("status") == "active" and category.get("name")]
+    schema_description = """
+Retorne somente JSON valido:
+{
+  "summary": "resumo curto da importacao",
+  "consistency_status": "ok|warning|unknown",
+  "consistency_message": "mensagem curta sobre soma x total ou null",
+  "items": [{
+    "index": 0,
+    "suggested_category": "nome exato de categoria existente ou null",
+    "normalized_description": "descricao limpa ou null",
+    "confidence": 0.0,
+    "explanation": "motivo curto",
+    "duplicate_candidate": false,
+    "duplicate_reason": null,
+    "installment_current": null,
+    "installment_total": null,
+    "needs_review": false
+  }]
+}
+"""
+    instructions = (
+        "Voce revisa uma previa de importacao financeira. "
+        "Use apenas categorias existentes. Nao invente categorias. "
+        "Sugira descricao limpa sem alterar o significado. "
+        "Marque baixa confianca quando houver ambiguidade. "
+        "Nao classifique pagamentos/creditos como despesa. "
+        "A resposta deve ajudar o usuario a revisar, nao confirmar automaticamente."
+    )
+    content = {
+        "statement_total_amount": str(total_amount) if total_amount is not None else None,
+        "categories": category_names,
+        "items": compact_items[:120],
+    }
+    return [
+        {"role": "system", "content": instructions},
+        {"role": "user", "content": f"{schema_description}\n\nDados da previa:\n{json.dumps(content, ensure_ascii=False)}"},
+    ]
+
+
 class AiImportAnalyzer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -203,6 +280,34 @@ class AiImportAnalyzer:
             return AiInvoiceExtraction.model_validate(_json_from_response(content))
         except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError, ValidationError) as exc:
             raise AppError("Falha na analise com IA. Tente novamente ou revise o arquivo manualmente.", status_code=502, code="ai_import_failed") from exc
+
+    def enrich_preview_items(self, items: list[dict[str, Any]], categories: list[dict[str, Any]], total_amount: Any | None = None) -> AiPreviewEnrichment:
+        if not self.enabled or not items:
+            return AiPreviewEnrichment()
+
+        url = self.settings.ai_import_base_url.rstrip("/") + "/chat/completions"
+        payload = {
+            "model": self.settings.ai_import_model,
+            "messages": _prompt_for_preview_items(items, categories, total_amount),
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+        }
+        try:
+            response = httpx.post(
+                url,
+                headers={"Authorization": f"Bearer {self.settings.ai_import_api_key}", "Content-Type": "application/json"},
+                json=payload,
+                timeout=self.settings.ai_import_timeout_seconds,
+            )
+            response.raise_for_status()
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            return AiPreviewEnrichment.model_validate(_json_from_response(content))
+        except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError, ValidationError):
+            return AiPreviewEnrichment(
+                consistency_status="unknown",
+                consistency_message="Nao foi possivel enriquecer a previa com IA.",
+            )
 
     def _to_parser_result(self, extraction: AiInvoiceExtraction) -> ParserResult:
         first_card = extraction.cards[0] if extraction.cards else None

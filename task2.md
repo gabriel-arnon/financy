@@ -522,6 +522,78 @@ Resultado esperado:
 - A IA melhora cobertura de importacao, mas o usuario continua revisando antes de confirmar.
 - O app reduz risco de erro silencioso em dados financeiros.
 
+### [x] P5.6 - IA como assistente avancado de revisao de importacao
+
+Contexto:
+
+- A importacao assistida por IA ja pode gerar preview automaticamente quando parsers deterministas nao encontram transacoes.
+- Ainda existem oportunidades de usar IA para melhorar a qualidade da revisao, sem confirmar nada automaticamente.
+- O objetivo e usar IA para reduzir trabalho manual do usuario no preview, mantendo controle, auditoria e seguranca.
+
+Objetivo:
+
+- Adicionar recursos de IA no preview de importacao para classificar, normalizar, explicar, detectar inconsistencias e sugerir regras, sempre com revisao do usuario antes da confirmacao.
+
+Checklist:
+
+- [x] Classificacao inteligente de categorias:
+  - sugerir categoria quando nao houver regra existente;
+  - respeitar categorias existentes do usuario;
+  - indicar confianca da sugestao;
+  - nao substituir regra deterministica de maior prioridade.
+- [x] Normalizacao de descricao:
+  - sugerir descricao limpa/amigavel para exibicao;
+  - preservar `original_description` internamente;
+  - permitir ao usuario aceitar/editar a sugestao.
+- [x] Deteccao avancada de duplicidades:
+  - comparar descricao normalizada, data aproximada e valor;
+  - marcar possiveis duplicatas no preview;
+  - explicar por que um item foi marcado como duplicado.
+- [x] Resumo inteligente da fatura importada:
+  - total encontrado;
+  - soma das transacoes selecionadas;
+  - quantidade de compras;
+  - cartoes detectados;
+  - pagamentos/estornos ignorados;
+  - divergencias entre soma e total da fatura.
+- [x] Explicacao de baixa confianca:
+  - exibir motivo para `needs_review`;
+  - exemplos: cartao nao identificado, valor ambivalente, linha parece pagamento, parcela incerta.
+- [-] Sugestao de criacao de regras:
+  - apos confirmacao ou no preview, sugerir regras para comerciantes recorrentes;
+  - permitir criar regras em lote;
+  - evitar sugestoes duplicadas de regras ja existentes.
+- [x] Deteccao rica de parcelamentos:
+  - reconhecer `2/10`, `Parc 02`, `Parcela 2 de 10`, formatos quebrados e equivalentes;
+  - preencher `installment_current` e `installment_total`;
+  - sinalizar quando a parcela estiver incerta.
+- [x] Analise de inconsistencias:
+  - avisar quando soma selecionada bate com o total da fatura;
+  - avisar quando ha diferenca relevante;
+  - apontar possiveis causas: credito, pagamento, encargos, item ignorado ou linha nao reconhecida.
+- [x] Criar schema backend para resposta de enriquecimento IA separado do schema de extracao.
+- [x] Garantir que enriquecimento de IA seja opcional e nunca bloqueie confirmacao manual.
+- [x] Criar testes com respostas mockadas para categorias, descricao, duplicidade e resumo.
+- [x] Documentar custo, privacidade e limites do enriquecimento.
+
+Feito:
+
+- Criado schema separado `AiPreviewEnrichment`/`AiItemEnrichment` para enriquecimento, independente do schema de extracao de PDF.
+- Importacao continua usando parser deterministico; com IA habilitada, a previa pode receber sugestoes de categoria, descricao normalizada, parcelas, duplicidade e explicacao.
+- Sugestoes de categoria respeitam apenas categorias ativas existentes do usuario e nao sobrescrevem regras deterministicas ja aplicadas.
+- Descricao normalizada fica como sugestao no preview, preservando `original_description` e exigindo acao do usuario para aplicar.
+- Possiveis duplicatas sao marcadas no preview, desmarcadas por padrao e acompanhadas de motivo.
+- Adicionado resumo de analise da previa com total selecionado, total da fatura, diferenca, itens para revisao, duplicatas, cartoes detectados e quantidade enriquecida por IA.
+- Frontend mostra o resumo, confianca, explicacoes e botao para usar a descricao sugerida.
+- A criacao de regras em lote foi pausada para evitar criar automacoes financeiras automaticamente sem uma UX de confirmacao dedicada.
+- Documentacao de IA atualizada com privacidade, limites e comportamento assistivo.
+
+Resultado esperado:
+
+- Preview de importacao fica mais rapido de revisar.
+- Usuario entende melhor por que itens foram selecionados, ignorados ou marcados para revisao.
+- IA ajuda com categorias, descricoes e analise, mas nao salva transacoes sem confirmacao humana.
+
 ## Validacoes obrigatorias
 
 ### [x] VF1 - Backend

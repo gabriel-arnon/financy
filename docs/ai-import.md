@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Usar IA apenas como fallback para PDFs desconhecidos ou de baixa confianca, mantendo parsers deterministas como caminho principal.
+Usar IA como fallback para PDFs desconhecidos ou de baixa confianca e como assistente opcional de revisao do preview, mantendo parsers deterministas como caminho principal.
 
 ## Fluxo recomendado
 
@@ -12,7 +12,8 @@ Usar IA apenas como fallback para PDFs desconhecidos ou de baixa confianca, mant
 4. A IA retorna JSON estruturado.
 5. O backend valida e normaliza o JSON.
 6. Os itens entram no preview com revisao obrigatoria.
-7. O usuario confirma manualmente os itens antes de criar transacoes.
+7. Quando configurada, a IA pode enriquecer a previa com categoria sugerida, descricao normalizada, parcela, duplicidade e resumo de consistencia.
+8. O usuario confirma manualmente os itens antes de criar transacoes.
 
 ## Variaveis de ambiente
 
@@ -30,6 +31,7 @@ AI_IMPORT_TIMEOUT_SECONDS=45
 - O recurso deve permanecer desativado ate haver decisao explicita de produto/privacidade.
 - Quando ativado, o texto extraido do PDF pode conter dados financeiros e identificadores pessoais.
 - O app nao confirma transacoes automaticamente a partir da IA.
+- O enriquecimento e assistivo: sugestoes de categoria, descricao e duplicidade ficam visiveis no preview e podem ser revisadas.
 - O backend salva apenas o preview normalizado e metadados tecnicos no `raw_row`, sem salvar o prompt completo.
 
 ## Custo e latencia
@@ -43,6 +45,7 @@ AI_IMPORT_TIMEOUT_SECONDS=45
 - A IA pode omitir, duplicar ou interpretar valores incorretamente.
 - A IA pode classificar pagamento/credito como despesa se o PDF estiver ambivalente.
 - Por isso, itens gerados por IA entram com `needs_review=true` e exigem revisao no preview.
+- Sugestoes de categoria respeitam apenas categorias existentes do usuario; novas categorias/regras nao sao criadas automaticamente.
 
 ## Producao
 
