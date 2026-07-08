@@ -6,7 +6,12 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Financy",
-  description: "Gerenciamento financeiro para contas, cartoes, transacoes e importacoes"
+  description: "Gerenciamento financeiro para contas, cartoes, transacoes e importacoes",
+  icons: {
+    icon: "/brand/financy-icon.png",
+    shortcut: "/brand/financy-icon.png",
+    apple: "/brand/financy-icon.png"
+  }
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

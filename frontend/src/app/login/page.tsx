@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { LogIn } from "lucide-react";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
@@ -36,7 +37,14 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-paper px-4 py-10">
       <section className="w-full max-w-sm rounded-lg border border-stone-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-mint text-base font-semibold text-white">F</span>
+          <Image
+            src="/brand/financy-icon.png"
+            alt=""
+            width={44}
+            height={44}
+            priority
+            className="h-11 w-11 rounded-xl object-cover"
+          />
           <div>
             <h1 className="text-xl font-semibold text-ink">Entrar no Financy</h1>
             <p className="mt-1 text-sm text-stone-500">Acesse seu ambiente financeiro.</p>
