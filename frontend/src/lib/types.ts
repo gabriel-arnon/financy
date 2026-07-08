@@ -145,6 +145,12 @@ export interface UploadImportResponse {
   preview_count: number;
 }
 
+export interface AiImportAnalysisResponse {
+  import_id: string;
+  created_preview_count: number;
+  skipped: boolean;
+}
+
 export interface ConfirmImportResponse {
   import_id: string;
   created_transaction_ids: string[];

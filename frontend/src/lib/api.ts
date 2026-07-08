@@ -2,6 +2,7 @@ import type {
   Account,
   AccountPayload,
   AccountSummary,
+  AiImportAnalysisResponse,
   Card,
   CardPayload,
   CardSummary,
@@ -108,6 +109,10 @@ export async function uploadImport(file: File): Promise<UploadImportResponse> {
 
 export async function getImportPreview(importId: string): Promise<ImportPreviewResponse> {
   return request<ImportPreviewResponse>(`/imports/${importId}/preview`);
+}
+
+export async function analyzeImportWithAi(importId: string): Promise<AiImportAnalysisResponse> {
+  return request<AiImportAnalysisResponse>(`/imports/${importId}/analyze-ai`, { method: "POST" });
 }
 
 export async function confirmImport(importId: string, items: unknown[]): Promise<ConfirmImportResponse> {

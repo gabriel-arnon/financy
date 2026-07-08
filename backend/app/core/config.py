@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     supabase_jwks_url: str | None = None
     supabase_audience: str | None = None
     jwt_secret: str = "change-me-local-only"
+    ai_import_enabled: bool = False
+    ai_import_provider: str = "openai-compatible"
+    ai_import_base_url: str = "https://api.openai.com/v1"
+    ai_import_api_key: str | None = None
+    ai_import_model: str = "gpt-4o-mini"
+    ai_import_timeout_seconds: float = 45.0
 
     @property
     def cors_origin_list(self) -> list[str]:

@@ -8,13 +8,14 @@ from app.core.errors import AppError
 from app.models.enums import PreviewStatus
 from app.parsers.utils import normalize_description
 from app.parsers.parser_factory import ParserFactory
-from app.schemas.imports import ConfirmImportRequest, ConfirmImportResponse, ImportPreviewResponse, UploadImportResponse
+from app.schemas.imports import AiImportAnalysisResponse, ConfirmImportRequest, ConfirmImportResponse, ImportPreviewResponse, UploadImportResponse
 
 
 class ImportService:
-    def __init__(self, repository, upload_dir: Path) -> None:
+    def __init__(self, repository, upload_dir: Path, ai_analyzer=None) -> None:
         self.repository = repository
         self.upload_dir = upload_dir
+        self.ai_analyzer = ai_analyzer
 
     async def upload(self, user_id: str, file: UploadFile) -> UploadImportResponse:
         if not file.filename:
@@ -47,18 +48,10 @@ class ImportService:
         )
 
         parsed_result = ParserFactory.parse(path=path, filename=file.filename, mime_type=file.content_type)
-        rules = self.repository.list_classification_rules(user_id)
-        categories_by_id = {category["id"]: category["name"] for category in self.repository.categories(user_id)}
-        parsed_items = [
-            self._apply_classification_from_rules(
-                item=item.model_dump(mode="json"),
-                rules=rules,
-                categories_by_id=categories_by_id,
-            )
-            for item in parsed_result.items
-        ]
-        self._attach_existing_detected_account(user_id, parsed_items)
-        self._attach_existing_detected_cards(user_id, parsed_items)
+        if not parsed_result.items and self.ai_analyzer and getattr(self.ai_analyzer, "enabled", False) and path.suffix.lower() == ".pdf":
+            parsed_result = self.ai_analyzer.analyze_pdf(path)
+
+        parsed_items = self._prepare_parsed_items(user_id, parsed_result.items)
         records = self.repository.create_preview_items(
             import_id=batch["id"],
             source_file_id=import_file["id"],
@@ -72,6 +65,53 @@ class ImportService:
             filename=file.filename,
             preview_count=len(records),
         )
+
+    def analyze_with_ai(self, user_id: str, import_id: str) -> AiImportAnalysisResponse:
+        if not self.ai_analyzer or not getattr(self.ai_analyzer, "enabled", False):
+            raise AppError("Analise com IA nao esta configurada.", status_code=400, code="ai_import_not_configured")
+
+        batch = self.repository.get_import_batch(user_id, import_id)
+        if not batch:
+            raise AppError("Importacao nao encontrada.", status_code=404, code="import_not_found")
+
+        existing_items = self.repository.get_preview_items(user_id, import_id)
+        if existing_items:
+            return AiImportAnalysisResponse(import_id=import_id, created_preview_count=0, skipped=True)
+
+        get_import_file = getattr(self.repository, "get_import_file", None)
+        source_file_id = batch.get("source_file_id")
+        import_file = get_import_file(user_id, source_file_id) if get_import_file and source_file_id else None
+        if not import_file:
+            raise AppError("Arquivo de origem da importacao nao encontrado.", status_code=404, code="import_file_not_found")
+
+        path = Path(import_file["storage_path"])
+        if not path.exists():
+            raise AppError("Arquivo de origem da importacao nao esta disponivel.", status_code=404, code="import_file_missing")
+
+        parsed_result = self.ai_analyzer.analyze_pdf(path)
+        parsed_items = self._prepare_parsed_items(user_id, parsed_result.items)
+        records = self.repository.create_preview_items(
+            import_id=batch["id"],
+            source_file_id=import_file["id"],
+            user_id=user_id,
+            items=parsed_items,
+        )
+        return AiImportAnalysisResponse(import_id=import_id, created_preview_count=len(records), skipped=False)
+
+    def _prepare_parsed_items(self, user_id: str, items) -> list[dict]:
+        rules = self.repository.list_classification_rules(user_id)
+        categories_by_id = {category["id"]: category["name"] for category in self.repository.categories(user_id)}
+        parsed_items = [
+            self._apply_classification_from_rules(
+                item=item.model_dump(mode="json"),
+                rules=rules,
+                categories_by_id=categories_by_id,
+            )
+            for item in items
+        ]
+        self._attach_existing_detected_account(user_id, parsed_items)
+        self._attach_existing_detected_cards(user_id, parsed_items)
+        return parsed_items
 
     def _apply_classification(self, user_id: str, item: dict) -> dict:
         rule = self.repository.match_classification_rule(

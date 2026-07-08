@@ -1,10 +1,11 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { CreditCard, Landmark, Plus } from "lucide-react";
+import { BrainCircuit, CreditCard, Landmark, Loader2, Plus } from "lucide-react";
 import { ImportPreviewTable } from "@/components/import-preview-table";
 import { UiButton } from "@/components/ui-button";
-import { createAccount, createCard, getAccounts, getCards, getImportPreview, updateCard } from "@/lib/api";
+import { useToast } from "@/components/toast-provider";
+import { analyzeImportWithAi, createAccount, createCard, getAccounts, getCards, getImportPreview, updateCard } from "@/lib/api";
 import { formatAccountName, isActiveEntity } from "@/lib/labels";
 import type { Account, AccountPayload, AccountType, Card, CardPayload, ImportPreviewItem, ImportPreviewResponse } from "@/lib/types";
 
@@ -71,6 +72,7 @@ function sameDetectedAccount(account: Account, detected: DetectedAccount) {
 }
 
 export function ImportPreviewPanel({ importId }: { importId: string }) {
+  const toast = useToast();
   const [data, setData] = useState<ImportPreviewResponse | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [cards, setCards] = useState<Card[]>([]);
@@ -81,6 +83,7 @@ export function ImportPreviewPanel({ importId }: { importId: string }) {
   const [modalStep, setModalStep] = useState<"card" | "account">("card");
   const [error, setError] = useState<{ importId: string; message: string } | null>(null);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const updatedExistingCardIds = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -144,6 +147,29 @@ export function ImportPreviewPanel({ importId }: { importId: string }) {
         updatedExistingCardIds.current.delete(existingCard.id);
       });
   }, [detectedCard, existingCard]);
+
+  async function handleAnalyzeWithAi() {
+    setAiAnalyzing(true);
+    setSuggestionError(null);
+    try {
+      const result = await analyzeImportWithAi(importId);
+      if (result.skipped) {
+        toast.info("A importacao ja possui itens de previa.");
+      } else if (result.created_preview_count > 0) {
+        toast.success(`${result.created_preview_count} itens gerados pela analise com IA.`);
+      } else {
+        toast.info("A analise com IA nao encontrou transacoes.");
+      }
+      const response = await getImportPreview(importId);
+      setData(response);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Falha ao analisar com IA.";
+      setSuggestionError(message);
+      toast.error(message);
+    } finally {
+      setAiAnalyzing(false);
+    }
+  }
 
   async function handleCreateAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -228,6 +254,31 @@ export function ImportPreviewPanel({ importId }: { importId: string }) {
 
   return (
     <>
+      {data.items.length === 0 ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="flex items-center gap-2 text-base font-semibold text-ink">
+                <BrainCircuit className="h-5 w-5 text-amber-600" />
+                Nenhuma transacao foi identificada automaticamente
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-800">
+                Use a analise com IA para tentar gerar uma previa revisavel quando o layout do PDF ainda nao tiver parser dedicado.
+              </p>
+              {suggestionError ? <p className="mt-3 rounded-md bg-white px-3 py-2 text-sm text-red-700">{suggestionError}</p> : null}
+            </div>
+            <UiButton
+              icon={aiAnalyzing ? <Loader2 className="h-4 w-4 animate-spin" /> : <BrainCircuit className="h-4 w-4" />}
+              onClick={() => { void handleAnalyzeWithAi(); }}
+              variant="secondary"
+              disabled={aiAnalyzing}
+            >
+              {aiAnalyzing ? "Analisando..." : "Analisar com IA"}
+            </UiButton>
+          </div>
+        </div>
+      ) : null}
+
       <ImportPreviewTable
         key={`${importId}:${accounts.map((account) => account.id).join(",")}:${cards.map((card) => card.id).join(",")}`}
         importId={importId}

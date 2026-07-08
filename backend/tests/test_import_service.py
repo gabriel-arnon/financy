@@ -3,6 +3,7 @@ from pathlib import Path
 
 from app.models.enums import PreviewStatus, TransactionType
 from app.repositories.local_json import LocalJsonRepository
+from app.schemas.common import NormalizedTransactionPreview, ParserResult
 from app.schemas.imports import ConfirmImportRequest, ConfirmPreviewItem
 from app.services.import_service import ImportService
 
@@ -476,3 +477,63 @@ def test_import_service_attaches_existing_cards_from_inter_and_mercado_pago_item
 
     assert items[0]["card_id"] == CARD_ID
     assert items[1]["card_id"] == CARD_ID
+
+
+class FakeAiAnalyzer:
+    enabled = True
+
+    def analyze_pdf(self, path: Path) -> ParserResult:
+        return ParserResult(
+            items=[
+                NormalizedTransactionPreview(
+                    transaction_date="2026-07-04",
+                    description="AUTO POSTO BETMAR",
+                    original_description="AUTO POSTO BETMAR",
+                    amount="20.00",
+                    type=TransactionType.expense,
+                    card_last_digits="1111",
+                    parser_confidence=0.72,
+                    needs_review=True,
+                    default_selected=True,
+                    raw_row={"parser": "ai_import_v1", "source": "ai"},
+                )
+            ]
+        )
+
+
+def test_import_service_analyze_with_ai_creates_review_preview_items(tmp_path: Path) -> None:
+    repo = LocalJsonRepository(tmp_path)
+    _seed_card(repo)
+    source_path = tmp_path / "unknown.pdf"
+    source_path.write_bytes(b"%PDF-1.4 fake")
+    source_file = repo.create_import_file(
+        {
+            "user_id": USER_ID,
+            "filename": "unknown.pdf",
+            "storage_path": str(source_path),
+            "mime_type": "application/pdf",
+            "size_bytes": source_path.stat().st_size,
+        }
+    )
+    batch = repo.create_import_batch({"user_id": USER_ID, "source_file_id": source_file["id"], "status": "preview"})
+
+    result = ImportService(repository=repo, upload_dir=tmp_path, ai_analyzer=FakeAiAnalyzer()).analyze_with_ai(USER_ID, batch["id"])
+
+    items = repo.get_preview_items(USER_ID, batch["id"])
+    assert result.created_preview_count == 1
+    assert result.skipped is False
+    assert items[0]["description"] == "AUTO POSTO BETMAR"
+    assert items[0]["card_id"] == CARD_ID
+    assert items[0]["needs_review"] is True
+    assert items[0]["raw_row"]["parser"] == "ai_import_v1"
+
+
+def test_import_service_analyze_with_ai_skips_when_preview_already_has_items(tmp_path: Path) -> None:
+    repo = LocalJsonRepository(tmp_path)
+    _seed_card(repo)
+    import_id = _seed_preview(repo)
+
+    result = ImportService(repository=repo, upload_dir=tmp_path, ai_analyzer=FakeAiAnalyzer()).analyze_with_ai(USER_ID, import_id)
+
+    assert result.created_preview_count == 0
+    assert result.skipped is True

@@ -14,6 +14,12 @@ class UploadImportResponse(BaseModel):
     preview_count: int
 
 
+class AiImportAnalysisResponse(BaseModel):
+    import_id: str
+    created_preview_count: int
+    skipped: bool = False
+
+
 class ImportPreviewItemRead(BaseModel):
     id: str
     transaction_date: str

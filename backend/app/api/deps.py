@@ -3,6 +3,7 @@ from fastapi import Request
 from app.core.auth import CurrentUser, get_current_user
 from app.core.config import settings
 from app.repositories.factory import create_repository
+from app.services.ai_import_service import AiImportAnalyzer
 from app.services.import_service import ImportService
 from app.services.transaction_service import TransactionService
 
@@ -29,7 +30,8 @@ def get_request_user_id(request: Request) -> str:
 
 
 def get_import_service() -> ImportService:
-    return ImportService(repository=repository, upload_dir=settings.upload_dir)
+    analyzer = AiImportAnalyzer(settings)
+    return ImportService(repository=repository, upload_dir=settings.upload_dir, ai_analyzer=analyzer)
 
 
 def get_transaction_service() -> TransactionService:

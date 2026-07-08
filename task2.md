@@ -444,6 +444,84 @@ Resultado esperado:
 - Confirmacao da importacao cria transacoes vinculadas a fatura/cartao quando o cartao existir.
 - Pagamentos, boleto, parcelamento, encargos e totais duplicados nao viram transacoes indevidas.
 
+### [x] P5.5 - Importacao assistida por IA para PDFs desconhecidos ou baixa confianca
+
+Contexto:
+
+- O app ja possui parsers deterministas para layouts conhecidos, como CAIXA, Inter, Mercado Pago e outros padroes de PDF.
+- Parsers deterministas sao rapidos, baratos e previsiveis, mas exigem manutencao para cada novo layout de banco/cartao.
+- Faturas desconhecidas, PDFs escaneados, tabelas quebradas ou layouts alterados podem falhar ou gerar preview incompleto.
+- Uma IA pode ajudar a interpretar PDFs desconhecidos e devolver uma estrutura normalizada, mas nao deve confirmar transacoes automaticamente sem revisao do usuario.
+
+Objetivo:
+
+- Adicionar um fluxo hibrido de importacao: tentar parser conhecido primeiro e usar IA apenas como fallback ou assistente quando a confianca for baixa.
+
+Recomendacao de arquitetura:
+
+- Parser deterministico continua como caminho principal.
+- IA entra quando:
+  - nenhum parser dedicado reconhece o layout;
+  - o parser retorna zero transacoes;
+  - a soma das transacoes diverge muito do total da fatura;
+  - muitas linhas ficam como baixa confianca;
+  - o usuario aciona manualmente `Analisar com IA`.
+- A IA deve retornar JSON estruturado e o backend deve validar/normalizar antes de criar preview.
+- A confirmacao da importacao continua dependendo da revisao do usuario no preview.
+
+Checklist:
+
+- [x] Definir provider de IA e variaveis de ambiente necessarias.
+- [x] Definir schema JSON estrito para resposta da IA:
+  - banco/instituicao;
+  - tipo de documento;
+  - vencimento;
+  - referencia;
+  - total da fatura;
+  - limite quando disponivel;
+  - cartoes detectados;
+  - transacoes;
+  - pagamentos/creditos;
+  - linhas ignoradas;
+  - nivel de confianca.
+- [x] Criar prompt de extracao com instrucoes para nao inventar dados.
+- [x] Criar validador backend para aceitar apenas JSON dentro do schema.
+- [x] Normalizar datas, valores BRL, parcelas e finais de cartao retornados pela IA.
+- [x] Bloquear confirmacao automatica de itens gerados por IA sem preview/revisao.
+- [x] Marcar itens de IA com `needs_review=true` quando houver baixa confianca.
+- [x] Registrar no `raw_row` que o item veio de IA e qual modelo/provider foi usado, sem salvar conteudo sensivel desnecessario.
+- [x] Criar fallback seguro caso a IA falhe, exceda timeout ou retorne JSON invalido.
+- [x] Adicionar botao opcional `Analisar com IA` na tela de preview ou importacao quando o parser falhar.
+- [x] Garantir que dados financeiros sensiveis nao sejam enviados para IA sem decisao explicita de produto/privacidade.
+- [x] Documentar custo, latencia, riscos e politica de privacidade do uso de IA.
+- [x] Criar testes com resposta mockada da IA.
+- [x] Validar que parsers deterministas existentes continuam sendo usados quando reconhecem o layout.
+
+Feito:
+
+- Adicionado servico `AiImportAnalyzer` opcional e desligado por padrao.
+- Criadas variaveis `AI_IMPORT_ENABLED`, `AI_IMPORT_PROVIDER`, `AI_IMPORT_BASE_URL`, `AI_IMPORT_API_KEY`, `AI_IMPORT_MODEL` e `AI_IMPORT_TIMEOUT_SECONDS`.
+- Criado schema Pydantic para validar a resposta JSON da IA antes de criar preview.
+- Upload continua usando parser deterministico primeiro; IA so entra automaticamente se parser retornar zero itens e estiver configurada.
+- Criado endpoint manual `POST /imports/{import_id}/analyze-ai` para imports sem itens de preview.
+- Itens gerados por IA entram no preview com `needs_review=true` e metadados tecnicos no `raw_row`.
+- Frontend mostra botao `Analisar com IA` quando a previa vem vazia.
+- Criada documentacao operacional em `docs/ai-import.md`.
+- Adicionados testes mockados para garantir criacao de preview por IA e evitar duplicidade quando ja existem itens.
+
+Pendente externo para ativar em producao:
+
+- Escolher provider/modelo final.
+- Configurar chave da IA no Render.
+- Revisar politica de privacidade antes de enviar dados financeiros para provider externo.
+
+Resultado esperado:
+
+- PDFs desconhecidos podem gerar preview utilizavel sem criar parser dedicado imediatamente.
+- Layouts conhecidos continuam rapidos e previsiveis.
+- A IA melhora cobertura de importacao, mas o usuario continua revisando antes de confirmar.
+- O app reduz risco de erro silencioso em dados financeiros.
+
 ## Validacoes obrigatorias
 
 ### [x] VF1 - Backend

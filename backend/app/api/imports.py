@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, File, UploadFile
 
 from app.api.deps import get_import_service, get_request_user_id
-from app.schemas.imports import ConfirmImportRequest, ConfirmImportResponse, ImportPreviewResponse, UploadImportResponse
+from app.schemas.imports import AiImportAnalysisResponse, ConfirmImportRequest, ConfirmImportResponse, ImportPreviewResponse, UploadImportResponse
 from app.services.import_service import ImportService
 
 router = APIRouter(prefix="/imports", tags=["imports"])
@@ -23,6 +23,15 @@ def get_preview(
     service: ImportService = Depends(get_import_service),
 ) -> ImportPreviewResponse:
     return service.get_preview(user_id=user_id, import_id=import_id)
+
+
+@router.post("/{import_id}/analyze-ai", response_model=AiImportAnalysisResponse)
+def analyze_import_with_ai(
+    import_id: str,
+    user_id: str = Depends(get_request_user_id),
+    service: ImportService = Depends(get_import_service),
+) -> AiImportAnalysisResponse:
+    return service.analyze_with_ai(user_id=user_id, import_id=import_id)
 
 
 @router.post("/{import_id}/confirm", response_model=ConfirmImportResponse)
