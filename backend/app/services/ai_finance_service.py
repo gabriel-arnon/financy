@@ -8,9 +8,11 @@ from typing import Any
 
 from app.schemas.ai_finance import (
     AiCategorySuggestion,
+    AiFinanceQuestionCta,
     AiFinanceInsight,
     AiFinanceOverview,
     AiFinanceQuestionResponse,
+    AiFinanceQuestionSummary,
     AiRecurrenceSuggestion,
     AiRenameSuggestion,
     AiSuggestedRule,
@@ -44,6 +46,11 @@ def _money(value: Any) -> Decimal:
 
 def _money_text(value: Decimal) -> str:
     return f"{value.quantize(Decimal('0.01'))}"
+
+
+def _brl_text(value: Decimal) -> str:
+    formatted = f"{value.quantize(Decimal('0.01')):,.2f}"
+    return f"R$ {formatted}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def _parse_date(value: Any) -> date | None:
@@ -103,7 +110,7 @@ class AiFinanceService:
             rename_suggestions=self._suggest_renames(transactions),
         )
 
-    def answer(self, user_id: str, question: str) -> AiFinanceQuestionResponse:
+    def _legacy_answer(self, user_id: str, question: str) -> AiFinanceQuestionResponse:
         transactions = self.repository.list_transactions(user_id)
         categories = self.repository.categories(user_id)
         category_by_id = {category["id"]: category for category in categories}
@@ -148,6 +155,87 @@ class AiFinanceService:
             matched_count=len(matched),
             total_amount=_money_text(total),
             filters=filters,
+        )
+
+    def answer(self, user_id: str, question: str) -> AiFinanceQuestionResponse:
+        transactions = self.repository.list_transactions(user_id)
+        categories = self.repository.categories(user_id)
+        category_by_id = {category["id"]: category for category in categories}
+        normalized_question = _normalize_description(question)
+        matched = transactions
+        filters: list[str] = []
+        query: dict[str, str] = {}
+
+        if any(word in normalized_question for word in ["receita", "entrada", "ganhei", "recebi"]):
+            matched = [item for item in matched if item.get("type") in INCOME_TYPES]
+            filters.append("entradas")
+            query["type"] = "income"
+        elif any(word in normalized_question for word in ["despesa", "gasto", "gastei", "saida"]):
+            matched = [item for item in matched if item.get("type") in EXPENSE_TYPES]
+            filters.append("saidas")
+            query["type"] = "expense"
+
+        matched_category = next(
+            (category for category in categories if _normalize_description(category.get("name", "")) in normalized_question),
+            None,
+        )
+        if matched_category:
+            matched = [item for item in matched if item.get("category_id") == matched_category["id"]]
+            filters.append(f"categoria {matched_category['name']}")
+            query["category_id"] = matched_category["id"]
+        else:
+            keyword = self._question_keyword(normalized_question)
+            if keyword:
+                matched = [
+                    item
+                    for item in matched
+                    if keyword in _normalize_description(item.get("description", ""))
+                    or keyword in _normalize_description(item.get("original_description", "") or "")
+                ]
+                filters.append(keyword)
+                query["q"] = keyword
+
+        period = self._question_period(normalized_question, transactions)
+        period_label = None
+        if period:
+            start, end, period_label = period
+            matched = [
+                item
+                for item in matched
+                if (parsed := _parse_date(item.get("transaction_date"))) and parsed >= start and parsed <= end
+            ]
+            filters.append(period_label)
+            query["start_date"] = start.isoformat()
+            query["end_date"] = end.isoformat()
+
+        total = sum((_money(item.get("amount")) for item in matched), Decimal("0"))
+        message = self._answer_message(len(matched), total, period_label)
+        cta = AiFinanceQuestionCta(label="Ver transacoes", route="/transactions", query=query) if matched else None
+        if not filters:
+            top_categories = self._top_expense_categories(matched, category_by_id, limit=3)
+            if top_categories:
+                description = ", ".join(f"{name}: {_brl_text(amount)}" for name, amount in top_categories)
+                fallback_message = f"Encontrei {len(matched)} transacoes. Maiores grupos: {description}."
+                return AiFinanceQuestionResponse(
+                    answer=fallback_message,
+                    matched_count=len(matched),
+                    total_amount=_money_text(total),
+                    filters=[],
+                    message=fallback_message,
+                    kind="category_breakdown",
+                    summary=AiFinanceQuestionSummary(matched_count=len(matched), total_amount=_money_text(total)),
+                    cta=AiFinanceQuestionCta(label="Ver transacoes", route="/transactions", query={}) if matched else None,
+                )
+
+        return AiFinanceQuestionResponse(
+            answer=message,
+            matched_count=len(matched),
+            total_amount=_money_text(total),
+            filters=filters,
+            message=message,
+            kind="transactions_summary",
+            summary=AiFinanceQuestionSummary(matched_count=len(matched), total_amount=_money_text(total), period_label=period_label),
+            cta=cta,
         )
 
     def _month_transactions(self, transactions: list[dict[str, Any]], current_month: date | None) -> list[dict[str, Any]]:
@@ -339,3 +427,45 @@ class AiFinanceService:
             if name in question:
                 return month
         return None
+
+    def _question_period(self, question: str, transactions: list[dict[str, Any]]) -> tuple[date, date, str] | None:
+        transaction_dates = [parsed for item in transactions if (parsed := _parse_date(item.get("transaction_date")))]
+        reference = max(transaction_dates, default=date.today())
+        if any(term in question for term in ["esse mes", "este mes", "mes atual"]):
+            start = date(reference.year, reference.month, 1)
+            next_month = date(reference.year + int(reference.month == 12), 1 if reference.month == 12 else reference.month + 1, 1)
+            return start, date.fromordinal(next_month.toordinal() - 1), "neste mes"
+
+        month_number = self._question_month(question)
+        if month_number:
+            start = date(reference.year, month_number, 1)
+            next_month = date(reference.year + int(month_number == 12), 1 if month_number == 12 else month_number + 1, 1)
+            return start, date.fromordinal(next_month.toordinal() - 1), f"em {month_number:02d}/{reference.year}"
+        return None
+
+    def _question_keyword(self, question: str) -> str | None:
+        ignored = {
+            "quanto",
+            "gastei",
+            "gasto",
+            "gastos",
+            "despesa",
+            "despesas",
+            "receita",
+            "receitas",
+            "esse",
+            "este",
+            "mes",
+            "com",
+            "em",
+            "de",
+            "no",
+            "na",
+        }
+        words = [word for word in question.split() if len(word) >= 3 and word not in ignored]
+        return " ".join(words[:2]) if words else None
+
+    def _answer_message(self, matched_count: int, total: Decimal, period_label: str | None) -> str:
+        transaction_label = "transacao" if matched_count == 1 else "transacoes"
+        period_text = f" {period_label}" if period_label else ""
+        return f"Encontrei {matched_count} {transaction_label}{period_text}, no valor total de {_brl_text(total)}."

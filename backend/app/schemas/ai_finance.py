@@ -53,8 +53,25 @@ class AiFinanceQuestionRequest(BaseModel):
     question: str = Field(min_length=3, max_length=500)
 
 
+class AiFinanceQuestionSummary(BaseModel):
+    matched_count: int
+    total_amount: str | None = None
+    currency: str = "BRL"
+    period_label: str | None = None
+
+
+class AiFinanceQuestionCta(BaseModel):
+    label: str
+    route: str
+    query: dict[str, str] = Field(default_factory=dict)
+
+
 class AiFinanceQuestionResponse(BaseModel):
     answer: str
     matched_count: int
     total_amount: str | None = None
     filters: list[str] = Field(default_factory=list)
+    message: str | None = None
+    kind: str = "transactions_summary"
+    summary: AiFinanceQuestionSummary | None = None
+    cta: AiFinanceQuestionCta | None = None

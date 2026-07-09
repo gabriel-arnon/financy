@@ -265,6 +265,7 @@ for (const width of [375, 430]) {
 
     await page.goto("/");
     await expect(page.locator("nav").filter({ hasText: "Faturas" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Abrir menu" }).click();
     await expect(page.getByRole("link", { name: "Cartões de Crédito" })).toBeVisible();
   });
 }

@@ -1,17 +1,116 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function gotoTransactions(page: Page) {
-  await page.goto("/transactions");
-  await page.waitForLoadState("networkidle");
+const categories = [
+  { id: "cat-food", name: "Alimentacao", type: "expense", status: "active" },
+  { id: "cat-subscriptions", name: "Assinaturas", type: "expense", status: "active" },
+  { id: "cat-income", name: "Salario", type: "income", status: "active" }
+];
+
+const accounts = [
+  {
+    id: "acc-1",
+    user_id: "dev-user",
+    name: "Conta Corrente",
+    institution: "Banco Teste",
+    agency: null,
+    account_number: null,
+    type: "checking",
+    balance: "1250.00",
+    status: "active",
+    created_at: "2026-06-01T00:00:00Z"
+  }
+];
+
+const cards = [
+  {
+    id: "card-1",
+    user_id: "dev-user",
+    account_id: "acc-1",
+    name: "Cartao Principal",
+    institution: "Banco Teste",
+    brand: "Visa",
+    last_digits: "1234",
+    limit_amount: "5000.00",
+    closing_day: 25,
+    due_day: 5,
+    status: "active",
+    created_at: "2026-06-01T00:00:00Z"
+  }
+];
+
+function transaction(index: number) {
+  return {
+    id: `tx-${index}`,
+    user_id: "dev-user",
+    account_id: index % 2 === 0 ? "acc-1" : null,
+    card_id: index % 2 === 0 ? null : "card-1",
+    card_statement_id: index % 2 === 0 ? null : "statement-1",
+    transaction_date: `2026-07-${String((index % 25) + 1).padStart(2, "0")}`,
+    description: index === 1 ? "OPENAI ASSINATURA" : `TRANSACAO TESTE ${index}`,
+    original_description: index === 1 ? "OPENAI ASSINATURA ORIGINAL" : `TRANSACAO TESTE ${index}`,
+    normalized_description: index === 1 ? "openai assinatura" : `transacao teste ${index}`,
+    amount: String(10 + index),
+    type: index === 3 ? "income" : "expense",
+    category_id: index === 2 ? null : index === 1 ? "cat-subscriptions" : index === 3 ? "cat-income" : "cat-food",
+    source_file_id: null,
+    installment_current: null,
+    installment_total: null,
+    status: index === 4 ? "pending" : "confirmed",
+    created_at: `2026-07-${String((index % 25) + 1).padStart(2, "0")}T12:00:00Z`
+  };
 }
 
-async function hasTransactions(page: Page) {
-  return !(await page.getByText("Nenhuma transação encontrada.").isVisible().catch(() => false));
+const transactions = Array.from({ length: 30 }, (_, index) => transaction(index + 1));
+
+async function mockCoreApi(page: Page) {
+  await page.route("**/transactions", async (route) => {
+    if (route.request().resourceType() === "document") {
+      await route.fallback();
+      return;
+    }
+    if (route.request().method() === "DELETE") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "deleted" }) });
+      return;
+    }
+    if (route.request().method() === "POST") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...transaction(99), id: "tx-created" }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(transactions) });
+  });
+  await page.route("**/transactions/**", async (route) => {
+    if (route.request().resourceType() === "document") {
+      await route.fallback();
+      return;
+    }
+    if (route.request().method() === "DELETE") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "deleted" }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(transactions[0]) });
+  });
+  await page.route("**/categories", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(categories) });
+  });
+  await page.route("**/accounts", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(accounts) });
+  });
+  await page.route("**/cards", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(cards) });
+  });
+  await page.route("**/classification-rules", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+  });
+}
+
+async function gotoTransactions(page: Page, path = "/transactions") {
+  await mockCoreApi(page);
+  await page.goto(path);
+  await page.waitForLoadState("networkidle");
 }
 
 test("opens the transaction drawer from a table row and from the edit action", async ({ page }) => {
   await gotoTransactions(page);
-  test.skip(!(await hasTransactions(page)), "transactions data is not available in this environment");
 
   await page.locator("tbody tr").first().click();
   const drawer = page.locator("aside");
@@ -20,63 +119,54 @@ test("opens the transaction drawer from a table row and from the edit action", a
   await expect(drawer.getByLabel("Categoria")).toBeVisible();
   await expect(drawer.getByLabel("Data")).toBeVisible();
   await expect(drawer.getByLabel("Tipo")).toBeVisible();
-  await expect(drawer.getByLabel("Conta")).toBeVisible();
-  await expect(drawer.getByLabel("Cartão")).toBeVisible();
+  await expect(drawer.getByLabel("Origem")).toBeVisible();
   await expect(drawer.getByLabel("Valor")).toBeVisible();
-  await expect(drawer.getByLabel("Status")).toBeVisible();
+  await expect(drawer.getByLabel("Pendente")).toBeVisible();
 
   await drawer.getByRole("button", { name: "Fechar" }).first().click();
   await page.getByRole("button", { name: "Editar transação" }).first().click();
   await expect(page.getByRole("heading", { name: "Detalhes do lançamento" })).toBeVisible();
 });
 
-test("allows editing supported drawer fields only", async ({ page }) => {
+test("allows editing supported drawer fields", async ({ page }) => {
   await gotoTransactions(page);
-  test.skip(!(await hasTransactions(page)), "transactions data is not available in this environment");
 
   await page.locator("tbody tr").first().click();
   const drawer = page.locator("aside");
-  const description = drawer.getByLabel("Descrição");
-  await description.fill("DESCRIÇÃO TESTE E2E");
-  await expect(description).toHaveValue("DESCRIÇÃO TESTE E2E");
+  await drawer.getByLabel("Descrição").fill("DESCRICAO TESTE E2E");
+  await expect(drawer.getByLabel("Descrição")).toHaveValue("DESCRICAO TESTE E2E");
   await expect(drawer.getByLabel("Categoria")).toBeEnabled();
-
-  for (const label of ["Data", "Tipo", "Conta", "Cartão", "Valor", "Status"]) {
-    await expect(drawer.getByLabel(label)).toHaveAttribute("readonly", "");
-  }
+  await expect(drawer.getByLabel("Data")).toBeEnabled();
+  await expect(drawer.getByLabel("Tipo")).toBeEnabled();
+  await expect(drawer.getByLabel("Origem")).toBeEnabled();
+  await expect(drawer.getByLabel("Valor")).toBeEnabled();
+  await expect(drawer.getByLabel("Pendente")).toBeEnabled();
 });
 
 test("asks for visual confirmation before deleting from the row and drawer", async ({ page }) => {
   await gotoTransactions(page);
-  test.skip(!(await hasTransactions(page)), "transactions data is not available in this environment");
 
-  await page.getByRole("button", { name: "Excluir transação" }).first().click();
+  await page.locator("tbody tr").first().getByRole("button", { name: "Excluir transação" }).click();
   await expect(page.getByRole("heading", { name: "Excluir transação" })).toBeVisible();
   await expect(page.getByText("Esta ação não pode ser desfeita.")).toBeVisible();
   await page.getByRole("button", { name: "Cancelar" }).click();
 
   await page.locator("tbody tr").first().click();
-  await page.getByRole("button", { name: "Excluir transação" }).last().click();
+  await page.locator("aside").getByRole("button", { name: "Excluir transação" }).click();
   await expect(page.getByRole("heading", { name: "Excluir transação" })).toBeVisible();
   await page.getByRole("button", { name: "Cancelar" }).click();
 });
 
 test("loads transactions in batches of 25 and keeps summaries on all filtered rows", async ({ page }) => {
   await gotoTransactions(page);
-  test.skip(!(await hasTransactions(page)), "transactions data is not available in this environment");
 
   const summaryTotal = Number(await page.getByText("Total transações").locator("xpath=..").locator("p").nth(1).innerText());
   const initialRows = await page.locator("tbody tr").count();
   expect(initialRows).toBe(Math.min(25, summaryTotal));
 
-  const loadMore = page.getByRole("button", { name: "Carregar mais" });
-  if (summaryTotal > 25) {
-    await expect(loadMore).toBeVisible();
-    await loadMore.click();
-    await expect(page.locator("tbody tr")).toHaveCount(Math.min(50, summaryTotal));
-  } else {
-    await expect(page.getByText("Todas as transações foram carregadas.")).toBeVisible();
-  }
+  await expect(page.getByRole("button", { name: "Carregar mais" })).toBeVisible();
+  await page.getByRole("button", { name: "Carregar mais" }).click();
+  await expect(page.locator("tbody tr")).toHaveCount(30);
 
   await page.getByPlaceholder("Buscar descrição").fill("zzzz-sem-resultado-e2e");
   await expect(page.getByText("Nenhuma transação encontrada.")).toBeVisible();
@@ -84,7 +174,6 @@ test("loads transactions in batches of 25 and keeps summaries on all filtered ro
 
 test("sorts by date, description and amount without changing the filtered total", async ({ page }) => {
   await gotoTransactions(page);
-  test.skip(!(await hasTransactions(page)), "transactions data is not available in this environment");
 
   const summaryTotal = await page.getByText("Total transações").locator("xpath=..").locator("p").nth(1).innerText();
 
@@ -98,9 +187,8 @@ test("sorts by date, description and amount without changing the filtered total"
 
 test("supports selecting visible transactions for batch actions", async ({ page }) => {
   await gotoTransactions(page);
-  test.skip(!(await hasTransactions(page)), "transactions data is not available in this environment");
 
-  await expect(page.getByText("0 transações selecionadas")).toBeVisible();
+  await expect(page.getByText(/transações selecionadas/)).toBeHidden();
   await page.locator("tbody input[type='checkbox']").first().check();
   await expect(page.getByText("1 transações selecionadas")).toBeVisible();
   await expect(page.getByRole("button", { name: "Alterar categoria" })).toBeDisabled();
@@ -112,7 +200,7 @@ test("supports selecting visible transactions for batch actions", async ({ page 
   await page.getByRole("button", { name: "Cancelar" }).click();
 
   await page.getByRole("button", { name: "Limpar seleção" }).click();
-  await expect(page.getByText("0 transações selecionadas")).toBeVisible();
+  await expect(page.getByText(/transações selecionadas/)).toBeHidden();
 });
 
 test("shows uncategorized shortcut and applies the category filter", async ({ page }) => {
@@ -133,10 +221,9 @@ test("opens manual transaction drawer and validates required fields", async ({ p
   await expect(drawer.getByLabel("Descrição")).toBeVisible();
   await expect(drawer.getByLabel("Tipo")).toBeVisible();
   await expect(drawer.getByLabel("Categoria")).toBeVisible();
-  await expect(drawer.getByLabel("Conta")).toBeVisible();
-  await expect(drawer.getByLabel("Cartão")).toBeVisible();
+  await expect(drawer.getByLabel("Origem")).toBeVisible();
   await expect(drawer.getByLabel("Valor")).toBeVisible();
-  await expect(drawer.getByLabel("Status")).toBeVisible();
+  await expect(drawer.getByLabel("Pendente")).toBeVisible();
 
   await drawer.getByLabel("Descrição").fill("");
   await drawer.getByLabel("Valor").fill("");
@@ -146,7 +233,6 @@ test("opens manual transaction drawer and validates required fields", async ({ p
 
 test("supports keyboard access and escape close for the transaction drawer", async ({ page }) => {
   await gotoTransactions(page);
-  test.skip(!(await hasTransactions(page)), "transactions data is not available in this environment");
 
   const firstRow = page.locator("tbody tr").first();
   await firstRow.focus();
@@ -165,4 +251,26 @@ test("keeps the transaction drawer full width on mobile", async ({ page }) => {
   await page.getByRole("button", { name: "Nova transação" }).click();
   const drawerBox = await page.getByRole("dialog", { name: "Criar lançamento manual" }).boundingBox();
   expect(drawerBox?.width).toBe(390);
+});
+
+test("hydrates filters from transaction query params", async ({ page }) => {
+  await gotoTransactions(page, "/transactions?q=openai&type=expense&category_id=cat-subscriptions&start_date=2026-07-01&end_date=2026-07-31");
+
+  await expect(page.getByPlaceholder("Buscar descrição")).toHaveValue("openai");
+  await expect(page.getByLabel("Tipo")).toHaveValue("expense");
+  await expect(page.getByLabel("Categoria")).toHaveValue("cat-subscriptions");
+  await expect(page.getByLabel("Data inicial")).toHaveValue("2026-07-01");
+  await expect(page.getByLabel("Data final")).toHaveValue("2026-07-31");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator("tbody tr").first()).toContainText("OPENAI ASSINATURA");
+});
+
+test("keeps filters empty when transactions route has no query params", async ({ page }) => {
+  await gotoTransactions(page);
+
+  await expect(page.getByPlaceholder("Buscar descrição")).toHaveValue("");
+  await expect(page.getByLabel("Tipo")).toHaveValue("all");
+  await expect(page.getByLabel("Categoria")).toHaveValue("all");
+  await expect(page.getByLabel("Data inicial")).toHaveValue("");
+  await expect(page.getByLabel("Data final")).toHaveValue("");
 });

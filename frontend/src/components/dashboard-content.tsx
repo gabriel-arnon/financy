@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ArrowRight, BarChart3, FileUp, Loader2, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRight, BarChart3, FileUp, Loader2, Plus, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import { ClassificationRuleDialog } from "@/components/classification-rule-dialog";
+import { useToast } from "@/components/toast-provider";
 import { UiButton } from "@/components/ui-button";
 import { askAiFinance, getAiFinanceOverview } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { formatAccountName, formatCardWithAccount, getAccountName, getCardNameWithAccount, getCategoryName, isActiveEntity, translateTransactionType } from "@/lib/labels";
-import type { Account, AiFinanceOverview, AiFinanceQuestionResponse, Card, Category, Transaction } from "@/lib/types";
+import type { Account, AiFinanceOverview, AiFinanceQuestionResponse, AiSuggestedRule, Card, Category, ClassificationRulePayload, Transaction } from "@/lib/types";
 
 type PeriodKey = "current_month" | "previous_month" | "current_week" | "previous_week" | "last_30" | "last_90" | "custom" | "all";
 
@@ -96,6 +99,8 @@ function readStoredProfileName() {
 
 export function DashboardContent({ transactions, categories, accounts, cards }: DashboardContentProps) {
   const { session } = useAuth();
+  const router = useRouter();
+  const toast = useToast();
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>("current_month");
   const [accountFilter, setAccountFilter] = useState("all");
   const [cardFilter, setCardFilter] = useState("all");
@@ -107,6 +112,8 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
   const [aiAnswer, setAiAnswer] = useState<AiFinanceQuestionResponse | null>(null);
   const [aiAnswerLoading, setAiAnswerLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [dismissedRuleKeys, setDismissedRuleKeys] = useState<Set<string>>(() => new Set());
+  const [ruleInitialValues, setRuleInitialValues] = useState<ClassificationRulePayload | null>(null);
   const [storedProfileName] = useState(() => readStoredProfileName());
 
   const now = useMemo(() => new Date(), []);
@@ -218,6 +225,41 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
     { label: "Saldo do período", value: formatCurrency(balance), icon: Wallet, tone: balance >= 0 ? "text-mint" : "text-coral", helper: "Entradas menos saídas" },
     { label: "Transações analisadas", value: String(filteredTransactions.length), icon: BarChart3, tone: "text-ink", helper: "Dentro dos filtros" }
   ];
+
+  const visibleSuggestedRules = (aiOverview?.suggested_rules ?? []).filter((rule) => !dismissedRuleKeys.has(ruleKey(rule)));
+
+  function ruleKey(rule: AiSuggestedRule) {
+    return `${rule.keyword}-${rule.category_id}-${rule.transaction_type ?? "all"}`;
+  }
+
+  function openSuggestedRule(rule: AiSuggestedRule) {
+    setRuleInitialValues({
+      keyword: rule.keyword,
+      category_id: rule.category_id,
+      transaction_type: rule.transaction_type,
+      priority: 100,
+      status: "active",
+      match_scope: "both",
+      auto_created: false
+    });
+  }
+
+  function handleSuggestedRuleCreated() {
+    if (ruleInitialValues) {
+      setDismissedRuleKeys((current) => new Set(current).add(`${ruleInitialValues.keyword}-${ruleInitialValues.category_id}-${ruleInitialValues.transaction_type ?? "all"}`));
+    }
+    getAiFinanceOverview()
+      .then(setAiOverview)
+      .catch((err) => setAiError(err instanceof Error ? err.message : "Falha ao atualizar insights."));
+  }
+
+  function viewRenameSuggestions() {
+    const ids = aiOverview?.rename_suggestions.map((item) => item.transaction_id).join(",");
+    const search = new URLSearchParams();
+    search.set("cleanup", "rename");
+    if (ids) search.set("transaction_ids", ids);
+    router.push(`/transactions?${search.toString()}`);
+  }
 
   return (
     <section className="space-y-8">
@@ -331,15 +373,17 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
           </div>
           {aiOverview ? (
             <div className="mt-4 grid gap-3 border-t border-stone-100 pt-4">
-              <p className="rounded-md bg-stone-50 px-3 py-2 text-sm leading-6 text-stone-700">{aiOverview.summary}</p>
-              {aiOverview.suggested_rules.length > 0 ? (
+              {visibleSuggestedRules.length > 0 ? (
                 <div>
                   <p className="text-xs font-semibold uppercase text-stone-500">Regras sugeridas</p>
                   <div className="mt-2 grid gap-2">
-                    {aiOverview.suggested_rules.slice(0, 2).map((rule) => (
-                      <p key={`${rule.keyword}-${rule.category_id}`} className="rounded-md border border-stone-100 px-3 py-2 text-sm text-stone-700">
+                    {visibleSuggestedRules.slice(0, 2).map((rule) => (
+                      <div key={`${rule.keyword}-${rule.category_id}`} className="flex flex-col gap-3 rounded-md border border-stone-100 px-3 py-2 text-sm text-stone-700 sm:flex-row sm:items-center sm:justify-between">
                         <span className="font-semibold text-ink">{rule.keyword}</span> → {rule.category_name} ({rule.match_count} ocorrências)
-                      </p>
+                        <UiButton icon={<Plus className="h-4 w-4" />} onClick={() => openSuggestedRule(rule)} size="sm" variant="secondary">
+                          Adicionar regra
+                        </UiButton>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -374,10 +418,15 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
                   <p className="mt-2 rounded-md border border-stone-100 px-3 py-2 text-sm text-stone-700">
                     {aiOverview.rename_suggestions.length} descrições têm sugestão de renomeação automática.
                   </p>
+                  <UiButton className="mt-2" onClick={viewRenameSuggestions} size="sm" variant="secondary">
+                    Ver transações
+                  </UiButton>
                 </div>
               ) : null}
             </div>
           ) : null}
+          {false ? (
+          <>
           <form className="mt-4 grid gap-2 border-t border-stone-100 pt-4" onSubmit={handleAiQuestion}>
             <label className="text-sm font-medium text-ink" htmlFor="ai-finance-question">Pergunte sobre suas finanças</label>
             <div className="flex gap-2">
@@ -392,7 +441,7 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
                 Perguntar
               </UiButton>
             </div>
-            {aiAnswer ? <p className="rounded-md bg-stone-50 px-3 py-2 text-sm leading-6 text-stone-700">{aiAnswer.answer}</p> : null}
+            {aiAnswer ? <p className="rounded-md bg-stone-50 px-3 py-2 text-sm leading-6 text-stone-700">{aiAnswer?.answer}</p> : null}
           </form>
           <div className="mt-5 flex h-28 items-end gap-2 border-t border-stone-100 pt-4">
             {dailySummary.map(([key, item]) => (
@@ -405,6 +454,8 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
               </div>
             ))}
           </div>
+          </>
+          ) : null}
         </div>
       </div>
 
@@ -455,6 +506,13 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
           </div>
         </div>
       </div>
+      <ClassificationRuleDialog
+        categories={categories}
+        initialValues={ruleInitialValues}
+        onClose={() => setRuleInitialValues(null)}
+        onCreated={handleSuggestedRuleCreated}
+        open={Boolean(ruleInitialValues)}
+      />
     </section>
   );
 }

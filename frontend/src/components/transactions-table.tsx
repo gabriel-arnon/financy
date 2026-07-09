@@ -17,6 +17,16 @@ interface TransactionsTableProps {
   cards: Card[];
   initialCardId?: string | null;
   initialCardStatementId?: string | null;
+  initialFilters?: {
+    categoryId?: string | null;
+    cleanup?: string | null;
+    endDate?: string | null;
+    query?: string | null;
+    startDate?: string | null;
+    status?: string | null;
+    transactionIds?: string | null;
+    type?: string | null;
+  };
 }
 
 type SortKey = "date" | "amount" | "description";
@@ -154,18 +164,19 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
   return debouncedValue;
 }
 
-export function TransactionsTable({ transactions, categories, accounts, cards, initialCardId = null, initialCardStatementId = null }: TransactionsTableProps) {
+export function TransactionsTable({ transactions, categories, accounts, cards, initialCardId = null, initialCardStatementId = null, initialFilters }: TransactionsTableProps) {
   const router = useRouter();
   const toast = useToast();
   const [rows, setRows] = useState(transactions);
-  const [query, setQuery] = useState("");
-  const [type, setType] = useState<TransactionType | "all">("all");
-  const [category, setCategory] = useState("all");
+  const [query, setQuery] = useState(initialFilters?.query ?? "");
+  const [type, setType] = useState<TransactionType | "all">(transactionTypes.includes(initialFilters?.type as TransactionType) ? initialFilters?.type as TransactionType : "all");
+  const [category, setCategory] = useState(initialFilters?.categoryId ?? "all");
   const [account, setAccount] = useState("all");
   const [card, setCard] = useState(initialCardId ?? "all");
-  const [status, setStatus] = useState("all");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [status, setStatus] = useState(initialFilters?.status ?? "all");
+  const [startDate, setStartDate] = useState(initialFilters?.startDate ?? "");
+  const [endDate, setEndDate] = useState(initialFilters?.endDate ?? "");
+  const [cleanupFilter, setCleanupFilter] = useState(initialFilters?.cleanup ?? null);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [drawerTransactionId, setDrawerTransactionId] = useState<string | null>(null);
   const [detailForm, setDetailForm] = useState<ManualTransactionForm | null>(null);
@@ -183,6 +194,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   const createDateRef = useRef<HTMLInputElement | null>(null);
   const confirmCancelRef = useRef<HTMLButtonElement | null>(null);
   const debouncedQuery = useDebouncedValue(query, 250);
+  const focusedTransactionIds = useMemo(() => new Set((initialFilters?.transactionIds ?? "").split(",").map((item) => item.trim()).filter(Boolean)), [initialFilters?.transactionIds]);
 
   const categoryIds = useMemo(() => new Set(categories.map((item) => item.id)), [categories]);
   const manualCategories = useMemo(() => filterCategoriesByTransactionType(categories, manualForm.type), [categories, manualForm.type]);
@@ -241,9 +253,10 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
       const matchesStart = !startDate || transaction.transaction_date >= startDate;
       const matchesEnd = !endDate || transaction.transaction_date <= endDate;
       const matchesStatement = !initialCardStatementId || transaction.card_statement_id === initialCardStatementId;
-      return matchesQuery && matchesType && matchesCategory && matchesAccount && matchesCard && matchesStatus && matchesStart && matchesEnd && matchesStatement;
+      const matchesFocusedIds = cleanupFilter !== "rename" || focusedTransactionIds.size === 0 || focusedTransactionIds.has(transaction.id);
+      return matchesQuery && matchesType && matchesCategory && matchesAccount && matchesCard && matchesStatus && matchesStart && matchesEnd && matchesStatement && matchesFocusedIds;
     });
-  }, [account, card, cardAccountById, category, categoryIds, debouncedQuery, endDate, initialCardStatementId, rows, startDate, status, type]);
+  }, [account, card, cardAccountById, category, categoryIds, cleanupFilter, debouncedQuery, endDate, focusedTransactionIds, initialCardStatementId, rows, startDate, status, type]);
 
   const summary = useMemo(() => {
     const income = filtered
@@ -299,6 +312,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
     setStatus("all");
     setStartDate("");
     setEndDate("");
+    setCleanupFilter(null);
     resetVisibleList();
   }
 
@@ -666,6 +680,12 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
         </p>
       ) : null}
 
+      {cleanupFilter === "rename" ? (
+        <p className="rounded-md border border-mint/20 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          Exibindo transacoes com sugestao de limpeza de descricao.
+        </p>
+      ) : null}
+
       <div className="flex justify-end">
         <UiButton className="w-full sm:w-auto" icon={<Plus className="h-4 w-4" />} onClick={openCreateDrawer} variant="primary" disabled={isBusy}>
           Nova transação
@@ -792,7 +812,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
         </div>
       </div>
 
-      {selectedCount > 1 ? (
+      {selectedCount > 0 ? (
       <div className="rounded-lg border border-stone-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

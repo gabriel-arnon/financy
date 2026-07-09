@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, CreditCard, Crown, FileUp, LayoutDashboard, LogOut, Menu, Settings, WalletCards, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import { FinanceAssistantLauncher } from "@/components/finance-assistant-launcher";
 import { cn } from "@/lib/classnames";
 
 const navItems = [
@@ -309,6 +310,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main className={cn("transition-[padding] duration-200", sidebarCollapsed ? "md:pl-20" : "md:pl-64")}>
         <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</div>
       </main>
+      <FinanceAssistantLauncher />
     </div>
   );
 }

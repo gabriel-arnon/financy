@@ -222,6 +222,19 @@ export interface AiFinanceQuestionResponse {
   matched_count: number;
   total_amount: string | null;
   filters: string[];
+  message?: string | null;
+  kind?: string;
+  summary?: {
+    matched_count: number;
+    total_amount: string | null;
+    currency: string;
+    period_label: string | null;
+  } | null;
+  cta?: {
+    label: string;
+    route: string;
+    query: Record<string, string>;
+  } | null;
 }
 
 export interface ConfirmImportResponse {

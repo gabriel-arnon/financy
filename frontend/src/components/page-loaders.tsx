@@ -306,7 +306,24 @@ export function CardsPageLoader() {
   );
 }
 
-export function TransactionsPageLoader({ initialCardId, initialCardStatementId }: { initialCardId: string | null; initialCardStatementId: string | null }) {
+export function TransactionsPageLoader({
+  initialCardId,
+  initialCardStatementId,
+  initialFilters,
+}: {
+  initialCardId: string | null;
+  initialCardStatementId: string | null;
+  initialFilters?: {
+    categoryId?: string | null;
+    cleanup?: string | null;
+    endDate?: string | null;
+    query?: string | null;
+    startDate?: string | null;
+    status?: string | null;
+    transactionIds?: string | null;
+    type?: string | null;
+  };
+}) {
   const ready = useReadyForData();
   const load = useCallback(async () => {
     const [transactions, categories, accounts, cards] = await Promise.all([getTransactions(), getCategories(), getAccounts(), getCards()]);
@@ -336,6 +353,7 @@ export function TransactionsPageLoader({ initialCardId, initialCardStatementId }
             cards={cards}
             initialCardId={initialCardId}
             initialCardStatementId={initialCardStatementId}
+            initialFilters={initialFilters}
           />
         </section>
       )}

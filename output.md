@@ -234,3 +234,99 @@ Pendência:
 - `spec.md`: especificação ativa.
 - `agents.md`: agentes ativos para próximas frentes.
 - `output.md`: este relatório histórico.
+## Insights e Assistente Financeiro Global
+
+Status: implementado com validacoes principais concluidas.
+
+Entregas:
+
+- Card de Insights ficou mais enxuto: resumo textual redundante, chat embutido e grafico inferior deixaram de ser renderizados.
+- `Regras sugeridas` ganhou acao `Adicionar regra`, com dialogo reutilizavel de criacao e valores iniciais vindos da sugestao.
+- Apos criar regra sugerida, a sugestao sai da lista local e os insights sao recarregados.
+- `Descricoes para limpar` ganhou CTA para `/transactions?cleanup=rename&transaction_ids=...`.
+- Tela de transacoes passou a aceitar filtros iniciais por query params: busca, tipo, categoria, status, data inicial/final e IDs focados para limpeza.
+- Assistente financeiro global criado no shell autenticado com launcher flutuante, painel de conversa, historico em sessao, fechamento por botao, clique fora e Escape.
+- API do assistente passou a retornar campos estruturados compativeis: `message`, `kind`, `summary` e `cta`.
+- Campos antigos (`answer`, `matched_count`, `total_amount`, `filters`) foram preservados.
+
+Decisoes de arquitetura:
+
+- O contrato do backend foi expandido sem quebrar consumidores existentes.
+- O assistente global usa a mesma rota `/ai-finance/ask` e prefere `message`, com fallback para `answer`.
+- A navegacao para transacoes reutiliza a tela atual por query params, sem criar nova pagina.
+- A criacao de regra sugerida reutiliza o payload/API de regras e concentra o fluxo em um componente reutilizavel.
+
+Validacoes:
+
+- Frontend typecheck: passou.
+- Frontend lint: passou.
+- Frontend build: passou.
+- Backend pytest no `.venv`: `61 passed, 1 warning`.
+- Teste backend novo cobre resposta estruturada do assistente e fallback textual.
+- Playwright e2e: executou contra API local com CORS para `127.0.0.1:3100`; 6 passaram e 7 falharam por expectativas pre-existentes/desalinhadas na tela de transacoes e navegacao responsiva (`Status` no drawer, campos readonly, contador de selecao, confirmacao de exclusao e link mobile `Cartoes de Credito`).
+
+Como validar manualmente:
+
+- Abrir Dashboard e confirmar que Insights nao mostra resumo redundante, chat embutido nem grafico inferior.
+- Clicar em `Adicionar regra`, revisar campos preenchidos e salvar.
+- Clicar em `Ver transacoes` em descricoes para limpar e confirmar filtro aplicado.
+- Abrir o launcher no canto inferior direito, perguntar sobre gastos do mes e usar o CTA de transacoes.
+
+## Estabilizacao E2E de Insights, Assistente e Transacoes
+
+Status: concluido; suite E2E completamente verde.
+
+Falhas originais investigadas:
+
+| Teste / area | Esperado | Observado | Causa raiz | Classificacao | Correcao |
+| --- | --- | --- | --- | --- | --- |
+| Drawer de transacao - campo `Status` | Validar campos atuais do drawer | Teste esperava `Status`, mas produto usa checkbox `Pendente` | Contrato do drawer evoluiu; `Status` nao faz mais parte do formulario | Teste desatualizado | Teste atualizado para `Origem` e `Pendente` |
+| Drawer de transacao - campos readonly | Confirmar editabilidade correta | Teste esperava `readonly` em data/tipo/origem/valor/status | Produto atual permite editar esses campos no drawer | Teste desatualizado | Teste passou a validar campos editaveis e habilitados |
+| Confirmacao de exclusao | Abrir dialogo antes de excluir | Seletor global por nome era ambiguo em tabela grande | Clique nao estava ancorado na linha/drawer certo | Seletor fragil | Teste passou a clicar no botao da linha e no botao dentro do drawer |
+| Contador de selecao | Feedback ao selecionar transacoes | Produto so mostrava acoes com mais de 1 item selecionado | Selecionar 1 item nao dava feedback nem acesso a limpar selecao | Regressao real de UX | Produto agora exibe barra de selecao a partir de 1 item |
+| Link mobile `Cartoes de Credito` em 375px | Validar item de menu mobile | Teste procurava link sem abrir menu mobile | Nav desktop esta corretamente oculto no mobile | Problema de viewport/responsividade no teste | Teste abre `Abrir menu` antes de buscar o link |
+| Link mobile `Cartoes de Credito` em 430px | Validar item de menu mobile | Mesmo comportamento do viewport 375px | Mesmo motivo: menu fechado por padrao | Problema de viewport/responsividade no teste | Teste abre `Abrir menu` antes de buscar o link |
+| Fixtures de transacoes | Suite independente de dados locais | Testes dependiam da base local e usavam `skip` quando vazia | Dados mutaveis causavam falsos negativos e skips | Problema de fixture/dados | Spec de transacoes usa mocks deterministas, sem `skip` |
+
+Cobertura E2E adicionada/ajustada:
+
+- `/transactions` sem query params inicia filtros vazios.
+- `/transactions` com `q`, `type`, `category_id`, `start_date` e `end_date` hidrata filtros e lista filtrada.
+- `Ver transacoes` em Insights navega para `/transactions?cleanup=rename&transaction_ids=...` e filtra a lista.
+- `Adicionar regra` em Insights abre dialogo, preenche valores iniciais, salva pela API mockada, mostra toast e remove sugestao.
+- Assistente global nao aparece em `/login`.
+- Assistente global abre pelo launcher, fecha por botao, Escape e clique fora.
+- Assistente global envia pergunta, renderiza resposta estruturada, mostra CTA e navega para transacoes filtradas.
+
+Arquivos alterados nesta etapa:
+
+- `frontend/tests/e2e/transactions.spec.ts`
+- `frontend/tests/e2e/responsive-buttons.spec.ts`
+- `frontend/tests/e2e/finance-assistant-insights.spec.ts`
+- `frontend/src/components/transactions-table.tsx`
+- `frontend/src/components/dashboard-content.tsx`
+- `output.md`
+
+Comandos executados:
+
+- `npx.cmd playwright test tests/e2e/transactions.spec.ts --project=chromium --reporter=line`
+- `npx.cmd playwright test tests/e2e/responsive-buttons.spec.ts --project=chromium --reporter=line`
+- `npx.cmd playwright test tests/e2e/finance-assistant-insights.spec.ts --project=chromium --reporter=line`
+- `npm.cmd run e2e`
+- `npm.cmd run typecheck`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `.venv\Scripts\python.exe -m pytest`
+
+Resultado final:
+
+- Frontend typecheck: passou.
+- Frontend lint: passou.
+- Frontend build: passou.
+- Frontend E2E: `19 passed`.
+- Backend pytest: `61 passed, 1 warning`.
+- Nenhum teste foi desabilitado, marcado com `skip`, `only` ou enfraquecido artificialmente.
+
+Risco residual:
+
+- O Playwright ainda emite aviso do Next sobre `script` renderizado no client durante alguns testes; nao bloqueia a suite, mas vale investigar em uma frente separada de higiene do layout/theme init.
