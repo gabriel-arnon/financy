@@ -1,144 +1,51 @@
-# Financy - Agents da Fase 3
+# Financy - Agents Ativos
 
 ## Objetivo
 
-Dividir a Fase 3, autenticacao e isolamento de usuarios, em frentes pequenas e verificaveis.
+Dividir as próximas frentes em áreas pequenas, verificáveis e alinhadas com `task.md`.
 
-## Regras gerais
+## Regras Gerais
 
-- Nao mudar regras financeiras sem necessidade.
-- Nao aceitar `user_id` do cliente para entidades user-owned.
-- Manter `/health` publico.
-- Proteger rotas financeiras.
-- Usar Supabase Auth como estrategia recomendada.
-- Manter `DEV_USER_ID` apenas como bypass local/teste explicito.
-- Preferir `404` para tentativa de acessar recurso de outro usuario.
-- Adiar RLS ate backend auth e testes multiusuario passarem.
-- Rodar validacoes da area alterada.
+- Preservar isolamento por usuário.
+- Não aceitar `user_id` do cliente para entidades user-owned.
+- Não mudar regras financeiras sem necessidade.
+- Não expor segredos.
+- IA deve sugerir e explicar, não confirmar ações sensíveis automaticamente.
+- Rodar validações da área alterada.
 
-## Agent 1 - Auditoria de Auth Atual
+## Agent 1 - Produção e Confiabilidade
 
-Missao:
+Missão:
 
-Mapear o uso atual de `DEV_USER_ID`, `get_user_id` e `user_id`.
+- Resolver pendências de `task.md`.
 
 Responsabilidades:
 
-- Revisar `backend/app/api/deps.py`.
-- Mapear rotas que usam `Depends(get_user_id)`.
-- Mapear entidades user-owned.
-- Mapear frontend API client.
-- Identificar pontos que aceitam IDs relacionados.
+- Investigar `Failed to fetch`.
+- Validar performance em produção.
+- Revisar CORS, token, cold start e logs.
+- Acompanhar storage persistente, backups e rotação de segredos.
 
 Entregas:
 
-- mapa de rotas protegidas;
-- mapa de entidades por ownership;
-- riscos de acesso cruzado.
+- causa raiz documentada;
+- correção ou próximo passo preciso;
+- validação em produção quando aplicável.
 
-Validacao:
+## Agent 2 - UX Core
 
-- plano documentado em `docs/auth-user-isolation-plan.md`.
+Missão:
 
-## Agent 2 - Backend Auth Foundation
-
-Missao:
-
-Implementar a base de autenticacao no backend.
+- Executar polish visual de sidebar, transações, contas, cartões e importação.
 
 Responsabilidades:
 
-- Adicionar settings de auth.
-- Criar modelo/contexto `CurrentUser`.
-- Criar dependencia `get_current_user`.
-- Validar JWT Supabase.
-- Manter bypass local/teste explicito.
-- Atualizar `get_user_id` para derivar do usuario atual.
+- Corrigir acentuação e labels.
+- Ajustar drawers, loading states, cards e botões.
+- Melhorar feedback por toast.
+- Garantir responsividade.
 
-Entregas:
-
-- dependencia de auth;
-- testes de token ausente/invalido/valido;
-- testes de bypass.
-
-Validacao:
-
-```powershell
-cd backend
-.\.venv\Scripts\python.exe -m pytest
-```
-
-## Agent 3 - Endpoint Protection
-
-Missao:
-
-Garantir que todas as rotas financeiras exigem usuario autenticado.
-
-Responsabilidades:
-
-- Proteger transactions, imports, statements, categories, accounts, cards e classification-rules.
-- Manter `/health` publico.
-- Padronizar `401`, `403` e `404`.
-- Atualizar OpenAPI com bearer auth quando cabivel.
-
-Entregas:
-
-- rotas protegidas;
-- testes de endpoint sem token;
-- testes de endpoint com usuario autenticado.
-
-Validacao:
-
-- request anonimo falha nas rotas financeiras;
-- `/health` continua respondendo.
-
-## Agent 4 - User Isolation Hardening
-
-Missao:
-
-Impedir acesso cruzado entre usuarios.
-
-Responsabilidades:
-
-- Validar ownership em create/update com IDs relacionados.
-- Garantir que summaries agregam apenas dados do usuario atual.
-- Bloquear mutacao comum de categorias de sistema.
-- Garantir import preview/confirm por usuario.
-- Particionar novos uploads por usuario.
-
-Entregas:
-
-- validacoes de ownership;
-- testes com usuario A e usuario B;
-- regras claras para categoria de sistema.
-
-Validacao:
-
-- usuario A nao acessa nem referencia recursos do usuario B.
-
-## Agent 5 - Frontend Auth Shell
-
-Missao:
-
-Adicionar experiencia minima de autenticacao no frontend.
-
-Responsabilidades:
-
-- Configurar Supabase client.
-- Criar login.
-- Criar logout.
-- Criar provider/contexto de sessao.
-- Proteger rotas da aplicacao.
-- Adicionar Bearer token ao API client.
-- Tratar `401`.
-
-Entregas:
-
-- login/logout funcionais;
-- API client autenticado;
-- telas protegidas.
-
-Validacao:
+Validação:
 
 ```powershell
 cd frontend
@@ -147,110 +54,88 @@ npm.cmd run lint
 npm.cmd run build
 ```
 
-## Agent 6 - Data Ownership Migration
+## Agent 3 - Dashboard e Insights
 
-Missao:
+Missão:
 
-Preparar migracao dos dados atuais do `DEV_USER_ID` para usuario real.
-
-Responsabilidades:
-
-- Criar checklist/script de reassociacao.
-- Exigir backup.
-- Atualizar tabelas user-owned em ordem segura.
-- Preservar categorias de sistema.
-- Validar contagens.
-- Documentar rollback.
-
-Entregas:
-
-- script ou checklist operacional;
-- relatorio de riscos;
-- rollback documentado.
-
-Validacao:
-
-- dry-run mostra contagens;
-- apply em ambiente local/teste preserva dados.
-
-## Agent 7 - RLS Preparation
-
-Missao:
-
-Preparar Row Level Security sem ativar antes da hora.
+- Evoluir o dashboard para visão analítica.
 
 Responsabilidades:
 
-- Criar draft de policies.
-- Testar policies em banco descartavel.
-- Definir comportamento de service role para scripts.
-- Documentar ordem de ativacao.
+- Remover card de baixa utilidade.
+- Adicionar gráficos.
+- Adicionar filtros rápidos e período personalizado.
+- Preparar área de insights.
 
-Entregas:
+Validação:
 
-- migration draft de RLS;
-- checklist de ativacao;
-- riscos documentados.
+- frontend typecheck/lint/build;
+- revisão visual desktop/mobile.
 
-Validacao:
+## Agent 4 - Importação e Preview
 
-- policies passam em smoke test com dois usuarios antes de ativacao real.
+Missão:
 
-## Agent 8 - QA e Release Auth
-
-Missao:
-
-Validar a Fase 3 ponta a ponta.
+- Melhorar UX do fluxo de importação.
 
 Responsabilidades:
 
-- Rodar testes backend.
-- Rodar testes backend PostgreSQL.
-- Rodar validações frontend.
-- Executar smoke test com dois usuarios.
-- Registrar pendencias e riscos.
+- Trocar aviso inline por toast.
+- Corrigir consistência quando diferença for zero.
+- Reorganizar preview.
+- Remover colunas de baixa utilidade.
+- Manter confirmação funcionando.
 
-Entregas:
+Validação:
 
-- resultado de validacoes;
-- checklist final;
-- lista de riscos remanescentes.
+- frontend typecheck/lint/build;
+- backend pytest se houver alteração em parser/API/serviço.
 
-Validacao:
+## Agent 5 - IA Financeira
 
-- todas as validacoes obrigatorias passam ou possuem justificativa.
+Missão:
 
-## Sequencia recomendada
+- Implementar P6 com segurança e revisão humana.
 
-1. Agent 1 - Auditoria de Auth Atual.
-2. Agent 2 - Backend Auth Foundation.
-3. Agent 3 - Endpoint Protection.
-4. Agent 4 - User Isolation Hardening.
-5. Agent 5 - Frontend Auth Shell.
-6. Agent 6 - Data Ownership Migration.
-7. Agent 7 - RLS Preparation.
-8. Agent 8 - QA e Release Auth.
+Responsabilidades:
 
-## Handoff esperado
+- Classificação contínua.
+- Sugestão de regras.
+- Resumo financeiro mensal.
+- Busca em linguagem natural.
+- Perguntas sobre finanças.
+- Recorrências.
+- Normalização de descrições.
 
-Cada agent deve entregar:
+Regras:
 
-- arquivos alterados;
-- decisoes tomadas;
-- comandos executados;
-- resultados;
-- riscos ou pendencias.
+- Usar schemas estruturados.
+- Evitar SQL livre ou comandos gerados pela IA.
+- Não criar regras/transações automaticamente sem confirmação.
+- Enviar ao provider apenas o necessário.
 
-## Definicao de pronto geral
+Validação:
 
-A Fase 3 esta pronta quando:
+- testes mockados de IA;
+- backend pytest quando houver serviço/API;
+- frontend typecheck/lint/build quando houver UI.
 
-- auth real esta implementada;
-- frontend tem login/logout;
-- backend deriva `user_id` de token valido;
-- rotas financeiras exigem auth;
-- isolamento entre usuarios esta testado;
-- `DEV_USER_ID` nao e fallback silencioso;
-- migracao de propriedade esta documentada;
-- RLS esta preparado para fase posterior;
-- validacoes obrigatorias passam.
+## Agent 6 - QA e Release
+
+Missão:
+
+- Validar cada lote antes de deploy.
+
+Responsabilidades:
+
+- Rodar validações obrigatórias.
+- Revisar diff e riscos.
+- Atualizar `output.md` quando uma frente for concluída.
+- Manter `task.md` apenas com pendências ativas.
+
+Definição de pronto:
+
+- validações passam;
+- pendências documentadas;
+- risco residual claro;
+- histórico movido para `output.md`.

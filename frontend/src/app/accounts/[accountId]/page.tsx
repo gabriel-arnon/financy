@@ -196,16 +196,16 @@ export default async function AccountDetailPage({ params, searchParams }: Accoun
           </div>
           <div className="grid gap-3 p-5">
             {typedSummary.cards.map((card) => (
-              <article key={card.id} className="rounded-lg border border-stone-100 bg-stone-50 p-4">
+              <article key={card.id} className="rounded-lg border border-stone-100 bg-stone-50 p-3">
                 <div className="flex items-start gap-3">
                   <CreditCard className="mt-0.5 h-5 w-5 shrink-0 text-mint" />
                   <div className="min-w-0">
                     <p className="break-words font-semibold text-ink">{formatCardName(card)}</p>
                     <p className="mt-1 text-sm text-stone-500">Limite {card.limit_amount ? formatCurrency(card.limit_amount) : "-"}</p>
-                    <p className="mt-2 text-xs text-stone-500">
+                    <p className="mt-1 text-xs text-stone-500">
                       {card.open_statement_count} faturas abertas · {formatCurrency(card.open_statement_total)}
                     </p>
-                    <NavigatingLink href={`/cards/${card.id}`} className="mt-3 inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-mint">
+                    <NavigatingLink href={`/cards/${card.id}`} className="mt-2 inline-flex min-h-8 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-3 py-1.5 text-sm font-medium text-mint">
                       Ver cartão
                       <ArrowRight className="h-4 w-4" />
                     </NavigatingLink>
@@ -228,20 +228,20 @@ export default async function AccountDetailPage({ params, searchParams }: Accoun
             {typedSummary.open_statements.map((statement) => {
               const card = typedSummary.cards.find((item) => item.id === statement.card_id);
               return (
-                <article key={statement.id} className={`grid gap-3 px-5 py-4 sm:grid-cols-[1fr_auto] ${statementRowClass(statement.integrity_status)}`}>
+                <article key={statement.id} className={`grid gap-3 px-4 py-3 sm:grid-cols-[1fr_auto] ${statementRowClass(statement.integrity_status)}`}>
                   <div className="min-w-0">
                     <p className="break-words font-medium text-ink">{card ? formatCardName(card) : "Cartão não encontrado"}</p>
                     <p className="mt-1 text-xs text-stone-500">
                       Referência {formatDate(statement.reference_month)} · Vencimento {statement.due_date ? formatDate(statement.due_date) : "-"} · {translateStatementStatus(statement.status)}
                     </p>
-                    <span className={`mt-2 inline-flex rounded-md px-2 py-1 text-xs font-medium ${integrityClass(statement.integrity_status)}`}>
+                    <span className={`mt-1.5 inline-flex rounded-md px-2 py-1 text-xs font-medium ${integrityClass(statement.integrity_status)}`}>
                       {statement.integrity_label}
                     </span>
                   </div>
                   <div className="text-left sm:text-right">
                     <p className="font-semibold text-ink">{formatCurrency(statementTotal(statement))}</p>
                     <p className="mt-1 text-xs text-stone-500">{statement.transaction_count} transações</p>
-                    <div className="mt-3 grid gap-2 sm:justify-end">
+                    <div className="mt-2 grid gap-2 sm:justify-end">
                       {statement.integrity_status === "no_transactions" ? (
                         <StatementDeleteButton compact statementId={statement.id} />
                       ) : null}
@@ -267,7 +267,7 @@ export default async function AccountDetailPage({ params, searchParams }: Accoun
           <p className="mt-1 text-xs text-stone-500">Transações diretas da conta e dos cartões vinculados.</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-[760px] divide-y divide-stone-200 text-sm">
+          <table className="w-full min-w-[760px] table-fixed divide-y divide-stone-200 text-sm">
             <thead className="bg-stone-50 text-left text-xs uppercase text-stone-500">
               <tr>
                 <th className="px-4 py-3">Data</th>

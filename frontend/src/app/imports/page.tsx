@@ -2,8 +2,10 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { Plus } from "lucide-react";
 import { UploadCard } from "@/components/upload-card";
 import { ImportPreviewPanel } from "@/components/import-preview-panel";
+import { UiButton } from "@/components/ui-button";
 
 function ImportsFallback() {
   return (
@@ -31,13 +33,25 @@ function ImportsPageContent() {
     window.history.replaceState(null, "", `/importacao?importId=${nextImportId}`);
   }
 
+  function handleNewImport() {
+    setUploadedImportId(null);
+    window.history.replaceState(null, "", "/importacao");
+  }
+
   return (
     <section className="space-y-6">
-      <div>
-        <p className="text-sm font-medium text-mint">Importacao</p>
-        <h1 className="mt-2 text-3xl font-semibold text-ink">Enviar fatura ou extrato</h1>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-mint">Importacao</p>
+          <h1 className="mt-2 text-3xl font-semibold text-ink">Enviar fatura ou extrato</h1>
+        </div>
+        {importId ? (
+          <UiButton icon={<Plus className="h-4 w-4" />} onClick={handleNewImport} variant="secondary">
+            Nova importação
+          </UiButton>
+        ) : null}
       </div>
-      <UploadCard onUploaded={handleUploaded} />
+      {!importId ? <UploadCard onUploaded={handleUploaded} /> : null}
       {importId ? <ImportPreviewPanel importId={importId} /> : null}
     </section>
   );

@@ -169,6 +169,61 @@ export interface AiImportAnalysisResponse {
   skipped: boolean;
 }
 
+export interface AiFinanceInsight {
+  title: string;
+  description: string;
+  severity: string;
+}
+
+export interface AiSuggestedRule {
+  keyword: string;
+  category_id: string;
+  category_name: string;
+  transaction_type: TransactionType | null;
+  match_count: number;
+  reason: string;
+}
+
+export interface AiCategorySuggestion {
+  transaction_id: string;
+  description: string;
+  suggested_category_id: string | null;
+  suggested_category_name: string | null;
+  reason: string;
+}
+
+export interface AiRecurrenceSuggestion {
+  description: string;
+  amount: string;
+  transaction_type: TransactionType;
+  occurrences: number;
+  cadence: string;
+  reason: string;
+}
+
+export interface AiRenameSuggestion {
+  transaction_id: string;
+  current_description: string;
+  suggested_description: string;
+  reason: string;
+}
+
+export interface AiFinanceOverview {
+  summary: string;
+  insights: AiFinanceInsight[];
+  suggested_rules: AiSuggestedRule[];
+  category_suggestions: AiCategorySuggestion[];
+  recurrence_suggestions: AiRecurrenceSuggestion[];
+  rename_suggestions: AiRenameSuggestion[];
+}
+
+export interface AiFinanceQuestionResponse {
+  answer: string;
+  matched_count: number;
+  total_amount: string | null;
+  filters: string[];
+}
+
 export interface ConfirmImportResponse {
   import_id: string;
   created_transaction_ids: string[];

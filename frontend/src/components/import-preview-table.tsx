@@ -222,14 +222,11 @@ export function ImportPreviewTable({ importId, items, categories, analysisSummar
               <th className="px-3 py-3">Descrição</th>
               <th className="px-3 py-3">Sugestão</th>
               <th className="px-3 py-3">Regra</th>
-              <th className="px-3 py-3">País</th>
               <th className="px-3 py-3">Parcela</th>
               <th className="px-3 py-3">Categoria</th>
               <th className="px-3 py-3">Tipo</th>
               <th className="px-3 py-3">Valor</th>
-              <th className="px-3 py-3">Confiança</th>
               <th className="px-3 py-3">Motivo</th>
-              <th className="px-3 py-3">Status</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-stone-100">
@@ -279,7 +276,6 @@ export function ImportPreviewTable({ importId, items, categories, analysisSummar
                     </span>
                   ) : ai?.suggested_category ? "IA" : "-"}
                 </td>
-                <td className="px-3 py-2 text-stone-700">{row.merchant_country ?? "-"}</td>
                 <td className="px-3 py-2 text-stone-700">
                   {row.installment_current && row.installment_total ? `${row.installment_current}/${row.installment_total}` : "-"}
                 </td>
@@ -302,13 +298,7 @@ export function ImportPreviewTable({ importId, items, categories, analysisSummar
                     onChange={(event) => updateRow(row.id, { amount: event.target.value })}
                   />
                 </td>
-                <td className="px-3 py-2">
-                  <span className="rounded-md bg-stone-100 px-2 py-1 text-xs text-stone-700">{Math.round(row.parser_confidence * 100)}%</span>
-                </td>
                 <td className="px-3 py-2 text-stone-600">{row.excluded_reason ?? ai?.duplicate_reason ?? ai?.explanation ?? (row.needs_review ? "revisar" : "-")}</td>
-                <td className="px-3 py-2">
-                  <span className="rounded-md bg-stone-100 px-2 py-1 text-xs text-stone-700">{row.duplicate_candidate ? "duplicate" : row.status}</span>
-                </td>
               </tr>
               );
             })}

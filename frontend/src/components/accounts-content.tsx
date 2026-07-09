@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ArrowRight, CreditCard, Landmark, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { NavigatingLink } from "@/components/navigating-link";
 import { IconButton, UiButton } from "@/components/ui-button";
 import { useToast } from "@/components/toast-provider";
 import { createAccount, deleteAccount, getAccounts, getCards, updateAccount } from "@/lib/api";
@@ -30,9 +31,18 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
   const [accountForm, setAccountForm] = useState<AccountPayload>(emptyAccount);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [showAccountForm, setShowAccountForm] = useState(false);
+  const [query, setQuery] = useState("");
 
   const activeAccounts = useMemo(() => accounts.filter(isActiveEntity), [accounts]);
   const activeCards = useMemo(() => cards.filter(isActiveEntity), [cards]);
+  const filteredAccounts = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return activeAccounts;
+    return activeAccounts.filter((account) => {
+      const searchable = [account.name, account.institution, accountTypeLabels[account.type]].filter(Boolean).join(" ").toLowerCase();
+      return searchable.includes(normalized);
+    });
+  }, [activeAccounts, query]);
   const accountSummary = useMemo(() => {
     return activeAccounts.reduce(
       (summary, account) => {
@@ -213,6 +223,17 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
       ) : null}
 
       <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+        <div className="border-b border-stone-100 px-4 py-3">
+          <label className="block max-w-md space-y-1.5">
+            <span className="text-sm font-medium text-ink">Filtrar contas</span>
+            <input
+              className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint"
+              placeholder="Busque por nome, instituição ou tipo"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </label>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full table-fixed divide-y divide-stone-200 text-sm">
             <colgroup>
@@ -232,7 +253,7 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {activeAccounts.map((account) => {
+              {filteredAccounts.map((account) => {
                 const linkedCards = activeCards.filter((card) => card.account_id === account.id);
                 return (
                   <tr key={account.id} className="align-middle">
@@ -269,10 +290,10 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1.5">
-                        <Link href={`/accounts/${account.id}`} className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-stone-300 bg-white px-2.5 text-xs font-medium text-ink shadow-sm hover:bg-stone-50">
+                        <NavigatingLink href={`/accounts/${account.id}`} className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-stone-300 bg-white px-2.5 text-xs font-medium text-ink shadow-sm hover:bg-stone-50">
                           Detalhes
                           <ArrowRight className="h-3.5 w-3.5 shrink-0" />
-                        </Link>
+                        </NavigatingLink>
                         <IconButton aria-label="Editar conta" icon={<Pencil className="h-4 w-4" />} onClick={() => editAccount(account)} title="Editar" variant="secondary" />
                         <IconButton aria-label="Inativar conta" icon={<Trash2 className="h-4 w-4" />} onClick={() => inactivateAccount(account.id)} title="Excluir" variant="danger" />
                       </div>
@@ -280,7 +301,7 @@ export function AccountsContent({ initialAccounts, initialCards }: AccountsConte
                   </tr>
                 );
               })}
-              {activeAccounts.length === 0 ? <tr><td className="px-4 py-8 text-center text-stone-500" colSpan={5}>Nenhuma conta cadastrada.</td></tr> : null}
+              {filteredAccounts.length === 0 ? <tr><td className="px-4 py-8 text-center text-stone-500" colSpan={5}>{activeAccounts.length === 0 ? "Nenhuma conta cadastrada." : "Nenhuma conta encontrada para o filtro."}</td></tr> : null}
             </tbody>
           </table>
         </div>

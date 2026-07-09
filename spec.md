@@ -1,223 +1,99 @@
-# Financy - Especificacao da Fase 3: Autenticacao e Isolamento de Usuarios
+# Financy - Especificação Ativa
 
 ## Contexto
 
-O Financy usa atualmente `DEV_USER_ID` como usuario unico local. A Fase 2 consolidou PostgreSQL e manteve `profiles` como tabela de identidade da aplicacao. A Fase 3 deve introduzir autenticacao real, login no frontend e isolamento de dados por usuario.
+O Financy já possui autenticação, isolamento por usuário, importação de faturas, edição de transações, toasts globais, parsers dedicados e IA assistiva para importação. A próxima etapa concentra melhorias de UX, estabilidade de produção e inteligência financeira.
 
-## Objetivo da especificacao
+## Requisitos de Produto
 
-Definir requisitos tecnicos, criterios de aceite e limites para implementar autenticacao e isolamento sem alterar o comportamento financeiro validado.
+### RP01 - UX consistente
 
-## Requisitos funcionais
+- Corrigir labels e acentuação.
+- Padronizar loading states.
+- Remover ruídos visuais como status técnico exposto ao usuário.
+- Fechar drawers automaticamente após ações bem-sucedidas quando fizer sentido.
+- Usar toast para feedback global.
 
-### RF01 - Provedor de autenticacao
+### RP02 - Dashboard analítico
 
-O projeto deve usar Supabase Auth como provedor recomendado.
+- Remover cards pouco úteis.
+- Adicionar gráficos de gastos.
+- Adicionar insights.
+- Melhorar filtros rápidos e período personalizado.
+- Garantir que cards, gráficos e insights respondem ao mesmo filtro.
 
-Requisitos:
+### RP03 - Transações
 
-- frontend autentica via Supabase;
-- backend valida JWT Supabase;
-- `profiles.id` representa o ID do usuario autenticado;
-- `user_id` usado nas entidades vem do `sub` do token.
+- Manter tabela e drawer limpos.
+- Preservar edição completa de data, descrição, tipo, categoria, origem, valor e pendência.
+- Evitar exposição de status técnico como `confirmed`.
+- Manter criação/edição com feedback claro.
 
-### RF02 - Usuario atual no backend
+### RP04 - Contas e Cartões
 
-O backend deve substituir o retorno fixo de `settings.dev_user_id` por contexto autenticado.
+- Melhorar navegação para detalhes com loading.
+- Ajustar layout de cards relacionados.
+- Padronizar BRL em criação/edição de cartão.
+- Melhorar disposição de faturas e últimas transações.
 
-Requisitos:
+### RP05 - Importação
 
-- criar dependencia `get_current_user`;
-- criar modelo/contexto de usuario atual;
-- manter helper de `user_id` para reduzir churn nas rotas;
-- validar token Bearer;
-- retornar `401` para token ausente/invalido.
+- Substituir avisos inline redundantes por toast.
+- Corrigir análise de consistência quando diferença for zero.
+- Melhorar UX do preview.
+- Remover colunas de baixa utilidade da lista principal.
+- Manter detalhes importantes acessíveis de forma secundária.
 
-### RF03 - Bypass local/teste
+### RP06 - IA Financeira Assistiva
 
-O uso de `DEV_USER_ID` deve continuar apenas como bypass controlado.
+- IA pode sugerir, explicar e resumir.
+- IA não deve confirmar transações, criar regras ou alterar dados sensíveis sem revisão/ação do usuário.
+- Sugestões devem usar categorias e entidades existentes quando aplicável.
+- Respostas devem ser baseadas em dados do usuário autenticado.
+- Deve haver proteção contra prompt injection em busca/perguntas.
 
-Requisitos:
+## Requisitos Não Funcionais
 
-- env explicita, por exemplo `AUTH_DEV_BYPASS=true`;
-- permitido apenas em ambiente `local` ou `test`;
-- proibido como fallback silencioso em producao;
-- coberto por testes.
+- Preservar isolamento por usuário.
+- Não aceitar `user_id` do cliente para entidades user-owned.
+- Manter `/health` público.
+- Evitar retry automático em escritas não idempotentes.
+- Usar schemas estruturados para respostas de IA.
+- Não enviar dados excessivos ao provider de IA.
+- Manter segredos fora do repositório.
 
-### RF04 - Rotas protegidas
+## Validação
 
-Todas as rotas financeiras devem exigir autenticacao.
+Frontend:
 
-Rotas protegidas:
+```powershell
+cd frontend
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run build
+```
 
-- `/transactions`
-- `/imports`
-- `/statements`
-- `/categories`
-- `/accounts`
-- `/cards`
-- `/classification-rules`
+Backend, quando aplicável:
 
-Rota publica:
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```
 
-- `/health`
+Smoke pós-deploy:
 
-### RF05 - Isolamento de entidades
+- login;
+- navegação entre abas;
+- criar/editar/excluir transação;
+- criar/editar/inativar categoria/regra;
+- importar fatura;
+- confirmar preview;
+- validar dashboard de cartão;
+- validar isolamento entre dois usuários reais.
 
-Entidades user-owned:
+## Fora de Escopo Imediato
 
-- `accounts`
-- `cards`
-- `card_statements`
-- `transactions`
-- `classification_rules`
-- `import_files`
-- `import_batches`
-- `import_preview_items`
-
-Requisitos:
-
-- listagens retornam apenas dados do usuario autenticado;
-- get/update/delete nao expõem recursos de outro usuario;
-- create/update nao aceitam `user_id` vindo do cliente;
-- referencias relacionadas devem pertencer ao mesmo usuario.
-
-### RF06 - Categorias
-
-Categorias possuem comportamento misto.
-
-Requisitos:
-
-- categorias de sistema usam `user_id = null`;
-- categorias de usuario usam `user_id = current_user.id`;
-- todos podem listar categorias de sistema;
-- usuario pode criar/editar/excluir apenas categorias proprias;
-- usuario comum nao pode editar/excluir categoria de sistema.
-
-### RF07 - Frontend autenticado
-
-O frontend deve possuir auth shell.
-
-Requisitos:
-
-- Supabase client configurado;
-- tela de login;
-- logout;
-- provider/contexto de sessao;
-- protecao de rotas da aplicacao;
-- chamadas API com `Authorization: Bearer <access_token>`;
-- tratamento de `401`.
-
-### RF08 - Perfil do usuario
-
-`profiles` deve ser mantida como tabela de perfil da aplicacao.
-
-Requisitos:
-
-- criar profile no primeiro request autenticado ou via trigger Supabase;
-- `profiles.id` deve ser igual ao ID Supabase Auth;
-- `email` e `full_name` podem ser espelhados dos metadados de auth.
-
-### RF09 - Migracao de propriedade
-
-Dados atuais ligados ao `DEV_USER_ID` precisam de estrategia de reassociacao.
-
-Requisitos:
-
-- backup antes de reassociar;
-- script/checklist para trocar `user_id` em tabelas user-owned;
-- preservar categorias de sistema com `user_id = null`;
-- validar contagens antes/depois;
-- rollback documentado.
-
-### RF10 - Preparacao para RLS
-
-RLS deve ser planejado como camada posterior.
-
-Requisitos:
-
-- criar draft de policies;
-- testar em banco descartavel;
-- nao ativar RLS antes de backend auth e testes multiusuario passarem.
-
-## Requisitos nao funcionais
-
-### RNF01 - Compatibilidade
-
-Payloads financeiros atuais devem ser preservados sempre que possivel.
-
-### RNF02 - Seguranca
-
-JWT deve ser validado corretamente:
-
-- assinatura;
-- expiracao;
-- issuer;
-- audience quando aplicavel;
-- subject obrigatorio.
-
-### RNF03 - Privacidade
-
-Recursos de outro usuario nao devem vazar por listagem, detalhe, update, delete ou mensagens de erro.
-
-### RNF04 - Testabilidade
-
-Testes devem conseguir rodar com bypass local/teste e com tokens simulados/validos conforme a camada implementada.
-
-### RNF05 - Operacao local
-
-Desenvolvimento local deve continuar possivel sem depender de usuario real quando `AUTH_DEV_BYPASS=true`.
-
-## Criterios de aceite
-
-### CA01 - Backend auth
-
-- request sem token recebe `401` nas rotas financeiras;
-- token invalido recebe `401`;
-- token valido define `current_user.id`;
-- `/health` continua publico;
-- bypass local/teste funciona apenas quando explicitamente habilitado.
-
-### CA02 - User isolation
-
-- usuario A nao ve dados do usuario B;
-- usuario A nao acessa recurso do usuario B por ID;
-- usuario A nao cria recurso vinculado a conta/cartao/fatura do usuario B;
-- usuario comum nao altera categoria de sistema.
-
-### CA03 - Frontend auth
-
-- usuario nao autenticado e enviado para login;
-- usuario autenticado acessa app;
-- logout remove acesso;
-- chamadas API enviam Bearer token;
-- `401` limpa sessao ou redireciona.
-
-### CA04 - Migracao de propriedade
-
-- existe procedimento para reassociar dados do `DEV_USER_ID`;
-- procedimento exige backup;
-- contagens sao validadas;
-- rollback e claro.
-
-### CA05 - Validacoes
-
-- backend pytest passa;
-- backend PostgreSQL pytest passa;
-- frontend typecheck/lint/build passam;
-- smoke test com dois usuarios passa.
-
-## Nao objetivos
-
-- Nao construir auth propria.
-- Nao armazenar senhas no backend.
-- Nao ativar RLS antes de testar auth no backend.
-- Nao criar painel admin completo.
-- Nao mudar regras financeiras.
-- Nao alterar parser/importacao por motivo de auth, exceto ownership.
-
-## Referencia detalhada
-
-Plano tecnico detalhado:
-
-- `docs/auth-user-isolation-plan.md`
+- Painel admin completo.
+- Ativação de RLS sem staging.
+- Aconselhamento financeiro profissional.
+- Automação financeira irreversível por IA sem confirmação humana.

@@ -4,6 +4,7 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.config import settings
 from app.repositories.factory import create_repository
 from app.services.ai_import_service import AiImportAnalyzer
+from app.services.ai_finance_service import AiFinanceService
 from app.services.import_service import ImportService
 from app.services.transaction_service import TransactionService
 
@@ -36,3 +37,7 @@ def get_import_service() -> ImportService:
 
 def get_transaction_service() -> TransactionService:
     return TransactionService(repository=repository)
+
+
+def get_ai_finance_service() -> AiFinanceService:
+    return AiFinanceService(repository=repository)

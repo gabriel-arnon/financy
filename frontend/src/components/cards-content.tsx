@@ -34,6 +34,32 @@ function toOptionalNumber(value: string): number | null {
   return text ? Number(text) : null;
 }
 
+function formatBrlInput(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const number = Number(digits) / 100;
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(number);
+}
+
+function amountToBrlInput(value: string | null): string {
+  if (!value) return "";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "";
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(number);
+}
+
+function parseBrlInput(value: string | null): number | null {
+  const text = (value ?? "").trim();
+  if (!text) return null;
+  if (text.includes("R$") || text.includes(",")) {
+    const normalized = text.replace(/[^\d,-]/g, "").replace(/\./g, "").replace(",", ".");
+    const number = Number(normalized);
+    return Number.isFinite(number) ? number : null;
+  }
+  const number = Number(text);
+  return Number.isFinite(number) ? number : null;
+}
+
 function statementAmount(statement: CardStatementSummary): number {
   return Number(statement.reported_total ?? statement.calculated_total ?? 0);
 }
@@ -104,12 +130,13 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
   async function handleCardSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
+      const limitAmount = parseBrlInput(cardForm.limit_amount);
       const payload: CardPayload = {
         ...cardForm,
         account_id: cardForm.account_id || null,
         institution: cardForm.institution || null,
         brand: cardForm.brand || null,
-        limit_amount: cardForm.limit_amount || null,
+        limit_amount: limitAmount === null ? null : limitAmount.toFixed(2),
         closing_day: toOptionalNumber(String(cardForm.closing_day ?? "")),
         due_day: toOptionalNumber(String(cardForm.due_day ?? "")),
         status: "active"
@@ -140,7 +167,7 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
       institution: card.institution ?? "",
       brand: card.brand ?? "",
       last_digits: card.last_digits,
-      limit_amount: card.limit_amount ?? "",
+      limit_amount: amountToBrlInput(card.limit_amount),
       closing_day: card.closing_day,
       due_day: card.due_day,
       status: "active"
@@ -257,7 +284,7 @@ export function CardsContent({ initialAccounts, initialCards, initialStatements 
               ) : null}
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium text-ink">Limite do cartão</span>
-                <input className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint" placeholder="R$ 0,00" type="number" step="0.01" value={cardForm.limit_amount ?? ""} onChange={(event) => setCardForm({ ...cardForm, limit_amount: event.target.value })} />
+                <input className="h-10 w-full rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint" placeholder="R$ 0,00" inputMode="numeric" value={cardForm.limit_amount ?? ""} onChange={(event) => setCardForm({ ...cardForm, limit_amount: formatBrlInput(event.target.value) })} />
               </label>
               <label className="block space-y-1.5">
                 <span className="text-sm font-medium text-ink">Dia de vencimento</span>

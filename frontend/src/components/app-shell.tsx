@@ -8,11 +8,11 @@ import { AuthStatus } from "@/components/auth-status";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/transactions", label: "Transacoes", icon: BarChart3 },
-  { href: "/accounts", label: "Contas Bancarias", icon: WalletCards },
-  { href: "/cards", label: "Cartoes de Credito", icon: CreditCard },
-  { href: "/importacao", label: "Importacao", icon: FileUp },
-  { href: "/settings", label: "Configuracoes", icon: Settings }
+  { href: "/transactions", label: "Transações", icon: BarChart3 },
+  { href: "/accounts", label: "Contas Bancárias", icon: WalletCards },
+  { href: "/cards", label: "Cartões de Crédito", icon: CreditCard },
+  { href: "/importacao", label: "Importação", icon: FileUp },
+  { href: "/settings", label: "Configurações", icon: Settings }
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

@@ -478,10 +478,8 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
         setManualForm((current) => ({ ...current, description: "", amount: "" }));
       } else {
         setManualForm(defaultManualForm());
-        closeCreateDrawer(false);
-        setSelectedTransactionId(created.id);
-        setDrawerTransactionId(created.id);
-        setDetailForm(formFromTransaction(created));
+        closeCreateDrawer();
+        setSelectedTransactionId(null);
       }
       resetVisibleList();
       showMessage("success", "Transação criada.");
@@ -512,6 +510,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
       });
       updateRow(transaction.id, saved);
       setDetailForm(formFromTransaction(saved));
+      closeDrawer(false);
       showMessage("success", "Transação atualizada.");
       router.refresh();
     });
@@ -879,7 +878,6 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-stone-600">
                       <p>{formatDate(transaction.transaction_date)}</p>
-                      <p className="mt-1 text-xs text-stone-400">{transaction.status}</p>
                     </td>
                     <td className="min-w-[28rem] px-4 py-3">
                       <p className="font-medium text-ink">{transaction.description}</p>
@@ -1009,7 +1007,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Origem
-                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={manualForm.origin} onChange={(event) => updateManualForm({ origin: event.target.value })} disabled={isBusy} required>
+                  <select className="h-10 w-full min-w-0 truncate rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={manualForm.origin} onChange={(event) => updateManualForm({ origin: event.target.value })} disabled={isBusy} required>
                     <option value="">Sem origem</option>
                     {activeAccounts.length > 0 ? <optgroup label="Contas">{activeAccounts.map((item) => <option key={item.id} value={`account:${item.id}`}>{formatAccountName(item)}</option>)}</optgroup> : null}
                     {activeCards.length > 0 ? <optgroup label="Cartões">{activeCards.map((item) => <option key={item.id} value={`card:${item.id}`}>{formatCardWithAccount(item, accounts)}</option>)}</optgroup> : null}
@@ -1026,7 +1024,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
               </div>
             </div>
 
-            <div className="space-y-3 border-t border-stone-200 bg-white px-5 py-4">
+            <div className="space-y-3 bg-white px-5 py-4 shadow-[0_-1px_0_rgba(231,229,228,1)]">
               <UiButton className="w-full" icon={<Plus className="h-4 w-4" />} onClick={() => { void createManualTransaction(); }} variant="primary" disabled={isBusy}>
                 {asyncAction === "create" ? "Criando..." : "Criar transação"}
               </UiButton>
@@ -1100,7 +1098,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-stone-500">
                   Origem
-                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={detailForm?.origin ?? ""} onChange={(event) => updateDetailForm({ origin: event.target.value })} disabled={isBusy} required>
+                  <select className="h-10 w-full min-w-0 truncate rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={detailForm?.origin ?? ""} onChange={(event) => updateDetailForm({ origin: event.target.value })} disabled={isBusy} required>
                     <option value="">Sem origem</option>
                     {activeAccounts.length > 0 ? <optgroup label="Contas">{activeAccounts.map((item) => <option key={item.id} value={`account:${item.id}`}>{formatAccountName(item)}</option>)}</optgroup> : null}
                     {activeCards.length > 0 ? <optgroup label="Cartões">{activeCards.map((item) => <option key={item.id} value={`card:${item.id}`}>{formatCardWithAccount(item, accounts)}</option>)}</optgroup> : null}
@@ -1117,7 +1115,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
               </div>
             </div>
 
-            <div className="space-y-3 border-t border-stone-200 bg-white px-5 py-4">
+            <div className="space-y-3 bg-white px-5 py-4 shadow-[0_-1px_0_rgba(231,229,228,1)]">
               <UiButton className="w-full" icon={<Save className="h-4 w-4" />} onClick={() => { void saveRow(drawerDraftTransaction(drawerTransaction)); }} variant="primary" disabled={isBusy}>
                 {asyncAction === "save" ? "Salvando..." : "Salvar alterações"}
               </UiButton>

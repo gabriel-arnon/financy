@@ -16,23 +16,19 @@ export function UploadCard({ onUploaded }: UploadCardProps) {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
   async function uploadFile(file: File | undefined) {
     if (!file) return;
     if (file.size > MAX_UPLOAD_SIZE_BYTES) {
-      setSuccess(null);
       setError("Arquivo muito grande para o deploy atual. Envie um arquivo de ate 8 MB.");
       toast.error("Arquivo muito grande para o deploy atual. Envie um arquivo de até 8 MB.");
       return;
     }
     setLoading(true);
     setError(null);
-    setSuccess(null);
     try {
       const response = await uploadImport(file);
-      setSuccess("Upload concluído. Abrindo prévia...");
       toast.success("Upload concluído. Abrindo prévia...");
       onUploaded(response.import_id);
     } catch (err) {
@@ -87,7 +83,6 @@ export function UploadCard({ onUploaded }: UploadCardProps) {
         disabled={loading}
       />
       {error ? <p className="mt-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
-      {success ? <p className="mt-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</p> : null}
     </div>
   );
 }

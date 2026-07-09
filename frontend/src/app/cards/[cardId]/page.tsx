@@ -176,95 +176,98 @@ export default async function CardDetailPage({ params }: CardDetailPageProps) {
         </div>
       </div>
 
-      <div className="max-w-full overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
-        <div className="border-b border-stone-100 px-5 py-4">
-          <h2 className="text-base font-semibold text-ink">Historico de faturas</h2>
-          <p className="mt-1 text-xs text-stone-500">Ultimas 12 faturas do cartao.</p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[780px] table-fixed divide-y divide-stone-200 text-sm">
-            <thead className="bg-stone-50 text-left text-xs uppercase text-stone-500">
-              <tr>
-                <th className="w-[110px] px-4 py-3">Referencia</th>
-                <th className="w-[110px] px-4 py-3">Vencimento</th>
-                <th className="px-4 py-3 text-right">Informado</th>
-                <th className="px-4 py-3 text-right">Calculado</th>
-                <th className="px-4 py-3 text-right">Diferenca</th>
-                <th className="w-[110px] px-4 py-3">Status</th>
-                <th className="w-[120px] px-4 py-3">Integridade</th>
-                <th className="w-[112px] px-4 py-3 text-right">Acoes</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {summary.statement_history.map((statement) => (
-                <tr key={statement.id} className="hover:bg-stone-50">
-                  <td className="whitespace-nowrap px-4 py-3 text-stone-600">{formatDate(statement.reference_month)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-stone-600">{statement.due_date ? formatDate(statement.due_date) : "-"}</td>
-                  <td className="px-4 py-3 text-right text-stone-600">{statement.reported_total ? formatCurrency(statement.reported_total) : "-"}</td>
-                  <td className="px-4 py-3 text-right text-stone-600">{formatCurrency(statement.calculated_total)}</td>
-                  <td className="px-4 py-3 text-right text-stone-600">{statement.difference ? formatCurrency(statement.difference) : "-"}</td>
-                  <td className="px-4 py-3 text-stone-600">{translateStatementStatus(statement.status)}</td>
-                  <td className="px-4 py-3">
-                    <span className={`whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ${integrityClass(statement.integrity_status)}`}>
-                      {statement.integrity_status === "difference" ? "Divergencia" : statement.integrity_status === "no_transactions" ? "Sem transacoes" : "OK"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link href={`/statements/${statement.id}`} className="inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-md border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-mint">
-                      Ver fatura
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-              {summary.statement_history.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-8 text-center text-stone-500" colSpan={8}>Nenhuma fatura encontrada.</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="max-w-full overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 px-5 py-4">
-          <div>
-            <h2 className="text-base font-semibold text-ink">Ultimas transacoes</h2>
-            <p className="mt-1 text-xs text-stone-500">Ultimos lancamentos vinculados ao cartao.</p>
+      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="max-w-full overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+          <div className="border-b border-stone-100 px-5 py-4">
+            <h2 className="text-base font-semibold text-ink">Historico de faturas</h2>
+            <p className="mt-1 text-xs text-stone-500">Ultimas 12 faturas do cartao.</p>
           </div>
-          <Link href={`/transactions?card_id=${summary.card.id}`} className="inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-mint">
-            Ver transacoes filtradas
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[680px] table-fixed divide-y divide-stone-200 text-sm">
-            <thead className="bg-stone-50 text-left text-xs uppercase text-stone-500">
-              <tr>
-                <th className="w-[110px] px-4 py-3">Data</th>
-                <th className="px-4 py-3">Descricao</th>
-                <th className="w-[150px] px-4 py-3">Categoria</th>
-                <th className="w-[120px] px-4 py-3">Tipo</th>
-                <th className="w-[120px] px-4 py-3 text-right">Valor</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100">
-              {summary.recent_transactions.map((transaction) => (
-                <tr key={transaction.id} className="hover:bg-stone-50">
-                  <td className="whitespace-nowrap px-4 py-3 text-stone-600">{formatDate(transaction.transaction_date)}</td>
-                  <td className="truncate px-4 py-3 font-medium text-ink" title={transaction.description}>{transaction.description}</td>
-                  <td className="truncate px-4 py-3 text-stone-600">{getCategoryName(transaction.category_id, categories)}</td>
-                  <td className="px-4 py-3 text-stone-600">{translateTransactionType(transaction.type)}</td>
-                  <td className="px-4 py-3 text-right font-medium text-ink">{formatCurrency(transaction.amount)}</td>
-                </tr>
-              ))}
-              {summary.recent_transactions.length === 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] table-fixed divide-y divide-stone-200 text-sm">
+              <thead className="bg-stone-50 text-left text-xs uppercase text-stone-500">
                 <tr>
-                  <td className="px-4 py-8 text-center text-stone-500" colSpan={5}>Nenhuma transacao vinculada.</td>
+                  <th className="w-[108px] px-4 py-3">Referencia</th>
+                  <th className="w-[108px] px-4 py-3">Vencimento</th>
+                  <th className="px-4 py-3 text-right">Informado</th>
+                  <th className="px-4 py-3 text-right">Calculado</th>
+                  <th className="px-4 py-3 text-right">Diferenca</th>
+                  <th className="w-[104px] px-4 py-3">Status</th>
+                  <th className="w-[116px] px-4 py-3">Integridade</th>
+                  <th className="w-[104px] px-4 py-3 text-right">Acoes</th>
                 </tr>
-              ) : null}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {summary.statement_history.map((statement) => (
+                  <tr key={statement.id} className="hover:bg-stone-50">
+                    <td className="whitespace-nowrap px-4 py-3 text-stone-600">{formatDate(statement.reference_month)}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-stone-600">{statement.due_date ? formatDate(statement.due_date) : "-"}</td>
+                    <td className="px-4 py-3 text-right text-stone-600">{statement.reported_total ? formatCurrency(statement.reported_total) : "-"}</td>
+                    <td className="px-4 py-3 text-right text-stone-600">{formatCurrency(statement.calculated_total)}</td>
+                    <td className="px-4 py-3 text-right text-stone-600">{statement.difference ? formatCurrency(statement.difference) : "-"}</td>
+                    <td className="px-4 py-3 text-stone-600">{translateStatementStatus(statement.status)}</td>
+                    <td className="px-4 py-3">
+                      <span className={`whitespace-nowrap rounded-md px-2 py-1 text-xs font-medium ${integrityClass(statement.integrity_status)}`}>
+                        {statement.integrity_status === "difference" ? "Divergencia" : statement.integrity_status === "no_transactions" ? "Sem transacoes" : "OK"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link href={`/statements/${statement.id}`} className="inline-flex min-h-9 items-center justify-center whitespace-nowrap rounded-md border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-mint">
+                        Ver fatura
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+                {summary.statement_history.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-8 text-center text-stone-500" colSpan={8}>Nenhuma fatura encontrada.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="max-w-full overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 px-5 py-4">
+            <div>
+              <h2 className="text-base font-semibold text-ink">Ultimas transacoes</h2>
+              <p className="mt-1 text-xs text-stone-500">Ultimos lancamentos vinculados ao cartao.</p>
+            </div>
+            <Link href={`/transactions?card_id=${summary.card.id}`} className="inline-flex min-h-9 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-mint">
+              Ver transacoes filtradas
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] table-fixed divide-y divide-stone-200 text-sm">
+              <thead className="bg-stone-50 text-left text-xs uppercase text-stone-500">
+                <tr>
+                  <th className="w-[104px] px-4 py-3">Data</th>
+                  <th className="px-4 py-3">Descricao</th>
+                  <th className="w-[140px] px-4 py-3">Categoria</th>
+                  <th className="w-[112px] px-4 py-3 text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {summary.recent_transactions.map((transaction) => (
+                  <tr key={transaction.id} className="hover:bg-stone-50">
+                    <td className="whitespace-nowrap px-4 py-3 text-stone-600">{formatDate(transaction.transaction_date)}</td>
+                    <td className="truncate px-4 py-3 font-medium text-ink" title={transaction.description}>
+                      <span className="block truncate">{transaction.description}</span>
+                      <span className="mt-1 block text-xs font-normal text-stone-500">{translateTransactionType(transaction.type)}</span>
+                    </td>
+                    <td className="truncate px-4 py-3 text-stone-600">{getCategoryName(transaction.category_id, categories)}</td>
+                    <td className="px-4 py-3 text-right font-medium text-ink">{formatCurrency(transaction.amount)}</td>
+                  </tr>
+                ))}
+                {summary.recent_transactions.length === 0 ? (
+                  <tr>
+                    <td className="px-4 py-8 text-center text-stone-500" colSpan={4}>Nenhuma transacao vinculada.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>

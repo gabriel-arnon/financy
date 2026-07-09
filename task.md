@@ -1,556 +1,443 @@
-# Financy - Tasks da Fase 3: Autenticacao e Isolamento de Usuarios
+# Financy - Tasks Ativas
 
 ## Legenda
 
-- `[x]` Concluida
-- `[ ]` Nao iniciada
+- `[x]` Concluída
+- `[ ]` Não iniciada
 - `[/]` Em andamento
 - `[-]` Pausada/cancelada
 
-## Objetivo da fase
+## Objetivo
 
-Implementar autenticacao real e isolamento estrito por usuario, substituindo o uso operacional de `DEV_USER_ID` por identidade autenticada via Supabase Auth.
+Centralizar todas as tasks ativas em um único arquivo: pendências operacionais de produção, inteligência financeira com IA e polish visual/UX.
 
-## P0 - Planejamento e auditoria
+## PD0 - Confiabilidade em Produção
 
-### [x] P0.1 - Inspecionar uso atual de usuario
+### [/] PD0.1 - Investigar `Failed to fetch` intermitente
 
-Feito:
+Contexto:
 
-- `get_user_id()` fica em `backend/app/api/deps.py`.
-- Hoje retorna `settings.dev_user_id`.
-- Todas as rotas financeiras dependem desse contexto direta ou indiretamente.
+- Em produção, algumas chamadas falham com `Failed to fetch` e depois funcionam ao tentar novamente.
+- Retry automático para leituras já foi implementado.
+- Escritas não receberam retry automático para evitar duplicidade.
 
-### [x] P0.2 - Mapear entidades com `user_id`
+Checklist:
 
-Feito:
-
-- Entidades user-owned: accounts, cards, card_statements, transactions, classification_rules, import_files, import_batches, import_preview_items.
-- Categorias sao mistas: sistema com `user_id = null`; categorias de usuario com `user_id`.
-- `profiles` representa usuarios da aplicacao.
-
-### [x] P0.3 - Mapear endpoints protegidos
-
-Feito:
-
-- Devem ser protegidos: transactions, imports, statements, categories, accounts, cards e classification-rules.
-- Deve permanecer publico: `GET /health`.
-
-### [x] P0.4 - Escolher estrategia de auth
-
-Feito:
-
-- Recomendacao: Supabase Auth com JWT Bearer.
-- Motivo: schema ja usa `profiles`, reduz auth propria e prepara RLS futuro.
-
-### [x] P0.5 - Criar plano detalhado
-
-Feito:
-
-- Criado `docs/auth-user-isolation-plan.md`.
-
-## P1 - Backend Auth Foundation
-
-### [x] P1.1 - Adicionar settings de auth
-
-- `AUTH_PROVIDER`.
-- `AUTH_REQUIRED`.
-- `AUTH_DEV_BYPASS`.
-- `SUPABASE_JWT_ISSUER`.
-- `SUPABASE_JWKS_URL`.
-- `SUPABASE_AUDIENCE`, se necessario.
+- [ ] Coletar Network real no navegador quando a falha ocorrer.
+- [ ] Comparar horário da falha com logs do Render.
+- [ ] Confirmar se a API recebeu a requisição.
+- [ ] Confirmar se a falha é timeout, cold start, CORS, token ou conexão antes de resposta HTTP.
+- [ ] Definir se será necessário idempotency key para escritas.
 
 Resultado esperado:
 
-- Configuracao clara para auth real, local e teste.
+- Falhas intermitentes ficam explicadas e tratadas sem criar duplicidade de dados.
+
+## PD1 - Performance em Produção
+
+### [/] PD1.1 - Validar performance real após otimizações
 
 Feito:
 
-- Adicionados settings em `backend/app/core/config.py`.
-- Atualizado `backend/.env.example` com flags de auth.
-- `DEV_USER_ID` ficou restrito ao bypass local/teste por `AUTH_DEV_BYPASS`.
+- Pool de conexões PostgreSQL.
+- Otimização de importação e confirmação em lote.
+- Benchmark local de confirmação em lote.
+- Remoção de logs temporários.
 
-### [x] P1.2 - Criar modelo/contexto de usuario atual
+Pendente:
 
-- Criar `CurrentUser`.
-- Incluir `id` e `email` quando disponivel.
+- [ ] Validar ganho real após deploy.
+- [ ] Avaliar upgrade do Render Free para instância sempre ligada/mais CPU.
+- [ ] Validar suite PostgreSQL quando banco local `financy_test` estiver disponível.
 
 Resultado esperado:
 
-- Rotas podem depender de um usuario autenticado padronizado.
+- App responde de forma aceitável em produção, especialmente ao trocar abas e confirmar importações.
+
+## PD2 - Storage Persistente
+
+### [/] PD2.1 - Migrar uploads para storage persistente
 
 Feito:
 
-- Criado `CurrentUser` em `backend/app/core/auth.py`.
-- Incluidos `id`, `email`, `full_name` e `auth_source`.
+- Runbook criado em `docs/production-readiness-runbook.md`.
+- Recomendação registrada: Supabase Storage como primeira opção.
 
-### [x] P1.3 - Implementar validacao JWT Supabase
+Pendente:
 
-- Ler Bearer token.
-- Validar assinatura.
-- Validar expiracao, issuer e subject.
-- Extrair `sub` como `user_id`.
+- [ ] Escolher estratégia definitiva: Supabase Storage, Cloudflare R2 ou disco persistente.
+- [ ] Migrar uploads de `.uploads` local do Render.
+- [ ] Garantir compatibilidade com imports antigos quando necessário.
 
 Resultado esperado:
 
-- Token valido resolve usuario; token invalido retorna `401`.
+- Uploads não dependem do filesystem efêmero do Render.
+
+## PD3 - Backups
+
+### [/] PD3.1 - Confirmar backup e restore
 
 Feito:
 
-- Implementada leitura de Bearer token.
-- Implementada validacao JWT HS256 com biblioteca padrao.
-- Valida assinatura, expiracao, `issuer`, `audience` e `sub`.
-- Token invalido retorna `401` via `AppError`.
+- Checklist de backup e restore criado em `docs/production-readiness-runbook.md`.
 
-### [x] P1.4 - Implementar bypass local/teste
+Pendente:
 
-- Usar `DEV_USER_ID` apenas com `AUTH_DEV_BYPASS=true`.
-- Bloquear bypass em producao.
+- [ ] Confirmar backup automático do PostgreSQL/Supabase.
+- [ ] Definir backup dos uploads.
+- [ ] Executar teste de restauração em ambiente descartável.
 
 Resultado esperado:
 
-- Desenvolvimento local continua possivel sem fallback inseguro.
+- Existe processo validado para recuperar dados em caso de falha.
+
+## PD4 - Segredos
+
+### [/] PD4.1 - Rotacionar segredos compartilhados
 
 Feito:
 
-- `get_current_user` usa bypass somente quando `AUTH_DEV_BYPASS=true` e ambiente e `local`, `development` ou `test`.
-- Bypass e bloqueado em `production`.
-- Rotas usam `get_request_user_id`; helper direto `get_user_id()` continua disponivel para testes/scripts locais.
+- Checklist de rotação criado em `docs/production-readiness-runbook.md`.
 
-### [x] P1.5 - Criar/upsert profile autenticado
+Pendente:
 
-- Garantir `profiles.id = current_user.id`.
-- Espelhar email/full_name quando disponivel.
+- [ ] Rotacionar senha do banco.
+- [ ] Rotacionar JWT secret.
+- [ ] Rotacionar service role key.
+- [ ] Atualizar variáveis no Render, Vercel e Supabase.
+- [ ] Confirmar que nenhum segredo real está versionado.
 
 Resultado esperado:
 
-- Usuario autenticado sempre possui profile.
+- Produção não depende de segredos compartilhados em conversa ou ambiente inseguro.
+
+## PD5 - Smoke Multiusuário em Produção
+
+### [/] PD5.1 - Validar isolamento com usuários reais
 
 Feito:
 
-- `PostgresRepository.ensure_profile` agora faz upsert de profile.
-- `deps.py` chama `ensure_profile` quando o repository suporta esse metodo.
-- JSON segue sem profile fisico, preservando fallback local.
+- Roteiro criado em `docs/production-readiness-runbook.md`.
+- Testes backend cobrem isolamento A/B.
 
-## P2 - Protecao de endpoints
+Pendente:
 
-### [x] P2.1 - Proteger transactions
-
-- `GET /transactions`.
-- `POST /transactions`.
-- `PUT /transactions/{transaction_id}`.
-- `DELETE /transactions/{transaction_id}`.
+- [ ] Criar/usar usuário A e usuário B reais no Supabase.
+- [ ] Confirmar que usuário B não vê dados de usuário A.
+- [ ] Confirmar que referências cruzadas retornam erro/404.
 
 Resultado esperado:
 
-- Apenas usuario autenticado acessa transacoes proprias.
+- Isolamento está validado no ambiente real, não só em teste automatizado.
+
+## PD6 - RLS Supabase
+
+### [/] PD6.1 - Revisar e decidir ativação de RLS
 
 Feito:
 
-- Rotas usam `get_request_user_id`.
-- Sem token retorna `401` quando `AUTH_REQUIRED=true` e `AUTH_DEV_BYPASS=false`.
+- Draft de RLS existe em `docs/supabase/rls_phase3_draft.sql`.
+- Ordem segura de ativação registrada no runbook.
 
-### [x] P2.2 - Proteger imports
+Pendente:
 
-- `POST /imports/upload`.
-- `GET /imports/{import_id}/preview`.
-- `POST /imports/{import_id}/confirm`.
+- [ ] Revisar policies.
+- [ ] Decidir se RLS entra ainda na produção privada ou antes de multiusuário público.
+- [ ] Testar em staging antes de aplicar no banco real.
 
 Resultado esperado:
 
-- Preview e confirmacao sao isolados por usuario.
+- RLS entra como camada adicional sem quebrar scripts ou backend.
+
+## PD7 - Produção Pública
+
+### [/] PD7.1 - Preparar checklist público
 
 Feito:
 
-- Rotas de import usam usuario autenticado.
-- Uploads novos sao salvos em subpasta por usuario.
+- Checklist criado em `docs/production-readiness-runbook.md`.
 
-### [x] P2.3 - Proteger statements
+Pendente:
 
-- `GET /statements`.
-- `GET /statements/{statement_id}`.
-- `DELETE /statements/{statement_id}`.
-- `PATCH /statements/{statement_id}/status`.
+- [ ] Termos de uso.
+- [ ] Política de privacidade.
+- [ ] Exportação/exclusão de dados.
+- [ ] Rate limiting.
+- [ ] Monitoramento/logs de erro.
+- [ ] Plano de rollback operacional.
 
 Resultado esperado:
 
-- Faturas e agregacoes pertencem ao usuario autenticado.
+- App fica preparado para sair de uso privado e caminhar para produção pública.
+
+## P6 - Inteligência Financeira com IA
+
+### [/] P6.1 - Classificação automática contínua
+
+Objetivo:
+
+- Sugerir categorias para transações novas ou sem categoria com base no histórico do usuário, sem sobrescrever regras determinísticas de maior prioridade.
 
 Feito:
 
-- Rotas de faturas usam usuario autenticado e repository filtrado por `user_id`.
+- Criado endpoint `/ai-finance/overview` com sugestões de categoria para transações sem categoria a partir do histórico do usuário.
+- Sugestões aparecem no dashboard e não alteram transações automaticamente.
 
-### [x] P2.4 - Proteger accounts/cards
+Checklist:
 
-- Todas as rotas de `/accounts`.
-- Todas as rotas de `/cards`.
+- [ ] Mapear transações categorizadas do usuário como contexto de aprendizado.
+- [ ] Criar schema de sugestão de categoria com categoria existente, confiança e justificativa.
+- [ ] Aplicar sugestão apenas em transações sem categoria ou marcadas para revisão.
+- [ ] Preservar regras determinísticas existentes como prioridade.
+- [ ] Exibir sugestão ao usuário antes de alterar a transação.
+- [ ] Permitir aplicar sugestão em lote para transações selecionadas.
+- [ ] Criar testes com resposta mockada da IA.
 
-Resultado esperado:
+### [/] P6.2 - Criação inteligente de regras
 
-- Contas e cartoes ficam isolados por usuario.
+Objetivo:
 
-Feito:
-
-- Rotas de contas/cartoes usam usuario autenticado.
-- Teste multiusuario garante que usuario B nao ve conta de usuario A.
-
-### [x] P2.5 - Proteger categories/rules
-
-- Todas as rotas de `/categories`.
-- Todas as rotas de `/classification-rules`.
-
-Resultado esperado:
-
-- Usuario acessa categorias de sistema e proprias; regras sao proprias.
+- Sugerir regras de classificação a partir de comerciantes recorrentes, descrições parecidas e categorias aplicadas pelo usuário.
 
 Feito:
 
-- Rotas usam usuario autenticado.
-- Regras validam categoria no escopo do usuario atual.
+- Detecta descrições recorrentes com mesma categoria.
+- Evita sugerir keywords já cobertas por regras ativas.
+- Exibe sugestões no dashboard com keyword, categoria, tipo e ocorrências.
 
-### [x] P2.6 - Manter `/health` publico
+Checklist:
 
-Resultado esperado:
+- [ ] Identificar grupos de transações similares com mesma categoria.
+- [ ] Detectar se já existe regra equivalente ou sobreposta.
+- [ ] Gerar sugestão com keyword, categoria, tipo, escopo e justificativa.
+- [ ] Exibir sugestões em tela dedicada ou painel de revisão.
+- [ ] Permitir criar regra individualmente.
+- [ ] Permitir descartar sugestão.
+- [ ] Evitar regras duplicadas.
+- [ ] Criar testes para sugestão, duplicidade e descarte.
 
-- Healthcheck continua sem auth.
+### [/] P6.3 - Resumo financeiro mensal
 
-Feito:
+Objetivo:
 
-- Teste confirma `/health` publico com auth obrigatoria.
-
-## P3 - Hardening de isolamento
-
-### [x] P3.1 - Validar referencias em cards
-
-- `account_id` deve pertencer ao usuario atual.
-
-Resultado esperado:
-
-- Usuario nao cria/edita cartao com conta de outro usuario.
+- Gerar resumo mensal em linguagem natural com entradas, saídas, resultado, categorias em alta, maiores gastos e pontos de atenção.
 
 Feito:
 
-- Validacao existente de `account_id` permanece escopada por usuario.
+- Criado resumo financeiro em `/ai-finance/overview`.
+- Dashboard exibe resumo, insights, loading e erro.
 
-### [x] P3.2 - Validar referencias em transactions
+Checklist:
 
-- `account_id`, `card_id`, `card_statement_id`, `category_id`, `source_file_id`.
+- [ ] Definir agregados enviados para IA sem mandar transações completas quando não necessário.
+- [ ] Criar endpoint para resumo mensal por período.
+- [ ] Incluir comparação com período anterior quando houver dados.
+- [ ] Destacar categorias que mais cresceram.
+- [ ] Destacar maiores transações ou despesas fora do padrão.
+- [ ] Mostrar resumo no dashboard.
+- [ ] Criar estado de loading e erro.
+- [ ] Criar testes com resposta mockada da IA.
 
-Resultado esperado:
+### [/] P6.4 - Busca em linguagem natural
 
-- Transacao nao referencia recurso de outro usuario.
+Objetivo:
 
-Feito:
-
-- `TransactionService` valida conta, cartao, fatura, categoria e source file no escopo do usuario.
-- Teste cobre tentativa de usuario B criar transacao com conta do usuario A.
-
-### [x] P3.3 - Validar referencias em classification rules
-
-- `category_id` deve ser categoria de sistema ou do usuario atual.
-
-Resultado esperado:
-
-- Regra nao aponta para categoria privada de outro usuario.
+- Permitir buscas como `quanto gastei com mercado em junho?` ou `mostre gastos do cartão Inter acima de R$ 100`.
 
 Feito:
 
-- `classification_rules` valida `category_id` com `user_id`.
+- Criado endpoint `/ai-finance/ask`.
+- Dashboard permite perguntas simples por tipo, categoria e mês.
+- Backend calcula filtros em código e não executa SQL livre.
 
-### [x] P3.4 - Endurecer categorias de sistema
+Checklist:
 
-- Bloquear update/delete comum em categoria `is_system=true`.
+- [ ] Definir intents suportadas: listar transações, somar gastos, comparar período, filtrar por categoria/origem.
+- [ ] Criar schema estruturado para a IA retornar filtros, nunca SQL livre.
+- [ ] Validar filtros no backend antes de executar.
+- [ ] Reutilizar endpoints/repository existentes.
+- [ ] Exibir resultado como lista, total ou resumo conforme intent.
+- [ ] Tratar perguntas fora do escopo com mensagem clara.
+- [ ] Criar testes contra prompt injection e filtros inválidos.
 
-Resultado esperado:
+### [/] P6.5 - Perguntas sobre finanças
 
-- Categorias globais nao sao alteradas por usuarios comuns.
+Objetivo:
 
-Feito:
-
-- Update/delete de categoria `is_system` retorna erro de protecao.
-
-### [x] P3.5 - Isolar import confirm
-
-- Confirmacao deve validar batch, preview items e destino por usuario.
-
-Resultado esperado:
-
-- Usuario nao confirma import de outro usuario.
+- Criar um assistente de perguntas financeiras baseado em dados agregados e transações do usuário.
 
 Feito:
 
-- Import batch e preview items seguem filtrados por usuario.
-- Confirmacao agora valida referencias antes de criar transacao.
+- Criada UI de pergunta/resposta no dashboard.
+- Respostas usam dados do usuário autenticado e mostram total/quantidade analisada.
 
-### [x] P3.6 - Particionar novos uploads por usuario
+Checklist:
 
-- Salvar novos arquivos em path com `user_id`.
+- [ ] Definir escopo permitido de perguntas.
+- [ ] Criar camada de contexto com dados agregados, categorias, contas, cartões e transações relevantes.
+- [ ] Evitar envio de dados excessivos ao provider.
+- [ ] Responder com base nos dados disponíveis e indicar quando não houver dados suficientes.
+- [ ] Adicionar aviso de resposta informativa, sem aconselhamento financeiro profissional.
+- [ ] Criar UI de chat ou painel de pergunta/resposta.
+- [ ] Criar testes com mock de IA e controle de escopo.
 
-Resultado esperado:
+### [/] P6.6 - Detecção de recorrências
 
-- Uploads novos possuem isolamento fisico basico.
+Objetivo:
 
-Feito:
-
-- Novos uploads sao gravados em `UPLOAD_STORAGE_PATH/{user_id}`.
-
-## P4 - Frontend Auth Shell
-
-### [x] P4.1 - Instalar/configurar Supabase client
-
-- Usar `NEXT_PUBLIC_SUPABASE_URL`.
-- Usar `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-
-Resultado esperado:
-
-- Frontend consegue iniciar client Supabase.
+- Detectar transações recorrentes e sugerir agrupamentos como assinatura, renda fixa, conta mensal ou compra parcelada recorrente.
 
 Feito:
 
-- Instalado `@supabase/supabase-js`.
-- Criado `frontend/src/lib/supabase.ts`.
+- Detecta recorrências prováveis por descrição normalizada, valor e ocorrência em meses diferentes.
+- Exibe recorrências prováveis no dashboard.
 
-### [x] P4.2 - Criar login
+Checklist:
 
-- Tela/form de login.
-- Fluxo email/senha ou magic link.
+- [ ] Criar heurística inicial por descrição normalizada, valor aproximado e intervalo mensal.
+- [ ] Usar IA para nomear/explicar recorrências ambíguas.
+- [ ] Mostrar recorrências com frequência, valor médio, próxima previsão e categoria.
+- [ ] Permitir marcar como recorrência confirmada ou ignorar.
+- [ ] Usar recorrências confirmadas em resumos e previsões futuras.
+- [ ] Criar testes para recorrência mensal, quinzenal e falso positivo.
 
-Resultado esperado:
+### [/] P6.7 - Renomear descrições bagunçadas automaticamente
 
-- Usuario consegue autenticar.
+Objetivo:
 
-Feito:
-
-- Criada rota `/login` com email/senha via Supabase Auth.
-
-### [x] P4.3 - Criar logout
-
-Resultado esperado:
-
-- Usuario encerra sessao e perde acesso a rotas protegidas.
+- Sugerir nomes limpos para transações importadas, mantendo `original_description` salvo.
 
 Feito:
 
-- `AuthStatus` adiciona acao de sair.
+- Gera sugestões de descrição limpa para textos com ruído/caixa alta.
+- Mantém `original_description` inalterado e exibe contagem no dashboard.
 
-### [x] P4.4 - Criar provider de sessao
+Checklist:
 
-- Restaurar sessao.
-- Expor usuario atual.
-- Estado de loading.
+- [ ] Criar schema de normalização com descrição sugerida, confiança e justificativa.
+- [ ] Aplicar sugestão automaticamente apenas quando confiança for alta e regra do produto permitir.
+- [ ] Para baixa confiança, mostrar sugestão para aceite manual.
+- [ ] Manter `original_description` inalterado.
+- [ ] Permitir aplicar sugestões em lote.
+- [ ] Evitar alterar descrições editadas manualmente pelo usuário sem confirmação.
+- [ ] Criar testes para descrições com adquirente, Pix, marketplace e assinatura.
 
-Resultado esperado:
+## P7 - Polish Visual e UX Operacional
 
-- App conhece estado autenticado.
-
-Feito:
-
-- Criado `AuthProvider`.
-- Sessao Supabase e sincronizada e access token e salvo em cookie para Server Components.
-
-### [x] P4.5 - Proteger rotas frontend
-
-Resultado esperado:
-
-- Usuario anonimo e enviado ao login.
+### [x] P7.1 - Sidebar: corrigir acentuação dos labels
 
 Feito:
 
-- `AuthProvider` redireciona anonimo para `/login` quando Supabase esta configurado.
-- Sem env Supabase, app permanece em modo local/bypass.
+- Sidebar revisada com labels acentuados para Transações, Contas Bancárias, Cartões de Crédito, Importação e Configurações.
 
-### [x] P4.6 - Enviar Bearer token no API client
+Checklist:
 
-- Atualizar `frontend/src/lib/api.ts`.
-- Tratar `401`.
+- [ ] Revisar todos os itens da sidebar.
+- [ ] Corrigir `Transacoes` para `Transações`.
+- [ ] Corrigir `Contas Bancarias` para `Contas Bancárias`.
+- [ ] Corrigir outros textos sem acento.
+- [ ] Garantir que labels cabem no layout desktop/mobile.
 
-Resultado esperado:
-
-- Chamadas protegidas chegam autenticadas ao backend.
-
-Feito:
-
-- `frontend/src/lib/api.ts` envia `Authorization: Bearer <access_token>`.
-- `frontend/src/lib/server-api.ts` envia Bearer token a partir do cookie.
-
-## P5 - Migracao de propriedade
-
-### [x] P5.1 - Criar checklist/script de reassociacao
-
-- Reassociar `DEV_USER_ID` para usuario real.
-- Cobrir todas as tabelas user-owned.
-
-Resultado esperado:
-
-- Existe caminho seguro para dados atuais.
+### [x] P7.2 - Dashboard: cards, gráficos, insights e filtros
 
 Feito:
 
-- Criado `backend/scripts/reassign_user_data.py`.
+- Removido card de transações pendentes de revisão.
+- Adicionados filtros rápidos, período personalizado, cards recalculados, gráfico de gastos por categoria, barras diárias e insights.
+- Dashboard recebeu painel inicial de inteligência financeira.
 
-### [x] P5.2 - Exigir backup antes do apply
+Checklist:
 
-Resultado esperado:
+- [ ] Remover card `Transações pendentes de revisão`.
+- [ ] Adicionar gráficos de gastos por categoria, período ou origem.
+- [ ] Adicionar área de insights financeiros.
+- [ ] Adicionar filtros rápidos: esse mês, mês passado, essa semana, semana passada.
+- [ ] Adicionar período personalizado.
+- [ ] Garantir que filtros alteram cards, gráficos e insights de forma consistente.
+- [ ] Validar responsividade dos gráficos.
 
-- Migracao de ownership nao roda sem backup/confirmacao.
-
-Feito:
-
-- `--apply` exige `--backup-confirmation`.
-
-### [x] P5.3 - Validar contagens antes/depois
-
-Resultado esperado:
-
-- Reassociacao pode ser auditada.
+### [x] P7.3 - Transações: polish do drawer, status e fluxo de salvar
 
 Feito:
 
-- Dry-run imprime contagens por tabela para origem e destino.
-- Apply imprime contagens antes/depois.
+- Removido texto `confirmed` abaixo da data.
+- Rodapé do drawer ajustado para evitar linha visual quebrada.
+- Campo Origem ganhou truncamento para caber melhor.
+- Criação e salvamento fecham o drawer automaticamente.
 
-### [x] P5.4 - Documentar rollback
+Checklist:
 
-Resultado esperado:
+- [ ] Retirar texto `confirmed` abaixo da data da transação.
+- [ ] Corrigir linha branca bugada no layout do drawer.
+- [ ] Ajustar tamanho de `Origem` para caber em uma linha quando possível.
+- [ ] Fechar drawer automaticamente ao criar transação com sucesso.
+- [ ] Fechar drawer automaticamente ao salvar alterações com sucesso.
+- [ ] Garantir toasts de sucesso/erro.
+- [ ] Validar comportamento mobile.
 
-- E possivel voltar ao estado anterior em ambiente local/teste.
-
-Feito:
-
-- Script preserva dry-run e exige confirmacao de backup.
-- Rollback esperado: restaurar backup ou aplicar reassociacao inversa validada por contagens.
-
-## P6 - Preparacao de RLS
-
-### [x] P6.1 - Criar draft de policies RLS
-
-- Profiles.
-- Accounts.
-- Cards.
-- Statements.
-- Transactions.
-- Categories.
-- Rules.
-- Imports.
-
-Resultado esperado:
-
-- Politicas planejadas sem ativacao prematura.
+### [x] P7.4 - Conta bancária: loading, filtros e layout dos detalhes
 
 Feito:
 
-- Criado `docs/supabase/rls_phase3_draft.sql` fora da pasta de migrations numeradas.
+- Botão `Detalhes` usa loading de navegação.
+- Adicionado filtro local por nome, instituição e tipo.
+- Cards de cartões vinculados e faturas abertas foram compactados.
+- Tabela de últimas transações relacionadas recebeu largura consistente.
 
-### [x] P6.2 - Testar RLS em banco descartavel
+Checklist:
 
-Resultado esperado:
+- [ ] Adicionar loading ao clicar em detalhes.
+- [ ] Investigar filtro que não funciona ou está lento.
+- [ ] Corrigir performance/estado do filtro.
+- [ ] Ajustar altura dos cards em `Cartões vinculados`.
+- [ ] Compactar cards de `Faturas abertas`.
+- [ ] Ajustar comprimento do card `Últimas transações relacionadas`.
+- [ ] Validar desktop e mobile.
 
-- Policies sao verificadas antes de uso real.
-
-Feito:
-
-- Draft aplicado em `financy_test` com mock de `auth.uid()`.
-- Banco de teste foi resetado depois.
-
-### [x] P6.3 - Definir service role para scripts
-
-Resultado esperado:
-
-- Migrations/scripts nao quebram quando RLS existir.
+### [x] P7.5 - Cartões de crédito: loading, botões, BRL e layout de detalhe
 
 Feito:
 
-- Draft registra que RLS nao deve ser aplicado antes de definir service role/fluxo de scripts.
-- Scripts operacionais continuam usando conexao direta fora de RLS nesta fase.
+- `Ver cartão` mantém loading e layout em uma linha.
+- Campo de limite usa máscara BRL na criação e edição.
+- Detalhe do cartão coloca `Últimas transações` ao lado de `Histórico de faturas` em desktop e empilha no mobile.
+- Payload continua enviado como decimal aceito pela API.
 
-## P7 - Testes e QA
+Checklist:
 
-### [x] P7.1 - Testes de auth backend
+- [ ] Adicionar loading ao clicar em `Ver cartão`.
+- [ ] Ajustar texto e seta do botão `Ver cartão` para ocupar uma linha.
+- [ ] Adicionar máscara BRL no limite na criação de cartão.
+- [ ] Adicionar máscara BRL no limite na edição de cartão.
+- [ ] No detalhe do cartão, colocar `Últimas transações` ao lado direito de `Histórico de faturas` em desktop.
+- [ ] Manter layout empilhado no mobile.
+- [ ] Validar payload decimal aceito pela API.
 
-- Sem token -> `401`.
-- Token invalido -> `401`.
-- Token valido -> user atual.
-- Bypass local/teste.
-
-Resultado esperado:
-
-- Fundacao de auth coberta.
-
-Feito:
-
-- Criado `backend/tests/test_auth.py`.
-- Cobertos token valido, assinatura invalida, token ausente com bypass, token ausente sem bypass e bloqueio de bypass em producao.
-- Backend JSON/local: 40 passed, 1 warning.
-- Backend PostgreSQL: 40 passed, 1 warning.
-
-### [x] P7.2 - Testes de isolamento com dois usuarios
-
-- Usuario A nao ve/acessa recursos do usuario B.
-- Usuario A nao referencia recursos do usuario B.
-
-Resultado esperado:
-
-- Isolamento validado por testes.
+### [x] P7.6 - Importação: feedback, consistência da análise e UX do preview
 
 Feito:
 
-- Criado `backend/tests/test_auth_endpoints.py`.
-- Cobre rota anonima, `/health`, listagem isolada e referencia cross-user bloqueada.
+- Removido aviso inline de upload concluído; feedback fica em toast.
+- Corrigida consistência da análise quando a diferença calculada é R$ 0,00.
+- Card de upload fica oculto quando há preview aberto.
+- Adicionado botão `Nova importação`.
+- Tabela de preview foi simplificada removendo `País`, `Confiança` e `Status`.
 
-### [x] P7.3 - Testes frontend de auth
+Checklist:
 
-- Login.
-- Logout.
-- Rotas protegidas.
-- Header Authorization.
-- Tratamento de `401`.
+- [ ] Retirar aviso inline de upload concluído.
+- [ ] Usar toast para upload concluído.
+- [ ] Corrigir inconsistência onde diferença de R$ 0,00 informa que o valor não confere.
+- [ ] Ao mostrar preview, remover/ocultar card de enviar arquivo.
+- [ ] Adicionar botão `Nova importação` no canto superior da tela quando houver preview aberto.
+- [ ] Refazer lista de transações importadas para melhorar UX/UI.
+- [ ] Remover colunas `País`, `Confiança` e `Status`.
+- [ ] Manter informações importantes acessíveis em detalhe, tooltip ou área secundária.
+- [ ] Garantir que confirmação de importação continua funcionando.
 
-Resultado esperado:
+## Validações obrigatórias por entrega
 
-- UX minima de auth validada.
-
-Feito:
-
-- Validado por `typecheck`, `lint` e `build`.
-- Nao foi criado suite e2e novo nesta rodada.
-
-### [x] P7.4 - Smoke test multiusuario
-
-Resultado esperado:
-
-- Fluxo ponta a ponta validado com usuario A e usuario B.
-
-Feito:
-
-- Smoke multiusuario coberto por testes backend com tokens distintos.
-
-## Validacao final da Fase 3
-
-### [x] VF1 - Backend JSON/local
-
-```powershell
-cd backend
-.\.venv\Scripts\python.exe -m pytest
-```
-
-Resultado:
-
-- 44 passed, 1 warning.
-
-### [x] VF2 - Backend PostgreSQL
-
-```powershell
-cd backend
-$env:STORAGE_BACKEND='postgres'
-$env:DATABASE_URL='postgresql://financy:financy@localhost:5432/financy_test'
-.\.venv\Scripts\python.exe -m pytest
-```
-
-Resultado:
-
-- 44 passed, 1 warning.
-
-### [x] VF3 - Frontend
+Frontend:
 
 ```powershell
 cd frontend
@@ -559,270 +446,9 @@ npm.cmd run lint
 npm.cmd run build
 ```
 
-Resultado:
-
-- `typecheck`, `lint` e `build` passaram.
-
-### [x] VF4 - Auth smoke
-
-- `/health` publico.
-- Rotas financeiras retornam `401` sem token.
-- Login funciona.
-- Logout funciona.
-- Bearer token chega ao backend.
-
-Resultado:
-
-- `/health` publico validado por teste.
-- Rotas financeiras sem token retornam `401` quando auth obrigatoria esta ativa.
-- Login/logout implementados no frontend.
-- Bearer token implementado no client API e server API.
-
-### [x] VF5 - User isolation smoke
-
-- Usuario A cria dados.
-- Usuario B nao ve dados de A.
-- Usuario B nao acessa IDs de A.
-- Categorias de sistema seguem visiveis para ambos.
-
-Resultado:
-
-- Isolamento A/B validado por testes backend.
-- Acesso direto a summary de conta de outro usuario retorna `404`.
-
-## Definicao de pronto
-
-- [x] Supabase Auth implementado.
-- [x] Backend valida JWT.
-- [x] Frontend possui login/logout.
-- [x] Rotas financeiras protegidas.
-- [x] User isolation testado.
-- [x] `DEV_USER_ID` restrito a bypass local/teste.
-- [x] Migracao de ownership documentada/scriptada.
-- [x] RLS preparado como draft nao aplicado automaticamente.
-- [x] Validacoes obrigatorias passam.
-
-## Pendencias pos-deploy - Producao privada
-
-Esta secao registra o que ainda ficou fora da Fase 3 funcional, mas e necessario para estabilizar o uso privado em producao.
-
-### [/] PD0 - Investigar `Failed to fetch` generalizado
-
-Contexto:
-
-- Em producao, diversas areas do app retornam `Failed to fetch`.
-- O erro aparece ao trocar de abas e ao carregar dados de Configuracoes, Regras, Categorias e outras telas que fazem chamadas para a API.
-- O problema parece afetar carregamentos gerais, nao apenas uma feature isolada.
-- Apos clicar em tentar novamente, a mesma tela geralmente carrega corretamente; as vezes exige mais de uma tentativa.
-
-Objetivo:
-
-- Identificar se a causa esta em frontend, backend, CORS, auth/token, cold start/timeouts do Render, variaveis de ambiente ou erro silencioso na API.
-
-Checklist de investigacao:
-
-- [ ] Abrir DevTools em producao e coletar Network das chamadas com falha.
-- [ ] Registrar URL chamada, metodo, status, timing e mensagem exata do browser.
-- [/] Verificar se as falhas sao `TypeError: Failed to fetch`, `401`, `403`, `500`, CORS ou timeout.
-- [ ] Conferir se `NEXT_PUBLIC_API_URL` na Vercel aponta para `https://financy-api-mpt0.onrender.com`.
-- [ ] Conferir `CORS_ORIGINS` no Render com `https://financy-flame.vercel.app`.
-- [ ] Verificar se o token Bearer esta presente nas chamadas apos login.
-- [ ] Verificar se o token expira/renova corretamente ao trocar de rota.
-- [ ] Conferir logs do Render nos mesmos horarios das falhas.
-- [/] Testar `/health` e endpoints financeiros diretamente com e sem token.
-- [ ] Reproduzir localmente com frontend apontando para backend de producao.
-- [x] Melhorar mensagens de erro do frontend para exibir status/codigo quando a API responder.
-- [x] Adicionar retry automatico para chamadas GET/HEAD client-side.
-- [x] Adicionar retry automatico para chamadas GET server-side.
-- [ ] Definir correcao apos identificar causa raiz.
-
-Feito:
-
-- Cliente web agora tenta novamente chamadas GET/HEAD em falhas transitórias de rede.
-- Chamadas server-side da Vercel para a API tambem fazem retry em falha de rede ou status `408`, `425`, `429`, `500`, `502`, `503`, `504`.
-- Operacoes nao idempotentes, como criacao, exclusao, upload e confirmacao de import, nao recebem retry automatico para evitar duplicidade.
-- Mensagens de erro agora mostram status HTTP quando a API responde e mensagem de conexao quando o browser nao recebe resposta.
-- Teste direto via PowerShell local falhou antes de receber resposta HTTP/TLS, mas esse ambiente apresentou erro de credencial TLS do Windows; precisa confirmar pelo DevTools do navegador em producao.
-
-Pendente:
-
-- Validar em producao se o retry automatico elimina o erro visivel ao trocar de abas.
-- Coletar Network do navegador se o erro continuar apos o deploy.
-- Confirmar se a causa raiz e cold start/latencia Render ou outro problema de infraestrutura.
-
-Hipoteses iniciais:
-
-- Cold start ou limite do Render Free causando timeouts intermitentes.
-- Primeira chamada apos inatividade falha por latencia/cold start e o retry pega o backend ja acordado.
-- Falha intermitente de rede/conexao antes da API responder, sem erro HTTP registrado.
-- CORS divergente entre dominio Vercel e backend Render.
-- Token Supabase ausente/expirado em chamadas client-side.
-- Sessao/token ainda nao esta pronto no primeiro carregamento apos troca de rota, mas fica disponivel no retry.
-- Frontend tratando qualquer erro de API como `Failed to fetch`, escondendo status real.
-- Backend retornando erro sem header CORS em alguma excecao.
-
-Validacao esperada:
-
-- Navegar entre Dashboard, Transacoes, Contas, Cartoes, Importacao e Configuracoes sem `Failed to fetch`.
-- Regras e Categorias carregam de forma consistente.
-- Erros reais exibem status/mensagem acionavel.
-- Logs do Render e Network do navegador ficam consistentes.
-
-### [/] PD1 - Performance em producao
-
-Feito:
-
-- Deploy privado publicado em Render/Vercel.
-- Connection pool Postgres aplicado no backend.
-- Checagem de duplicidade da importacao otimizada para evitar listar transacoes a cada item.
-- Parser CSV aceita valores com virgula e ponto decimal.
-- Parser PDF otimizado para evitar extrair tabelas quando texto normal ja existe.
-- Inserts de `import_preview_items` otimizados em lote.
-- Confirmacao de importacao otimizada para criar transacoes e atualizar status de preview em lote.
-- Confirmacao de importacao usa cache de referencias e faturas para reduzir consultas por item.
-- Logs temporarios de diagnostico de importacao removidos.
-- Criado benchmark local em `backend/scripts/benchmark_import_confirm.py`.
-- Benchmark local da confirmacao em lote:
-  - 500 itens: 0.0655s, ~7637 itens/s.
-  - 1000 itens: 0.1199s, ~8338 itens/s.
-
-Pendente:
-
-- Avaliar upgrade do Render Free para instancia sempre ligada/mais CPU.
-- Validar ganho real apos novo deploy em producao.
-- Validar suite PostgreSQL quando o banco local `financy_test` estiver disponivel.
-
-### [/] PD2 - Storage persistente de uploads
-
-Feito:
-
-- Criado runbook operacional em `docs/production-readiness-runbook.md`.
-- Recomendacao registrada: Supabase Storage como primeira opcao, mantendo paths por usuario.
-
-Pendente externo:
-
-- Escolher estrategia definitiva: Supabase Storage, Cloudflare R2 ou disco persistente.
-- Migrar uploads de `.uploads` local do Render para storage persistente.
-- Garantir que imports antigos continuem acessiveis quando necessario.
-
-### [/] PD3 - Backups de producao
-
-Feito:
-
-- Criado checklist de backup e restore em `docs/production-readiness-runbook.md`.
-
-Pendente externo:
-
-- Confirmar backup automatico do PostgreSQL/Supabase.
-- Definir backup dos uploads.
-- Executar pelo menos um teste de restauracao em ambiente descartavel.
-
-### [/] PD4 - Rotacao de segredos
-
-Feito:
-
-- Criado checklist de rotacao em `docs/production-readiness-runbook.md`.
-- Lista de segredos a rotacionar documentada sem expor valores.
-
-Pendente externo:
-
-- Rotacionar senha do banco, JWT secret e service role key compartilhados durante o deploy.
-- Atualizar variaveis no Render/Vercel/Supabase.
-- Confirmar que nenhum segredo real esta versionado.
-
-### [/] PD5 - Smoke test multiusuario em producao
-
-Feito:
-
-- Criado roteiro de smoke multiusuario em `docs/production-readiness-runbook.md`.
-
-Pendente externo:
-
-- Criar/usar usuario A e usuario B reais no Supabase.
-- Confirmar que usuario B nao ve contas, cartoes, transacoes, regras, faturas e imports do usuario A.
-- Confirmar que referencias cruzadas retornam erro/404.
-
-### [/] PD6 - RLS Supabase
-
-Feito:
-
-- Draft de RLS ja existe em `docs/supabase/rls_phase3_draft.sql`.
-- Ordem segura de ativacao registrada em `docs/production-readiness-runbook.md`.
-
-Pendente externo:
-
-- Revisar `docs/supabase/rls_phase3_draft.sql`.
-- Decidir se RLS sera ativado ainda na producao privada ou apenas antes de multiusuario publico.
-- Testar policies em staging antes de aplicar no banco real.
-
-### [/] PD7 - Checklist de producao publica
-
-Feito:
-
-- Checklist de producao publica criado em `docs/production-readiness-runbook.md`.
-
-Pendente externo:
-
-- LGPD: termos, politica de privacidade, exportacao e exclusao de dados.
-- Rate limiting.
-- Monitoramento/logs de erro.
-- Suporte/feedback.
-- Plano de rollback operacional.
-
-### [x] PD8 - UX de edicao inline de regras
-
-Contexto:
-
-- A edicao de categorias abre o formulario diretamente no item/grupo que esta sendo editado.
-- A edicao de regras usa o formulario principal de criacao no topo, o que desloca o usuario e parece menos natural.
-
-Objetivo:
-
-- Fazer a edicao de regras funcionar como categorias: ao clicar em editar, abrir o layout de edicao na propria area da regra selecionada.
-
-Checklist:
-
-- [x] Manter formulario principal apenas para criar nova regra.
-- [x] Renderizar formulario de edicao inline no lugar da regra selecionada.
-- [x] Manter acoes Salvar e Cancelar dentro do formulario inline.
-- [x] Preservar criacao, atualizacao, exclusao/inativacao e recarregamento de regras.
-- [x] Validar typecheck, lint e build do frontend.
-
-Feito:
-
-- Criado formulario reutilizavel para regras.
-- Formulario de criacao permanece no topo somente quando nenhuma regra esta em edicao.
-- Ao clicar em editar, o formulario aparece no lugar da regra selecionada.
-- Cancelar fecha a edicao inline e restaura o formulario de criacao.
-
-### [x] PD9 - Padronizar UX de regras com categorias
-
-Contexto:
-
-- Categorias e regras tinham padroes visuais diferentes.
-- Categorias ja usavam botao para abrir criacao, grupos por tipo com contagem, edicao inline e modal de inativacao.
-- Regras ainda tinham formulario de criacao sempre visivel, lista unica, botao de recarregar e confirmacao nativa do navegador.
-
-Objetivo:
-
-- Padronizar Regras para seguir o mesmo modelo de Categorias.
-
-Checklist:
-
-- [x] Esconder formulario de criacao de regras por padrao.
-- [x] Criar botao `Adicionar regra`.
-- [x] Agrupar regras em Receitas, Despesas e Ambas.
-- [x] Mostrar quantidade de regras por grupo.
-- [x] Remover botao de recarregar regras.
-- [x] Atualizar lista automaticamente apos criar, editar ou inativar regra.
-- [x] Trocar `window.confirm` por popup/modal de inativacao.
-- [x] Manter edicao inline no lugar da regra selecionada.
-- [x] Padronizar cards, espacos, botoes e mensagens com categorias.
-
-Feito:
-
-- `RulesContent` agora usa o mesmo padrao visual de `SettingsCategoriesSection`.
-- Criacao de regra abre somente ao clicar em `Adicionar regra`.
-- Regras sao exibidas por grupo com contadores.
-- Exclusao/inativacao abre modal com explicacao e acoes Cancelar/Inativar.
-- Recarregamento manual foi removido; a lista atualiza depois das acoes.
+Backend, quando houver alteração de API, serviços, parser ou persistência:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```

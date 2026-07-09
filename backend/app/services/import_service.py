@@ -258,15 +258,17 @@ class ImportService:
             if isinstance(item.get("raw_row"), dict) and isinstance(item.get("raw_row", {}).get("ai_enrichment"), dict)
         ]
         first_enrichment = ai_enrichments[0] if ai_enrichments else {}
-        consistency_status = first_enrichment.get("consistency_status") or "unknown"
-        consistency_message = first_enrichment.get("consistency_message")
-        if not consistency_message and statement_total_decimal is not None:
-            consistency_message = (
-                "Soma selecionada confere com o total encontrado."
-                if abs(difference or Decimal("0")) <= Decimal("0.01")
-                else "Soma selecionada difere do total encontrado."
-            )
-            consistency_status = "ok" if abs(difference or Decimal("0")) <= Decimal("0.01") else "warning"
+        if statement_total_decimal is not None:
+            difference_is_zero = abs(difference or Decimal("0")) <= Decimal("0.01")
+            if difference_is_zero:
+                consistency_status = "ok"
+                consistency_message = "Soma selecionada confere com o total encontrado."
+            else:
+                consistency_status = first_enrichment.get("consistency_status") or "warning"
+                consistency_message = first_enrichment.get("consistency_message") or "Soma selecionada difere do total encontrado."
+        else:
+            consistency_status = first_enrichment.get("consistency_status") or "unknown"
+            consistency_message = first_enrichment.get("consistency_message")
 
         return ImportAnalysisSummary(
             item_count=len(items),

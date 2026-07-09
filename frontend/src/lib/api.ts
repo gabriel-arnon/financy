@@ -2,6 +2,8 @@ import type {
   Account,
   AccountPayload,
   AccountSummary,
+  AiFinanceOverview,
+  AiFinanceQuestionResponse,
   AiImportAnalysisResponse,
   Card,
   CardPayload,
@@ -113,6 +115,17 @@ export async function getImportPreview(importId: string): Promise<ImportPreviewR
 
 export async function analyzeImportWithAi(importId: string): Promise<AiImportAnalysisResponse> {
   return request<AiImportAnalysisResponse>(`/imports/${importId}/analyze-ai`, { method: "POST" });
+}
+
+export async function getAiFinanceOverview(): Promise<AiFinanceOverview> {
+  return request<AiFinanceOverview>("/ai-finance/overview");
+}
+
+export async function askAiFinance(question: string): Promise<AiFinanceQuestionResponse> {
+  return request<AiFinanceQuestionResponse>("/ai-finance/ask", {
+    method: "POST",
+    body: JSON.stringify({ question })
+  });
 }
 
 export async function confirmImport(importId: string, items: unknown[]): Promise<ConfirmImportResponse> {
