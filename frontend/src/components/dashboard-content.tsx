@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ArrowRight, BarChart3, FileUp, Loader2, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 import { UiButton } from "@/components/ui-button";
 import { askAiFinance, getAiFinanceOverview } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -19,6 +20,7 @@ interface DashboardContentProps {
 }
 
 const incomeTypes = new Set(["income", "refund"]);
+const profileNameKey = "financy_profile_name";
 
 const periodOptions: Array<{ value: PeriodKey; label: string }> = [
   { value: "current_month", label: "Este mês" },
@@ -87,7 +89,13 @@ function sortByDateDesc(a: Transaction, b: Transaction) {
   return (b.created_at ?? "").localeCompare(a.created_at ?? "");
 }
 
+function readStoredProfileName() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(profileNameKey) ?? "";
+}
+
 export function DashboardContent({ transactions, categories, accounts, cards }: DashboardContentProps) {
+  const { session } = useAuth();
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>("current_month");
   const [accountFilter, setAccountFilter] = useState("all");
   const [cardFilter, setCardFilter] = useState("all");
@@ -99,8 +107,12 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
   const [aiAnswer, setAiAnswer] = useState<AiFinanceQuestionResponse | null>(null);
   const [aiAnswerLoading, setAiAnswerLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [storedProfileName] = useState(() => readStoredProfileName());
 
   const now = useMemo(() => new Date(), []);
+  const metadataName = typeof session?.user.user_metadata?.full_name === "string" ? session.user.user_metadata.full_name : "";
+  const displayName = (metadataName || storedProfileName || session?.user.email?.split("@")[0] || "").trim();
+  const firstName = displayName.split(/\s+/)[0] || "bem-vindo";
   const currentMonth = now.toISOString().slice(0, 7);
   const hasCurrentMonthTransactions = transactions.some((transaction) => monthKey(transaction.transaction_date) === currentMonth);
   const fallbackApplied = selectedPeriod === "current_month" && !hasCurrentMonthTransactions && transactions.length > 0;
@@ -212,8 +224,10 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-medium text-mint">Visão geral</p>
-          <h1 className="mt-2 text-3xl font-semibold text-ink">Dashboard financeiro</h1>
-          <p className="mt-2 max-w-2xl text-sm text-stone-500">Acompanhe o resumo do período, gráficos de gastos e insights rápidos.</p>
+          <h1 className="mt-2 text-3xl font-semibold text-ink">
+            Olá, {firstName}! <span aria-hidden="true">👋</span>
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm text-stone-500">Aqui está uma visão geral das suas finanças.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {accounts.some(isActiveEntity) ? (
