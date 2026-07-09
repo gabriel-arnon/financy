@@ -1,13 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Check, Monitor, Palette, Save, ShieldCheck, UserRound } from "lucide-react";
+import { Check, Moon, Palette, Save, ShieldCheck, Sun, UserRound } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { useToast } from "@/components/toast-provider";
 import { UiButton } from "@/components/ui-button";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 
-type ThemePreference = "light" | "system";
+type ThemePreference = "light" | "dark";
 type DensityPreference = "comfortable" | "compact";
 
 interface UserPreferences {
@@ -28,7 +28,14 @@ function readPreferences(): UserPreferences {
   const stored = window.localStorage.getItem(preferencesKey);
   if (!stored) return defaultPreferences;
   try {
-    return { ...defaultPreferences, ...JSON.parse(stored) } as UserPreferences;
+    const parsed = JSON.parse(stored) as Partial<UserPreferences> & { theme?: string };
+    return {
+      ...defaultPreferences,
+      ...parsed,
+      theme: parsed.theme === "dark" ? "dark" : "light",
+      density: parsed.density === "compact" ? "compact" : "comfortable",
+      reduceMotion: Boolean(parsed.reduceMotion),
+    };
   } catch {
     return defaultPreferences;
   }
@@ -183,7 +190,7 @@ export function SettingsProfileAppearance() {
             <div className="grid gap-3 sm:grid-cols-2">
               {[
                 { value: "light" as const, title: "Claro", helper: "Tema atual do Financy" },
-                { value: "system" as const, title: "Sistema", helper: "Respeita a preferência do navegador quando suportado" },
+                { value: "dark" as const, title: "Escuro", helper: "Interface com fundo escuro e menor brilho" },
               ].map((option) => {
                 const selected = preferences.theme === option.value;
                 return (
@@ -198,7 +205,13 @@ export function SettingsProfileAppearance() {
                       <span className="block text-sm font-semibold text-ink">{option.title}</span>
                       <span className="mt-1 block text-xs text-stone-500">{option.helper}</span>
                     </span>
-                    {selected ? <Check className="h-4 w-4 shrink-0 text-mint" /> : <Monitor className="h-4 w-4 shrink-0 text-stone-400" />}
+                    {selected ? (
+                      <Check className="h-4 w-4 shrink-0 text-mint" />
+                    ) : option.value === "dark" ? (
+                      <Moon className="h-4 w-4 shrink-0 text-stone-400" />
+                    ) : (
+                      <Sun className="h-4 w-4 shrink-0 text-stone-400" />
+                    )}
                   </button>
                 );
               })}

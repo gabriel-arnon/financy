@@ -3,13 +3,6 @@ import { RulesContent } from "@/components/rules-content";
 import { SettingsCategoriesSection } from "@/components/settings-categories-section";
 import { SettingsProfileAppearance } from "@/components/settings-profile-appearance";
 
-const settingsNav = [
-  { href: "#settings-profile", label: "Perfil" },
-  { href: "#settings-appearance", label: "Aparência" },
-  { href: "#settings-categories", label: "Categorias" },
-  { href: "#settings-rules", label: "Regras" },
-];
-
 export default function SettingsPage() {
   return (
     <section className="space-y-6">
@@ -20,23 +13,6 @@ export default function SettingsPage() {
           <p className="mt-2 text-sm font-medium text-stone-600">Configure perfil, preferências, categorias e regras.</p>
         </div>
       </div>
-
-      <nav
-        aria-label="Navegação interna de configurações"
-        className="sticky top-0 z-10 overflow-x-auto rounded-lg border border-stone-200 bg-white/95 p-2 shadow-sm backdrop-blur"
-      >
-        <div className="flex min-w-max gap-2">
-          {settingsNav.map((item) => (
-            <a
-              className="inline-flex h-9 items-center justify-center whitespace-nowrap rounded-md px-3 text-sm font-medium text-stone-600 transition hover:bg-emerald-50 hover:text-mint"
-              href={item.href}
-              key={item.href}
-            >
-              {item.label}
-            </a>
-          ))}
-        </div>
-      </nav>
 
       <SettingsProfileAppearance />
 
