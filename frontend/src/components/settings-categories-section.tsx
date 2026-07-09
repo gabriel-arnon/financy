@@ -55,6 +55,7 @@ function getEditableType(category: CategoryWithOptionalType): CategoryType {
 }
 
 interface CategoryFormProps {
+  compact?: boolean;
   form: CategoryPayload;
   isEditing: boolean;
   isSubmitting: boolean;
@@ -71,7 +72,7 @@ function CountBadge({ count }: { count: number }) {
   );
 }
 
-function CategoryForm({ form, isEditing, isSubmitting, onCancel, onChange, onSubmit }: CategoryFormProps) {
+function CategoryForm({ compact = false, form, isEditing, isSubmitting, onCancel, onChange, onSubmit }: CategoryFormProps) {
   return (
     <form className="rounded-md border border-stone-100 bg-stone-50 p-4" onSubmit={onSubmit}>
       <div className="flex items-center gap-2">
@@ -79,7 +80,7 @@ function CategoryForm({ form, isEditing, isSubmitting, onCancel, onChange, onSub
         <h3 className="text-base font-semibold text-ink">{isEditing ? "Editar categoria" : "Nova categoria"}</h3>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-[1fr_220px]">
+      <div className={`mt-4 grid gap-3 ${compact ? "md:grid-cols-1" : "md:grid-cols-[1fr_220px]"}`}>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium text-stone-600">Nome</span>
           <input
@@ -119,7 +120,7 @@ function CategoryForm({ form, isEditing, isSubmitting, onCancel, onChange, onSub
   );
 }
 
-export function SettingsCategoriesSection({ initialCategories }: { initialCategories: Category[] }) {
+export function SettingsCategoriesSection({ compact = false, initialCategories }: { compact?: boolean; initialCategories: Category[] }) {
   const toast = useToast();
   const [categories, setCategories] = useState<Category[]>(initialCategories);
   const [form, setForm] = useState<CategoryPayload>({ ...emptyForm });
@@ -219,7 +220,7 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
 
   return (
     <>
-    <article id="settings-categories" className="scroll-mt-6 rounded-lg border border-stone-200 bg-white p-6 shadow-sm">
+    <article id="settings-categories" className={`scroll-mt-6 rounded-lg border border-stone-200 bg-white shadow-sm ${compact ? "p-4" : "p-6"}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <Tags className="h-5 w-5 text-mint" />
@@ -237,6 +238,7 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
         <div className="mt-5">
           <CategoryForm
             form={form}
+            compact={compact}
             isEditing={false}
             isSubmitting={isSubmitting}
             onCancel={cancelEdit}
@@ -263,7 +265,7 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
           ))}
         </div>
       ) : (
-      <div className="mt-5 space-y-5">
+      <div className={`${compact ? "mt-4 space-y-4" : "mt-5 space-y-5"}`}>
         {categoryGroups.map((group) => {
           const groupCategories = (categories as CategoryWithOptionalType[]).filter((category) => getCategoryGroupKey(category) === group.key);
 
@@ -285,6 +287,7 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
                     <CategoryForm
                       key={category.id}
                       form={form}
+                      compact={compact}
                       isEditing
                       isSubmitting={isSubmitting}
                       onCancel={cancelEdit}
@@ -292,13 +295,13 @@ export function SettingsCategoriesSection({ initialCategories }: { initialCatego
                       onSubmit={handleSubmit}
                     />
                   ) : (
-                    <div key={category.id} className="flex items-center justify-between gap-3 rounded-md border border-stone-100 bg-stone-50 px-4 py-3">
+                    <div key={category.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-stone-100 bg-stone-50 px-4 py-3">
                       <div className="min-w-0">
                         <span className="block truncate text-sm font-medium text-ink">{category.name}</span>
                         {category.is_system ? <span className="mt-1 block text-xs text-stone-500">Categoria padrão do sistema</span> : null}
                       </div>
 
-                      <div className="flex shrink-0 items-center gap-2">
+                      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                         {category.is_system ? (
                           <span className="rounded-full border border-mint/30 bg-emerald-50 px-2 py-1 text-xs font-semibold text-mint">
                             Sistema

@@ -185,11 +185,12 @@ Feito:
 
 Checklist:
 
-- [ ] Mapear transações categorizadas do usuário como contexto de aprendizado.
-- [ ] Criar schema de sugestão de categoria com categoria existente, confiança e justificativa.
-- [ ] Aplicar sugestão apenas em transações sem categoria ou marcadas para revisão.
-- [ ] Preservar regras determinísticas existentes como prioridade.
-- [ ] Exibir sugestão ao usuário antes de alterar a transação.
+- [x] Mapear transações categorizadas do usuário como contexto de aprendizado.
+- [x] Criar schema de sugestão de categoria com categoria existente e justificativa.
+- [x] Gerar sugestão apenas para transações sem categoria no MVP.
+- [x] Preservar regras determinísticas existentes como prioridade.
+- [x] Exibir sugestão ao usuário antes de alterar a transação.
+- [ ] Adicionar confiança numérica às sugestões.
 - [ ] Permitir aplicar sugestão em lote para transações selecionadas.
 - [ ] Criar testes com resposta mockada da IA.
 
@@ -207,13 +208,13 @@ Feito:
 
 Checklist:
 
-- [ ] Identificar grupos de transações similares com mesma categoria.
-- [ ] Detectar se já existe regra equivalente ou sobreposta.
-- [ ] Gerar sugestão com keyword, categoria, tipo, escopo e justificativa.
-- [ ] Exibir sugestões em tela dedicada ou painel de revisão.
+- [x] Identificar grupos de transações similares com mesma categoria.
+- [x] Detectar se já existe regra equivalente ou sobreposta por keyword ativa.
+- [x] Gerar sugestão com keyword, categoria, tipo, ocorrências e justificativa.
+- [x] Exibir sugestões no painel de IA do dashboard.
 - [ ] Permitir criar regra individualmente.
 - [ ] Permitir descartar sugestão.
-- [ ] Evitar regras duplicadas.
+- [x] Evitar regras duplicadas por keyword já existente.
 - [ ] Criar testes para sugestão, duplicidade e descarte.
 
 ### [/] P6.3 - Resumo financeiro mensal
@@ -229,13 +230,13 @@ Feito:
 
 Checklist:
 
-- [ ] Definir agregados enviados para IA sem mandar transações completas quando não necessário.
-- [ ] Criar endpoint para resumo mensal por período.
+- [x] Definir agregados usados pelo resumo sem alterar transações.
+- [x] Criar endpoint de resumo financeiro inicial.
 - [ ] Incluir comparação com período anterior quando houver dados.
-- [ ] Destacar categorias que mais cresceram.
-- [ ] Destacar maiores transações ou despesas fora do padrão.
-- [ ] Mostrar resumo no dashboard.
-- [ ] Criar estado de loading e erro.
+- [x] Destacar maior categoria de gastos do período analisado.
+- [x] Destacar relação entre entradas e saídas.
+- [x] Mostrar resumo no dashboard.
+- [x] Criar estado de loading e erro.
 - [ ] Criar testes com resposta mockada da IA.
 
 ### [/] P6.4 - Busca em linguagem natural
@@ -252,11 +253,13 @@ Feito:
 
 Checklist:
 
-- [ ] Definir intents suportadas: listar transações, somar gastos, comparar período, filtrar por categoria/origem.
-- [ ] Criar schema estruturado para a IA retornar filtros, nunca SQL livre.
-- [ ] Validar filtros no backend antes de executar.
-- [ ] Reutilizar endpoints/repository existentes.
-- [ ] Exibir resultado como lista, total ou resumo conforme intent.
+- [x] Definir intents MVP: somar por tipo, categoria e mês.
+- [x] Criar schema estruturado de pergunta/resposta sem SQL livre.
+- [x] Validar filtros no backend antes de executar.
+- [x] Reutilizar repository existente.
+- [x] Exibir resultado como resumo com total e quantidade.
+- [ ] Listar transações encontradas conforme intent.
+- [ ] Suportar filtros por origem/cartão e valor mínimo.
 - [ ] Tratar perguntas fora do escopo com mensagem clara.
 - [ ] Criar testes contra prompt injection e filtros inválidos.
 
@@ -273,12 +276,12 @@ Feito:
 
 Checklist:
 
-- [ ] Definir escopo permitido de perguntas.
-- [ ] Criar camada de contexto com dados agregados, categorias, contas, cartões e transações relevantes.
-- [ ] Evitar envio de dados excessivos ao provider.
-- [ ] Responder com base nos dados disponíveis e indicar quando não houver dados suficientes.
+- [x] Definir escopo permitido inicial de perguntas.
+- [x] Criar camada de contexto com dados agregados, categorias e transações relevantes.
+- [x] Evitar envio a provider externo neste MVP.
+- [x] Responder com base nos dados disponíveis.
 - [ ] Adicionar aviso de resposta informativa, sem aconselhamento financeiro profissional.
-- [ ] Criar UI de chat ou painel de pergunta/resposta.
+- [x] Criar UI de painel de pergunta/resposta.
 - [ ] Criar testes com mock de IA e controle de escopo.
 
 ### [/] P6.6 - Detecção de recorrências
@@ -294,9 +297,9 @@ Feito:
 
 Checklist:
 
-- [ ] Criar heurística inicial por descrição normalizada, valor aproximado e intervalo mensal.
-- [ ] Usar IA para nomear/explicar recorrências ambíguas.
-- [ ] Mostrar recorrências com frequência, valor médio, próxima previsão e categoria.
+- [x] Criar heurística inicial por descrição normalizada, valor e ocorrência mensal.
+- [ ] Usar IA/provider externo para nomear/explicar recorrências ambíguas.
+- [x] Mostrar recorrências com frequência/ocorrências, valor e cadência provável.
 - [ ] Permitir marcar como recorrência confirmada ou ignorar.
 - [ ] Usar recorrências confirmadas em resumos e previsões futuras.
 - [ ] Criar testes para recorrência mensal, quinzenal e falso positivo.
@@ -314,10 +317,11 @@ Feito:
 
 Checklist:
 
-- [ ] Criar schema de normalização com descrição sugerida, confiança e justificativa.
+- [x] Criar schema de normalização com descrição sugerida e justificativa.
+- [ ] Adicionar confiança numérica.
 - [ ] Aplicar sugestão automaticamente apenas quando confiança for alta e regra do produto permitir.
-- [ ] Para baixa confiança, mostrar sugestão para aceite manual.
-- [ ] Manter `original_description` inalterado.
+- [x] Para baixa confiança, mostrar sugestão para aceite manual no dashboard.
+- [x] Manter `original_description` inalterado.
 - [ ] Permitir aplicar sugestões em lote.
 - [ ] Evitar alterar descrições editadas manualmente pelo usuário sem confirmação.
 - [ ] Criar testes para descrições com adquirente, Pix, marketplace e assinatura.
@@ -332,11 +336,11 @@ Feito:
 
 Checklist:
 
-- [ ] Revisar todos os itens da sidebar.
-- [ ] Corrigir `Transacoes` para `Transações`.
-- [ ] Corrigir `Contas Bancarias` para `Contas Bancárias`.
-- [ ] Corrigir outros textos sem acento.
-- [ ] Garantir que labels cabem no layout desktop/mobile.
+- [x] Revisar todos os itens da sidebar.
+- [x] Corrigir `Transacoes` para `Transações`.
+- [x] Corrigir `Contas Bancarias` para `Contas Bancárias`.
+- [x] Corrigir outros textos sem acento.
+- [x] Garantir que labels cabem no layout desktop/mobile.
 
 ### [x] P7.2 - Dashboard: cards, gráficos, insights e filtros
 
@@ -348,13 +352,13 @@ Feito:
 
 Checklist:
 
-- [ ] Remover card `Transações pendentes de revisão`.
-- [ ] Adicionar gráficos de gastos por categoria, período ou origem.
-- [ ] Adicionar área de insights financeiros.
-- [ ] Adicionar filtros rápidos: esse mês, mês passado, essa semana, semana passada.
-- [ ] Adicionar período personalizado.
-- [ ] Garantir que filtros alteram cards, gráficos e insights de forma consistente.
-- [ ] Validar responsividade dos gráficos.
+- [x] Remover card `Transações pendentes de revisão`.
+- [x] Adicionar gráficos de gastos por categoria, período ou origem.
+- [x] Adicionar área de insights financeiros.
+- [x] Adicionar filtros rápidos: esse mês, mês passado, essa semana, semana passada.
+- [x] Adicionar período personalizado.
+- [x] Garantir que filtros alteram cards, gráficos e insights de forma consistente.
+- [ ] Validar responsividade dos gráficos em browser real com screenshots.
 
 ### [x] P7.3 - Transações: polish do drawer, status e fluxo de salvar
 
@@ -367,13 +371,13 @@ Feito:
 
 Checklist:
 
-- [ ] Retirar texto `confirmed` abaixo da data da transação.
-- [ ] Corrigir linha branca bugada no layout do drawer.
-- [ ] Ajustar tamanho de `Origem` para caber em uma linha quando possível.
-- [ ] Fechar drawer automaticamente ao criar transação com sucesso.
-- [ ] Fechar drawer automaticamente ao salvar alterações com sucesso.
-- [ ] Garantir toasts de sucesso/erro.
-- [ ] Validar comportamento mobile.
+- [x] Retirar texto `confirmed` abaixo da data da transação.
+- [x] Corrigir linha branca bugada no layout do drawer.
+- [x] Ajustar tamanho de `Origem` para caber em uma linha quando possível.
+- [x] Fechar drawer automaticamente ao criar transação com sucesso.
+- [x] Fechar drawer automaticamente ao salvar alterações com sucesso.
+- [x] Garantir toasts de sucesso/erro existentes.
+- [ ] Validar comportamento mobile em browser real.
 
 ### [x] P7.4 - Conta bancária: loading, filtros e layout dos detalhes
 
@@ -386,13 +390,13 @@ Feito:
 
 Checklist:
 
-- [ ] Adicionar loading ao clicar em detalhes.
-- [ ] Investigar filtro que não funciona ou está lento.
-- [ ] Corrigir performance/estado do filtro.
-- [ ] Ajustar altura dos cards em `Cartões vinculados`.
-- [ ] Compactar cards de `Faturas abertas`.
-- [ ] Ajustar comprimento do card `Últimas transações relacionadas`.
-- [ ] Validar desktop e mobile.
+- [x] Adicionar loading ao clicar em detalhes.
+- [x] Investigar filtro que não funciona ou está lento.
+- [x] Corrigir performance/estado do filtro com busca local.
+- [x] Ajustar altura dos cards em `Cartões vinculados`.
+- [x] Compactar cards de `Faturas abertas`.
+- [x] Ajustar comprimento do card `Últimas transações relacionadas`.
+- [ ] Validar desktop e mobile em browser real.
 
 ### [x] P7.5 - Cartões de crédito: loading, botões, BRL e layout de detalhe
 
@@ -405,13 +409,13 @@ Feito:
 
 Checklist:
 
-- [ ] Adicionar loading ao clicar em `Ver cartão`.
-- [ ] Ajustar texto e seta do botão `Ver cartão` para ocupar uma linha.
-- [ ] Adicionar máscara BRL no limite na criação de cartão.
-- [ ] Adicionar máscara BRL no limite na edição de cartão.
-- [ ] No detalhe do cartão, colocar `Últimas transações` ao lado direito de `Histórico de faturas` em desktop.
-- [ ] Manter layout empilhado no mobile.
-- [ ] Validar payload decimal aceito pela API.
+- [x] Adicionar loading ao clicar em `Ver cartão`.
+- [x] Ajustar texto e seta do botão `Ver cartão` para ocupar uma linha.
+- [x] Adicionar máscara BRL no limite na criação de cartão.
+- [x] Adicionar máscara BRL no limite na edição de cartão.
+- [x] No detalhe do cartão, colocar `Últimas transações` ao lado direito de `Histórico de faturas` em desktop.
+- [x] Manter layout empilhado no mobile.
+- [x] Validar payload decimal aceito pela API via typecheck/build e fluxo de payload.
 
 ### [x] P7.6 - Importação: feedback, consistência da análise e UX do preview
 
@@ -425,15 +429,100 @@ Feito:
 
 Checklist:
 
-- [ ] Retirar aviso inline de upload concluído.
-- [ ] Usar toast para upload concluído.
-- [ ] Corrigir inconsistência onde diferença de R$ 0,00 informa que o valor não confere.
-- [ ] Ao mostrar preview, remover/ocultar card de enviar arquivo.
-- [ ] Adicionar botão `Nova importação` no canto superior da tela quando houver preview aberto.
-- [ ] Refazer lista de transações importadas para melhorar UX/UI.
-- [ ] Remover colunas `País`, `Confiança` e `Status`.
+- [x] Retirar aviso inline de upload concluído.
+- [x] Usar toast para upload concluído.
+- [x] Corrigir inconsistência onde diferença de R$ 0,00 informa que o valor não confere.
+- [x] Ao mostrar preview, remover/ocultar card de enviar arquivo.
+- [x] Adicionar botão `Nova importação` no canto superior da tela quando houver preview aberto.
+- [x] Refazer lista de transações importadas para melhorar UX/UI em MVP.
+- [x] Remover colunas `País`, `Confiança` e `Status`.
 - [ ] Manter informações importantes acessíveis em detalhe, tooltip ou área secundária.
-- [ ] Garantir que confirmação de importação continua funcionando.
+- [x] Garantir que confirmação de importação continua funcionando via testes backend e build frontend.
+
+## P8 - Configurações: perfil, preferências, aparência e layout
+
+### [x] P8.1 - Finalizar edição de perfil e preferências do usuário
+
+Objetivo:
+
+- Completar a área de perfil e preferências em Configurações, deixando a experiência editável, clara e persistente quando houver suporte atual no app.
+
+Feito:
+
+- Criado componente editável para Perfil e Preferências.
+- Nome do usuário é salvo nos metadados do Supabase quando auth está configurado.
+- Em modo local/sem Supabase, nome e preferências usam `localStorage`.
+- E-mail, idioma e moeda ficam visíveis como campos somente leitura.
+- Feedback usa toast de sucesso/erro.
+
+Checklist:
+
+- [x] Revisar estado atual da tela de Configurações.
+- [x] Mapear quais dados de perfil já existem no frontend/backend.
+- [x] Permitir editar campos de perfil já suportados.
+- [x] Permitir editar preferências já suportadas.
+- [x] Salvar alterações usando handlers/APIs existentes ou fallback local quando não houver suporte.
+- [x] Exibir toast de sucesso/erro.
+- [x] Garantir loading e estado vazio.
+- [x] Validar responsividade via typecheck/lint/build.
+
+Não feito:
+
+- Persistência backend dedicada para preferências ainda não existe; preferências visuais ficam salvas no navegador.
+
+### [x] P8.2 - Finalizar parte de aparência
+
+Objetivo:
+
+- Completar a seção de Aparência em Configurações, deixando controles visuais coerentes com o design atual.
+
+Feito:
+
+- Seção de Aparência deixou de ser placeholder/desabilitada.
+- Adicionados controles de tema, densidade e redução de movimento.
+- Preferências são persistidas em `localStorage` e refletidas como `data-*` no documento.
+- Feedback usa toast.
+
+Checklist:
+
+- [x] Revisar se já existe suporte a tema, densidade, modo escuro/claro ou preferências visuais.
+- [x] Implementar apenas opções suportadas sem criar comportamento falso.
+- [x] Persistir preferências no storage existente do frontend.
+- [x] Aplicar feedback visual imediato quando seguro.
+- [x] Exibir toast de sucesso/erro.
+- [x] Garantir que a UI fica consistente com o restante do app.
+- [x] Validar responsividade via typecheck/lint/build.
+
+Não feito:
+
+- Tema escuro completo ainda não foi implementado globalmente.
+
+### [x] P8.3 - Compactar categorias e regras em layout lado a lado
+
+Objetivo:
+
+- Reorganizar Configurações para colocar o card de Regras ao lado direito do card de Categorias em desktop, compactando ambos sem perder funcionalidades.
+
+Feito:
+
+- Categorias e Regras agora ficam lado a lado em desktop.
+- Layout permanece empilhado no mobile.
+- Componentes receberam modo `compact`.
+- Formulários e linhas internas foram ajustados para evitar estouro horizontal.
+
+Checklist:
+
+- [x] Revisar componentes atuais de Categorias e Regras.
+- [x] Criar layout em grid responsivo com Categorias à esquerda e Regras à direita no desktop.
+- [x] Manter layout empilhado no mobile.
+- [x] Compactar cabeçalhos, espaçamentos e cards internos.
+- [x] Garantir que criação, edição e exclusão continuam funcionando.
+- [x] Manter confirmação de exclusão e toasts.
+- [x] Validar que listas longas não quebram o layout via ajustes responsivos.
+
+Não feito:
+
+- Validação visual com screenshots em browser real não foi executada nesta entrega.
 
 ## Validações obrigatórias por entrega
 

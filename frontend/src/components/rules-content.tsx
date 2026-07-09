@@ -23,12 +23,14 @@ import type {
 interface RulesContentProps {
   initialRules: ClassificationRule[];
   initialCategories: Category[];
+  compact?: boolean;
   embedded?: boolean;
   skipInitialLoad?: boolean;
 }
 
 interface RuleFormProps {
   categories: Category[];
+  compact?: boolean;
   form: ClassificationRulePayload;
   isEditing: boolean;
   isSubmitting: boolean;
@@ -99,7 +101,7 @@ function RulesListLoading() {
   );
 }
 
-function RuleForm({ categories, form, isEditing, isSubmitting, onCancel, onChange, onSubmit }: RuleFormProps) {
+function RuleForm({ categories, compact = false, form, isEditing, isSubmitting, onCancel, onChange, onSubmit }: RuleFormProps) {
   return (
     <form className="rounded-md border border-stone-100 bg-stone-50 p-4" onSubmit={onSubmit}>
       <div className="flex items-center gap-2">
@@ -107,7 +109,7 @@ function RuleForm({ categories, form, isEditing, isSubmitting, onCancel, onChang
         <h3 className="text-base font-semibold text-ink">{isEditing ? "Editar regra" : "Nova regra"}</h3>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-[1.3fr_1.2fr_160px_160px_120px]">
+      <div className={`mt-4 grid gap-3 ${compact ? "md:grid-cols-2" : "md:grid-cols-[1.3fr_1.2fr_160px_160px_120px]"}`}>
         <label className="block space-y-1.5">
           <span className="text-sm font-medium text-stone-600">Palavra-chave</span>
           <input
@@ -191,7 +193,7 @@ function RuleForm({ categories, form, isEditing, isSubmitting, onCancel, onChang
   );
 }
 
-export function RulesContent({ initialRules, initialCategories, embedded = false, skipInitialLoad = false }: RulesContentProps) {
+export function RulesContent({ initialRules, initialCategories, compact = false, embedded = false, skipInitialLoad = false }: RulesContentProps) {
   const toast = useToast();
   const [rules, setRules] = useState<ClassificationRule[]>(initialRules);
   const [categories, setCategories] = useState<Category[]>(initialCategories);
@@ -333,6 +335,7 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
         <div className="mt-5">
           <RuleForm
             categories={categories}
+            compact={compact}
             form={form}
             isEditing={false}
             isSubmitting={isSubmitting}
@@ -346,7 +349,7 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
       {isLoading ? (
         <RulesListLoading />
       ) : (
-        <div className="mt-5 space-y-5">
+        <div className={`${compact ? "mt-4 space-y-4" : "mt-5 space-y-5"}`}>
           {ruleGroups.map((group) => {
             const groupRules = rules.filter((rule) => getRuleGroupKey(rule) === group.key);
 
@@ -368,6 +371,7 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
                       <RuleForm
                         key={rule.id}
                         categories={categories}
+                        compact={compact}
                         form={form}
                         isEditing
                         isSubmitting={isSubmitting}
@@ -376,13 +380,13 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
                         onSubmit={handleSubmit}
                       />
                     ) : (
-                      <div key={rule.id} className="flex items-center justify-between gap-3 rounded-md border border-stone-100 bg-stone-50 px-4 py-3">
+                      <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-stone-100 bg-stone-50 px-4 py-3">
                         <div className="min-w-0">
                           <span className="block truncate text-sm font-medium text-ink">{rule.keyword}</span>
                           <span className="mt-1 block text-xs text-stone-500">{getCategoryName(rule.category_id, categories)}</span>
                         </div>
 
-                        <div className="flex shrink-0 items-center gap-2">
+                        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                           <span className="rounded-full border border-stone-200 bg-white px-2 py-1 text-xs font-medium text-stone-500">
                             {getRuleTypeLabel(rule)}
                           </span>
@@ -426,8 +430,8 @@ export function RulesContent({ initialRules, initialCategories, embedded = false
   );
 
   const wrapperClassName = embedded
-    ? "space-y-5 rounded-lg border border-stone-200 bg-white p-6 shadow-sm"
-    : "space-y-5 rounded-lg border border-stone-200 bg-white p-6 shadow-sm";
+    ? `space-y-5 rounded-lg border border-stone-200 bg-white shadow-sm ${compact ? "p-4" : "p-6"}`
+    : `space-y-5 rounded-lg border border-stone-200 bg-white shadow-sm ${compact ? "p-4" : "p-6"}`;
 
   return (
     <>
