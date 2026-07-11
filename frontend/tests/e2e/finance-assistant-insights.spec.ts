@@ -190,9 +190,9 @@ test("insights suggested rule opens prefilled dialog and removes suggestion afte
   await page.getByRole("button", { name: "Adicionar regra" }).click();
   const ruleDialog = page.getByRole("dialog", { name: "Revisar e adicionar regra" });
   await expect(ruleDialog.getByRole("heading", { name: "Revisar e adicionar regra" })).toBeVisible();
-  await expect(page.getByLabel("Palavra-chave")).toHaveValue("OPENAI");
-  await expect(page.getByLabel("Categoria")).toHaveValue("cat-subscriptions");
-  await expect(page.getByLabel("Tipo")).toHaveValue("expense");
+  await expect(ruleDialog.getByLabel("Palavra-chave")).toHaveValue("OPENAI");
+  await expect(ruleDialog.getByLabel("Categoria")).toHaveValue("cat-subscriptions");
+  await expect(ruleDialog.getByLabel("Tipo")).toHaveValue("expense");
 
   await ruleDialog.getByRole("button", { name: "Adicionar regra" }).click();
   await expect(page.getByText("Regra criada.")).toBeVisible();
@@ -209,6 +209,24 @@ test("insights rename CTA opens transactions with cleanup filter", async ({ page
   await expect(page.getByText("Exibindo transacoes com sugestao de limpeza de descricao.")).toBeVisible();
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await expect(page.locator("tbody tr").first()).toContainText("MERCADO***TESTE");
+});
+
+test("dashboard quick action buttons open prefilled transaction drawer", async ({ page }) => {
+  await mockFinanceApi(page);
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+
+  await page.getByRole("link", { name: "Receita" }).click();
+  await expect(page).toHaveURL(/\/transactions\?create=income/);
+  await expect(page.getByRole("heading", { name: "Criar lançamento manual" })).toBeVisible();
+  await expect(page.locator("aside").getByLabel("Tipo")).toHaveValue("income");
+
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+  await page.getByRole("link", { name: "Despesa" }).click();
+  await expect(page).toHaveURL(/\/transactions\?create=expense/);
+  await expect(page.getByRole("heading", { name: "Criar lançamento manual" })).toBeVisible();
+  await expect(page.locator("aside").getByLabel("Tipo")).toHaveValue("expense");
 });
 
 test("global assistant is absent from login and supports open close interactions", async ({ page }) => {

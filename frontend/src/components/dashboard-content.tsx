@@ -2,16 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, BarChart3, FileUp, Loader2, Plus, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowRight, BarChart3, FileUp, Loader2, Minus, Plus, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { ClassificationRuleDialog } from "@/components/classification-rule-dialog";
-import { useToast } from "@/components/toast-provider";
 import { UiButton } from "@/components/ui-button";
-import { askAiFinance, getAiFinanceOverview } from "@/lib/api";
+import { getAiFinanceOverview } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { formatAccountName, formatCardWithAccount, getAccountName, getCardNameWithAccount, getCategoryName, isActiveEntity, translateTransactionType } from "@/lib/labels";
-import type { Account, AiFinanceOverview, AiFinanceQuestionResponse, AiSuggestedRule, Card, Category, ClassificationRulePayload, Transaction } from "@/lib/types";
+import type { Account, AiFinanceOverview, AiSuggestedRule, Card, Category, ClassificationRulePayload, Transaction } from "@/lib/types";
 
 type PeriodKey = "current_month" | "previous_month" | "current_week" | "previous_week" | "last_30" | "last_90" | "custom" | "all";
 
@@ -24,6 +23,7 @@ interface DashboardContentProps {
 
 const incomeTypes = new Set(["income", "refund"]);
 const profileNameKey = "financy_profile_name";
+const categoryChartColors = ["#ef4444", "#10b981", "#3b82f6", "#f59e0b", "#8b5cf6", "#14b8a6"];
 
 const periodOptions: Array<{ value: PeriodKey; label: string }> = [
   { value: "current_month", label: "Este mês" },
@@ -97,10 +97,13 @@ function readStoredProfileName() {
   return window.localStorage.getItem(profileNameKey) ?? "";
 }
 
+function ruleKey(rule: AiSuggestedRule) {
+  return `${rule.keyword}-${rule.category_id}-${rule.transaction_type ?? "all"}`;
+}
+
 export function DashboardContent({ transactions, categories, accounts, cards }: DashboardContentProps) {
   const { session } = useAuth();
   const router = useRouter();
-  const toast = useToast();
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>("current_month");
   const [accountFilter, setAccountFilter] = useState("all");
   const [cardFilter, setCardFilter] = useState("all");
@@ -108,9 +111,6 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
   const [customEndDate, setCustomEndDate] = useState("");
   const [aiOverview, setAiOverview] = useState<AiFinanceOverview | null>(null);
   const [aiLoading, setAiLoading] = useState(true);
-  const [aiQuestion, setAiQuestion] = useState("");
-  const [aiAnswer, setAiAnswer] = useState<AiFinanceQuestionResponse | null>(null);
-  const [aiAnswerLoading, setAiAnswerLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [dismissedRuleKeys, setDismissedRuleKeys] = useState<Set<string>>(() => new Set());
   const [ruleInitialValues, setRuleInitialValues] = useState<ClassificationRulePayload | null>(null);
@@ -145,22 +145,6 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
       active = false;
     };
   }, []);
-
-  async function handleAiQuestion(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const question = aiQuestion.trim();
-    if (question.length < 3) return;
-    setAiAnswerLoading(true);
-    setAiError(null);
-    try {
-      const answer = await askAiFinance(question);
-      setAiAnswer(answer);
-    } catch (err) {
-      setAiError(err instanceof Error ? err.message : "Falha ao responder pergunta financeira.");
-    } finally {
-      setAiAnswerLoading(false);
-    }
-  }
 
   const filteredTransactions = useMemo(() => {
     const today = startOfDay(now);
@@ -197,27 +181,22 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
   )
     .map(([name, total]) => ({ name, total }))
     .sort((a, b) => b.total - a.total);
-  const maxCategoryTotal = Math.max(...categorySummary.map((item) => item.total), 1);
-  const dailySummary = Object.entries(
-    filteredTransactions.reduce<Record<string, { income: number; expenses: number }>>((summary, transaction) => {
-      const key = transaction.transaction_date.slice(5, 10);
-      const current = summary[key] ?? { income: 0, expenses: 0 };
-      if (incomeTypes.has(transaction.type)) current.income += Math.abs(Number(transaction.amount));
-      if (transaction.type === "expense") current.expenses += Math.abs(Number(transaction.amount));
-      summary[key] = current;
-      return summary;
-    }, {})
-  ).slice(-8);
-  const maxDailyTotal = Math.max(...dailySummary.map(([, item]) => Math.max(item.income, item.expenses)), 1);
-  const biggestExpense = filteredTransactions
-    .filter((transaction) => transaction.type === "expense")
-    .sort((a, b) => Number(b.amount) - Number(a.amount))[0];
-  const topCategory = categorySummary[0];
-  const insights = [
-    topCategory ? `Maior categoria de gastos: ${topCategory.name}, com ${formatCurrency(topCategory.total)}.` : "Nenhum gasto encontrado no período filtrado.",
-    biggestExpense ? `Maior despesa: ${biggestExpense.description}, no valor de ${formatCurrency(biggestExpense.amount)}.` : "Nenhuma despesa confirmada no período.",
-    balance >= 0 ? `Resultado positivo de ${formatCurrency(balance)} no período.` : `Resultado negativo de ${formatCurrency(Math.abs(balance))} no período.`
-  ];
+
+  const categoryPieTotal = categorySummary.slice(0, 6).reduce((total, item) => total + item.total, 0);
+  const categoryPieItems = categorySummary.slice(0, 6).reduce<Array<{ color: string; end: number; name: string; percentage: number; start: number; total: number }>>((items, item, index) => {
+    const percentage = categoryPieTotal > 0 ? (item.total / categoryPieTotal) * 100 : 0;
+    const start = items.at(-1)?.end ?? 0;
+    return [...items, {
+      ...item,
+      color: categoryChartColors[index % categoryChartColors.length],
+      end: start + percentage,
+      percentage,
+      start
+    }];
+  }, []);
+  const categoryPieGradient = categoryPieItems.length > 0
+    ? `conic-gradient(${categoryPieItems.map((item) => `${item.color} ${item.start}% ${item.end}%`).join(", ")})`
+    : "conic-gradient(#e7e5e4 0% 100%)";
 
   const summaryCards = [
     { label: "Total de entradas", value: formatCurrency(income), icon: TrendingUp, tone: "text-mint", helper: periodLabel },
@@ -227,10 +206,6 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
   ];
 
   const visibleSuggestedRules = (aiOverview?.suggested_rules ?? []).filter((rule) => !dismissedRuleKeys.has(ruleKey(rule)));
-
-  function ruleKey(rule: AiSuggestedRule) {
-    return `${rule.keyword}-${rule.category_id}-${rule.transaction_type ?? "all"}`;
-  }
 
   function openSuggestedRule(rule: AiSuggestedRule) {
     setRuleInitialValues({
@@ -267,7 +242,7 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
         <div>
           <p className="text-sm font-medium text-mint">Visão geral</p>
           <h1 className="mt-2 text-3xl font-semibold text-ink">
-            Olá, {firstName}! <span aria-hidden="true">👋</span>
+            Olá, {firstName}!
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-stone-500">Aqui está uma visão geral das suas finanças.</p>
         </div>
@@ -299,7 +274,15 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
               <input className="h-10 rounded-md border border-stone-200 bg-white px-3 text-sm outline-none focus:border-mint" type="date" value={customEndDate} onChange={(event) => setCustomEndDate(event.target.value)} min={customStartDate || undefined} max={toDateKey(now)} />
             </>
           ) : null}
-          <Link href="/importacao" className="inline-flex items-center gap-2 rounded-md bg-mint px-4 py-2 text-sm font-medium text-white shadow-sm">
+          <Link href="/transactions?create=income" className="inline-flex h-10 items-center gap-2 rounded-md bg-emerald-600 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2">
+            <Plus className="h-4 w-4" />
+            Receita
+          </Link>
+          <Link href="/transactions?create=expense" className="inline-flex h-10 items-center gap-2 rounded-md bg-red-600 px-4 text-sm font-medium text-white shadow-sm transition hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+            <Minus className="h-4 w-4" />
+            Despesa
+          </Link>
+          <Link href="/importacao" className="inline-flex h-10 items-center gap-2 rounded-md bg-mint px-4 text-sm font-medium text-white shadow-sm transition hover:bg-mint/90 focus:outline-none focus:ring-2 focus:ring-mint focus:ring-offset-2">
             <FileUp className="h-4 w-4" />
             Importar arquivo
           </Link>
@@ -333,20 +316,37 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
       <div className="grid gap-4 xl:grid-cols-[1fr_0.85fr]">
         <div className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
           <h2 className="text-base font-semibold text-ink">Gastos por categoria</h2>
-          <div className="mt-5 grid gap-4">
-            {categorySummary.slice(0, 6).map((item) => (
-              <div key={item.name}>
-                <div className="flex items-center justify-between gap-4 text-sm">
-                  <span className="font-medium text-ink">{item.name}</span>
-                  <span className="font-semibold text-ink">{formatCurrency(item.total)}</span>
-                </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100">
-                  <div className="h-full rounded-full bg-coral" style={{ width: `${Math.max((item.total / maxCategoryTotal) * 100, 4)}%` }} />
+          {categoryPieItems.length > 0 ? (
+            <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(12rem,16rem)_1fr] lg:items-center">
+              <div
+                aria-label="Distribuição de gastos por categoria"
+                className="relative mx-auto aspect-square w-full max-w-64 rounded-full shadow-inner"
+                role="img"
+                style={{ background: categoryPieGradient }}
+              >
+                <div className="absolute inset-[23%] flex flex-col items-center justify-center rounded-full bg-white text-center shadow-sm">
+                  <span className="text-xs font-medium uppercase text-stone-500">Total</span>
+                  <span className="mt-1 text-sm font-semibold text-ink">{formatCurrency(categoryPieTotal)}</span>
                 </div>
               </div>
-            ))}
-            {categorySummary.length === 0 ? <p className="py-6 text-center text-sm text-stone-500">Sem gastos para gerar gráfico.</p> : null}
-          </div>
+              <div className="grid gap-3">
+                {categoryPieItems.map((item) => (
+                  <div key={item.name} className="flex items-center justify-between gap-3 rounded-md border border-stone-100 px-3 py-2">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+                      <span className="truncate text-sm font-medium text-ink">{item.name}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-ink">{formatCurrency(item.total)}</p>
+                      <p className="text-xs text-stone-500">{item.percentage.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="py-12 text-center text-sm text-stone-500">Sem gastos para gerar gráfico.</p>
+          )}
         </div>
 
         <div className="rounded-lg border border-stone-200 bg-white p-5 shadow-sm">
@@ -355,14 +355,6 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
             <Sparkles className="h-4 w-4 text-mint" />
           </div>
           <div className="mt-4 grid gap-3">
-            {insights.map((insight) => (
-              <p key={insight} className="rounded-md bg-stone-50 px-3 py-2 text-sm leading-6 text-stone-700">{insight}</p>
-            ))}
-            {aiOverview?.insights.slice(0, 2).map((insight) => (
-              <p key={`${insight.title}-${insight.description}`} className="rounded-md bg-emerald-50 px-3 py-2 text-sm leading-6 text-emerald-900">
-                <span className="font-semibold">{insight.title}: </span>{insight.description}
-              </p>
-            ))}
             {aiLoading ? (
               <p className="inline-flex items-center gap-2 rounded-md bg-stone-50 px-3 py-2 text-sm text-stone-500">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -379,7 +371,9 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
                   <div className="mt-2 grid gap-2">
                     {visibleSuggestedRules.slice(0, 2).map((rule) => (
                       <div key={`${rule.keyword}-${rule.category_id}`} className="flex flex-col gap-3 rounded-md border border-stone-100 px-3 py-2 text-sm text-stone-700 sm:flex-row sm:items-center sm:justify-between">
-                        <span className="font-semibold text-ink">{rule.keyword}</span> → {rule.category_name} ({rule.match_count} ocorrências)
+                        <span>
+                          <span className="font-semibold text-ink">{rule.keyword}</span> para {rule.category_name} ({rule.match_count} ocorrências)
+                        </span>
                         <UiButton icon={<Plus className="h-4 w-4" />} onClick={() => openSuggestedRule(rule)} size="sm" variant="secondary">
                           Adicionar regra
                         </UiButton>
@@ -394,7 +388,7 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
                   <div className="mt-2 grid gap-2">
                     {aiOverview.category_suggestions.slice(0, 2).map((item) => (
                       <p key={item.transaction_id} className="rounded-md border border-stone-100 px-3 py-2 text-sm text-stone-700">
-                        <span className="font-semibold text-ink">{item.description}</span> → {item.suggested_category_name ?? "Sem categoria"}
+                        <span className="font-semibold text-ink">{item.description}</span> para {item.suggested_category_name ?? "Sem categoria"}
                       </p>
                     ))}
                   </div>
@@ -424,37 +418,6 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
                 </div>
               ) : null}
             </div>
-          ) : null}
-          {false ? (
-          <>
-          <form className="mt-4 grid gap-2 border-t border-stone-100 pt-4" onSubmit={handleAiQuestion}>
-            <label className="text-sm font-medium text-ink" htmlFor="ai-finance-question">Pergunte sobre suas finanças</label>
-            <div className="flex gap-2">
-              <input
-                id="ai-finance-question"
-                className="h-10 min-w-0 flex-1 rounded-md border border-stone-200 px-3 text-sm outline-none focus:border-mint"
-                placeholder="Ex: quanto gastei em mercado?"
-                value={aiQuestion}
-                onChange={(event) => setAiQuestion(event.target.value)}
-              />
-              <UiButton disabled={aiAnswerLoading} icon={aiAnswerLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} type="submit" variant="secondary">
-                Perguntar
-              </UiButton>
-            </div>
-            {aiAnswer ? <p className="rounded-md bg-stone-50 px-3 py-2 text-sm leading-6 text-stone-700">{aiAnswer?.answer}</p> : null}
-          </form>
-          <div className="mt-5 flex h-28 items-end gap-2 border-t border-stone-100 pt-4">
-            {dailySummary.map(([key, item]) => (
-              <div key={key} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                <div className="flex h-20 w-full items-end gap-1">
-                  <div className="w-full rounded-t bg-coral" style={{ height: `${Math.max((item.expenses / maxDailyTotal) * 100, 4)}%` }} title={`Saídas ${formatCurrency(item.expenses)}`} />
-                  <div className="w-full rounded-t bg-mint" style={{ height: `${Math.max((item.income / maxDailyTotal) * 100, 4)}%` }} title={`Entradas ${formatCurrency(item.income)}`} />
-                </div>
-                <span className="truncate text-[10px] text-stone-500">{key}</span>
-              </div>
-            ))}
-          </div>
-          </>
           ) : null}
         </div>
       </div>

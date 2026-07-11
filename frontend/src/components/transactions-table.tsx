@@ -17,6 +17,7 @@ interface TransactionsTableProps {
   cards: Card[];
   initialCardId?: string | null;
   initialCardStatementId?: string | null;
+  initialCreateType?: TransactionType | null;
   initialFilters?: {
     categoryId?: string | null;
     cleanup?: string | null;
@@ -164,9 +165,10 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
   return debouncedValue;
 }
 
-export function TransactionsTable({ transactions, categories, accounts, cards, initialCardId = null, initialCardStatementId = null, initialFilters }: TransactionsTableProps) {
+export function TransactionsTable({ transactions, categories, accounts, cards, initialCardId = null, initialCardStatementId = null, initialCreateType = null, initialFilters }: TransactionsTableProps) {
   const router = useRouter();
   const toast = useToast();
+  const requestedCreateType = initialCreateType === "income" || initialCreateType === "expense" ? initialCreateType : null;
   const [rows, setRows] = useState(transactions);
   const [query, setQuery] = useState(initialFilters?.query ?? "");
   const [type, setType] = useState<TransactionType | "all">(transactionTypes.includes(initialFilters?.type as TransactionType) ? initialFilters?.type as TransactionType : "all");
@@ -187,8 +189,11 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   const [bulkCategoryId, setBulkCategoryId] = useState("");
   const [asyncAction, setAsyncAction] = useState<AsyncAction>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
-  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(false);
-  const [manualForm, setManualForm] = useState<ManualTransactionForm>(() => defaultManualForm());
+  const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(Boolean(requestedCreateType));
+  const [manualForm, setManualForm] = useState<ManualTransactionForm>(() => ({
+    ...defaultManualForm(),
+    type: requestedCreateType ?? "expense"
+  }));
   const lastFocusedElementRef = useRef<HTMLElement | null>(null);
   const detailDescriptionRef = useRef<HTMLInputElement | null>(null);
   const createDateRef = useRef<HTMLInputElement | null>(null);

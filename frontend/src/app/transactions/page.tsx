@@ -6,6 +6,7 @@ interface TransactionsPageProps {
     card_statement_id?: string;
     category_id?: string;
     cleanup?: string;
+    create?: string;
     end_date?: string;
     q?: string;
     start_date?: string;
@@ -21,6 +22,7 @@ export default async function TransactionsPage({ searchParams }: TransactionsPag
     <TransactionsPageLoader
       initialCardId={resolvedSearchParams?.card_id ?? null}
       initialCardStatementId={resolvedSearchParams?.card_statement_id ?? null}
+      initialCreateType={resolvedSearchParams?.create === "income" || resolvedSearchParams?.create === "expense" ? resolvedSearchParams.create : null}
       initialFilters={{
         categoryId: resolvedSearchParams?.category_id ?? null,
         cleanup: resolvedSearchParams?.cleanup ?? null,

@@ -330,3 +330,62 @@ Resultado final:
 Risco residual:
 
 - O Playwright ainda emite aviso do Next sobre `script` renderizado no client durante alguns testes; nao bloqueia a suite, mas vale investigar em uma frente separada de higiene do layout/theme init.
+
+## Dashboard: Acoes Rapidas, Grafico Pizza e Insights Enxutos
+
+Status: concluido no codigo; pendencias operacionais de producao do `task.md` seguem dependentes de ambiente real.
+
+Entregas:
+
+- Dashboard ganhou botoes de acao rapida ao lado de `Importar arquivo`: `Receita` em verde e `Despesa` em vermelho.
+- Os botoes navegam para `/transactions?create=income` e `/transactions?create=expense`.
+- Tela de transacoes passou a aceitar o query param `create` para abrir o drawer de criacao manual ja preenchido com o tipo correto.
+- Grafico de `Gastos por categoria` foi trocado de barras para pizza, reutilizando os mesmos dados agregados por categoria.
+- Card de `Insights` deixou de renderizar os textos pedidos: maior categoria, maior despesa, resultado positivo/negativo, resultado do periodo e relacao gastos/entradas.
+- Codigo morto do chat antigo e do grafico inferior dentro do card de Insights foi removido de verdade.
+- Mantidos os blocos acionaveis de Insights: regras sugeridas, classificacao automatica, recorrencias provaveis e descricoes para limpar.
+
+Decisoes de arquitetura:
+
+- A criacao rapida reutiliza a tela e o drawer existentes de transacoes, sem criar CRUD paralelo.
+- O deep link `create=income|expense` fica restrito a tipos suportados pelo dashboard; valores desconhecidos sao ignorados.
+- O backend nao foi alterado, pois os dados removidos do card apenas deixaram de ser renderizados no frontend.
+- As pendencias de `task.md` ligadas a Render, Supabase, backups, rotacao de segredos e validacao real de producao nao foram marcadas como concluidas porque exigem acesso/observacao do ambiente real.
+
+Arquivos alterados nesta etapa:
+
+- `frontend/src/components/dashboard-content.tsx`
+- `frontend/src/app/transactions/page.tsx`
+- `frontend/src/components/page-loaders.tsx`
+- `frontend/src/components/transactions-table.tsx`
+- `frontend/tests/e2e/transactions.spec.ts`
+- `frontend/tests/e2e/finance-assistant-insights.spec.ts`
+- `output.md`
+
+Cobertura adicionada/ajustada:
+
+- E2E valida `/transactions?create=income` e `/transactions?create=expense` abrindo o drawer manual com tipo correto.
+- E2E valida os botoes `Receita` e `Despesa` do dashboard navegando para transacoes e abrindo o drawer pre-preenchido.
+- E2E de regra sugerida foi escopado ao dialogo correto para evitar colisao com o `aria-label` do novo grafico.
+
+Comandos executados:
+
+- `npm.cmd run typecheck`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+- `npm.cmd run e2e`
+- `.venv\Scripts\python.exe -m pytest`
+
+Resultado final:
+
+- Frontend typecheck: passou.
+- Frontend lint: passou.
+- Frontend build: passou.
+- Frontend E2E: `21 passed`.
+- Backend pytest: `61 passed, 1 warning`.
+- Nenhum teste foi desabilitado, marcado com `skip`, `only`, `todo` ou enfraquecido artificialmente.
+
+Risco residual:
+
+- O aviso recorrente do Next sobre `script` renderizado em componente client ainda aparece durante alguns E2E e permanece como divida tecnica separada.
+- Validacoes operacionais reais de producao listadas no `task.md` continuam pendentes por dependerem de logs, credenciais, backups, rotacao de segredos e observacao do ambiente publicado.

@@ -19,7 +19,7 @@ import {
   getStatements,
   getTransactions
 } from "@/lib/api";
-import type { Account, Card, CardStatementSummary, Category, ClassificationRule, Transaction } from "@/lib/types";
+import type { Account, Card, CardStatementSummary, Category, ClassificationRule, Transaction, TransactionType } from "@/lib/types";
 
 type LoaderVariant = "dashboard" | "list" | "transactions" | "cards" | "rules";
 
@@ -309,10 +309,12 @@ export function CardsPageLoader() {
 export function TransactionsPageLoader({
   initialCardId,
   initialCardStatementId,
+  initialCreateType,
   initialFilters,
 }: {
   initialCardId: string | null;
   initialCardStatementId: string | null;
+  initialCreateType?: TransactionType | null;
   initialFilters?: {
     categoryId?: string | null;
     cleanup?: string | null;
@@ -353,6 +355,7 @@ export function TransactionsPageLoader({
             cards={cards}
             initialCardId={initialCardId}
             initialCardStatementId={initialCardStatementId}
+            initialCreateType={initialCreateType}
             initialFilters={initialFilters}
           />
         </section>

@@ -231,6 +231,19 @@ test("opens manual transaction drawer and validates required fields", async ({ p
   await expect(page.getByText("Informe data, descrição e valor para criar a transação.")).toBeVisible();
 });
 
+test("opens manual transaction drawer from create query params", async ({ page }) => {
+  await gotoTransactions(page, "/transactions?create=income");
+
+  const drawer = page.locator("aside");
+  await expect(page.getByRole("heading", { name: "Criar lançamento manual" })).toBeVisible();
+  await expect(drawer.getByLabel("Tipo")).toHaveValue("income");
+
+  await drawer.getByLabel("Fechar", { exact: true }).click();
+  await gotoTransactions(page, "/transactions?create=expense");
+  await expect(page.getByRole("heading", { name: "Criar lançamento manual" })).toBeVisible();
+  await expect(page.locator("aside").getByLabel("Tipo")).toHaveValue("expense");
+});
+
 test("supports keyboard access and escape close for the transaction drawer", async ({ page }) => {
   await gotoTransactions(page);
 
