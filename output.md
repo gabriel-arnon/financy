@@ -891,6 +891,43 @@ Conclusao:
 - Pendencia antes de Fundacao 3 nao e bloqueio de teste, e sim decisao/implementacao de produto-seguranca: RLS final e desenho do acesso guest/convites.
 - Fundacao 3, portal guest, invitations, memberships, comentarios, pagamentos, Telegram, OCR, audio, inbox e filas nao foram iniciados.
 
+## Correcao de deploy Render - migrations remotas seguras
+
+Status: concluido.
+
+Causa:
+
+- O start command do Render executa `python scripts/apply_migrations.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+- A protecao adicionada para Fundacao 2.5 fazia `apply_migrations.py` recusar qualquer host nao local.
+- Em deploy, `DATABASE_URL` aponta para o pooler Supabase remoto (`aws-1-sa-east-1.pooler.supabase.com`), entao o script encerrava com status `1` antes de subir o `uvicorn`.
+
+Correcao:
+
+- `backend/scripts/apply_migrations.py` agora diferencia:
+  - banco local: aplica migrations normalmente;
+  - banco remoto sem autorizacao explicita: faz skip seguro, imprime URL mascarada e retorna sucesso;
+  - banco remoto com `--allow-remote` ou `FINANCY_ALLOW_REMOTE_MIGRATIONS=true`: aplica migrations intencionalmente;
+  - `--reset-schema` em remoto: continua bloqueado.
+- Nenhuma migration remota foi executada nesta correcao.
+- Nenhum secret foi impresso.
+
+Testes executados:
+
+- URL remota falsa igual ao host do erro do Render:
+  - comando: `DATABASE_URL=postgresql://postgres:secret@aws-1-sa-east-1.pooler.supabase.com:5432/postgres python scripts/apply_migrations.py`;
+  - resultado: `Remote database detected; skipping migrations by default.` com exit `0`.
+- URL local dev:
+  - comando: `DATABASE_URL=postgresql://financy_dev:financy_dev_local@localhost:5432/financy_dev python scripts/apply_migrations.py`;
+  - resultado: `Migrations applied: none`.
+- Reset destrutivo remoto:
+  - comando: `python scripts/apply_migrations.py --reset-schema` com URL remota falsa;
+  - resultado: bloqueado com exit `1`.
+
+Documentacao:
+
+- `README.md` atualizado para explicar o skip seguro em deploy remoto.
+- `deploy-checklist.md` atualizado para refletir que migrations remotas nao sao aplicadas automaticamente sem opt-in.
+
 ## Ambiente dev reproduzivel - fechamento das pendencias da Fundacao 2.5
 
 Status: concluido para PostgreSQL local; Supabase Storage real preparado e pendente de credenciais/projeto dev.

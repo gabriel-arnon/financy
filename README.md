@@ -149,9 +149,10 @@ Para voltar ao fallback JSON, use `STORAGE_BACKEND=json` ou remova a variavel.
 Protecoes:
 
 - scripts de dev recusam hosts fora de `localhost`, `127.0.0.1`, `::1` ou `postgres`;
-- URLs remotas de Supabase/producao nao sao aceitas por esses scripts;
+- URLs remotas de Supabase/producao nao sao migradas automaticamente por esses scripts;
 - o identificador exibido mascara senha;
 - nunca rode `--reset-schema` contra banco remoto.
+- Em deploy, `python scripts/apply_migrations.py` faz skip seguro em host remoto sem `--allow-remote` ou `FINANCY_ALLOW_REMOTE_MIGRATIONS=true`, retornando sucesso para nao impedir o start da API.
 
 ### Migracao JSON -> PostgreSQL
 

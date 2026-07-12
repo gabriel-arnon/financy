@@ -106,7 +106,7 @@ docker compose up --build
 - [ ] Reassociar dados de `DEV_USER_ID` para o usuario real com `backend/scripts/reassign_user_data.py`.
 - [ ] Conferir contagens antes/depois.
 - [ ] Guardar registro do backup e do usuario destino.
-- [x] Backend executa migrations no start command do Render: `python scripts/apply_migrations.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+- [x] Backend pode manter `python scripts/apply_migrations.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT` no start command; por seguranca, o script nao aplica migrations em banco remoto sem `--allow-remote` ou `FINANCY_ALLOW_REMOTE_MIGRATIONS=true`, e faz skip com sucesso para nao derrubar deploy.
 
 ## 7. Smoke test funcional pos-deploy
 

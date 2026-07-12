@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -12,7 +13,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 import psycopg
 
 from app.core.config import settings
-from scripts.dev_db_safety import assert_local_database_url
+from scripts.dev_db_safety import assert_local_database_url, parse_safe_database_url
 
 
 MIGRATIONS_DIR = ROOT_DIR / "docs" / "supabase" / "migrations"
@@ -68,12 +69,25 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Apply Financy PostgreSQL migrations.")
     parser.add_argument("--database-url", default=settings.database_url, help="PostgreSQL connection string.")
     parser.add_argument("--reset-schema", action="store_true", help="Drop and recreate the public schema before applying.")
+    parser.add_argument("--allow-remote", action="store_true", help="Explicitly allow applying migrations to a non-local database.")
     args = parser.parse_args()
 
     if not args.database_url:
         raise SystemExit("DATABASE_URL is required.")
 
-    safe = assert_local_database_url(args.database_url, purpose="migrations")
+    allow_remote = args.allow_remote or os.getenv("FINANCY_ALLOW_REMOTE_MIGRATIONS", "").strip().lower() in {"1", "true", "yes"}
+    try:
+        safe = assert_local_database_url(args.database_url, purpose="migrations")
+    except RuntimeError as exc:
+        safe = parse_safe_database_url(args.database_url)
+        print(f"Target database: {safe.display}")
+        if args.reset_schema:
+            raise SystemExit(f"{exc} Refusing --reset-schema on a non-local database.")
+        if not allow_remote:
+            print("Remote database detected; skipping migrations by default.")
+            print("To run remote migrations intentionally, pass --allow-remote or set FINANCY_ALLOW_REMOTE_MIGRATIONS=true.")
+            return
+        print("Remote migrations explicitly enabled.")
     print(f"Target database: {safe.display}")
     applied = apply_migrations(args.database_url, reset=args.reset_schema)
     print("Migrations applied:")
