@@ -389,3 +389,655 @@ Risco residual:
 
 - O aviso recorrente do Next sobre `script` renderizado em componente client ainda aparece durante alguns E2E e permanece como divida tecnica separada.
 - Validacoes operacionais reais de producao listadas no `task.md` continuam pendentes por dependerem de logs, credenciais, backups, rotacao de segredos e observacao do ambiente publicado.
+
+## Ressarcimentos: Fundacao 0 - Storage Privado e Arquivos
+
+Status: implementado no codigo; migration criada, mas nao executada.
+
+Entregas:
+
+- Criado plano tecnico revisado em `docs/reimbursements-plan.md`, consolidando escopo do MVP, Supabase Auth para convidados, Fundacao 0, pagamentos informados versus confirmados e status simplificados.
+- Adicionada migration `docs/supabase/migrations/005_private_files.sql` para `stored_files`, `transaction_attachments` e `stored_file_events`.
+- Backend ganhou configuracao de storage privado local/Supabase, limites de arquivo e TTL de URL assinada.
+- Criado service de arquivos com validacao de extensao, MIME declarado, magic bytes, limite de tamanho, hash SHA-256, upload privado, soft delete e URL assinada.
+- Criados endpoints de arquivos e anexos de transacao:
+  - `POST /files/upload`
+  - `GET /files/{file_id}/signed-url`
+  - `GET /files/{file_id}/download`
+  - `DELETE /files/{file_id}`
+  - `POST /transactions/{transaction_id}/attachments`
+  - `GET /transactions/{transaction_id}/attachments`
+  - `DELETE /transactions/{transaction_id}/attachments/{attachment_id}`
+- Repositories JSON local e PostgreSQL passaram a persistir metadados de arquivos, anexos de transacao e eventos de arquivo.
+- Drawer de transacoes ganhou bloco de comprovantes com upload, listagem, abertura por URL assinada e remocao do vinculo.
+- `.env.example` e `.env.production.example` documentam as novas variaveis de storage privado.
+
+Decisoes de arquitetura:
+
+- A fundacao de arquivos e reutilizavel, nao especifica de ressarcimentos.
+- Em desenvolvimento local, arquivos privados ficam em `UPLOAD_STORAGE_PATH/private_files`.
+- Em producao, `PRIVATE_FILES_BACKEND=supabase` prepara uso de Supabase Storage privado sem adicionar dependencia Python.
+- Signed URLs no modo local sao URLs temporarias do proprio backend com token HMAC.
+- O guest portal, cobrancas, Telegram, OCR e audio continuam fora desta entrega.
+
+Validacoes:
+
+- Backend pytest: `64 passed, 1 warning`.
+- Frontend typecheck: passou.
+- Frontend lint: passou.
+- Frontend build: passou.
+- Playwright E2E via `npx.cmd playwright test --reporter=line`: `21 passed`.
+
+Observacoes:
+
+- `npm.cmd run e2e` teve uma execucao que encerrou com codigo 1 sem detalhar falha no stdout; a mesma suite executada em seguida via Playwright com reporter em linha passou completamente.
+- O aviso conhecido do Next sobre `script` em componente client continua aparecendo nos E2E e permanece como divida tecnica separada.
+
+## Auditoria e Fechamento da Fundacao 0
+
+Status: concluido.
+
+Causa do codigo 1 no E2E:
+
+- A falha original de `npm.cmd run e2e` nao era diferenca real entre npm e Playwright direto. O script em `package.json` e apenas `playwright test`, usando o mesmo `playwright.config.ts`.
+- A causa foi uma regressao no drawer de transacoes: o mock generico `**/transactions/**` dos testes E2E interceptava o novo endpoint `/transactions/{id}/attachments` e devolvia uma transacao em vez de uma lista de anexos.
+- A UI tentou renderizar essa resposta como anexos e quebrou. O frontend foi endurecido para tratar resposta inesperada como lista vazia, e o mock E2E foi corrigido para deixar `/attachments` cair na rota especifica.
+
+Correcoes e auditoria:
+
+- `npm.cmd run e2e` passou de forma reproduzivel com `22 passed`.
+- Migration `005_private_files.sql` revisada sem execucao: cria tipos, tabelas, FKs, indices e uniques para `stored_files`, `transaction_attachments` e `stored_file_events`, sem alteracao destrutiva em transacoes existentes e sem dependencia de bucket publico.
+- Contrato publico de arquivo foi endurecido: `storage_path` e `storage_bucket` nao aparecem mais nas respostas para o frontend.
+- Configuracoes adicionadas:
+  - `PRIVATE_FILES_ENABLED`
+  - `PRIVATE_FILES_ALLOWED_MIME_TYPES`
+  - `PRIVATE_FILES_SCAN_PROVIDER`
+  - `PRIVATE_FILES_ORPHAN_RETENTION_HOURS`
+- Startup valida provider, variaveis obrigatorias do Supabase quando `PRIVATE_FILES_BACKEND=supabase`, limites e TTL.
+- Provider local e Supabase ficam encapsulados no adapter `PrivateFileStorage`; endpoints nao possuem logica especifica de Supabase.
+- Scan/quarentena:
+  - local/desenvolvimento/teste com `PRIVATE_FILES_SCAN_PROVIDER=mock` libera como `available/skipped`;
+  - producao com mock nao libera automaticamente, mantendo `quarantined/pending`;
+  - signed URL e negada para arquivos em quarentena, suspeitos, rejeitados, deletados ou sem scan liberado.
+- Orfaos:
+  - arquivos sem vinculo ativo e mais antigos que `PRIVATE_FILES_ORPHAN_RETENTION_HOURS` podem ser identificados via repository/service;
+  - scheduler de purge fisico ficou para etapa futura.
+- Hash:
+  - SHA-256 e calculado no backend;
+  - owners diferentes podem enviar conteudo identico, mas continuam isolados por `owner_user_id`;
+  - hash nao substitui autorizacao.
+- Compensacao banco/storage:
+  - se upload no storage falha, metadata nao e criada;
+  - se insert no banco falha apos upload, o objeto local e removido de forma compensatoria;
+  - soft delete impede novas signed URLs mesmo que exclusao fisica futura falhe;
+  - falha de associacao deixa arquivo sem vinculo e elegivel para limpeza de orfaos.
+
+Testes adicionados/reforcados:
+
+- JPEG, PNG, WebP e PDF validos.
+- Arquivo vazio, MIME falso, extensao falsa, magic bytes invalidos e arquivo acima do limite.
+- Hash calculado e isolamento de hash entre owners.
+- Owner nao acessa arquivo de outro owner.
+- Associacao cruzada owner/file/transaction bloqueada.
+- Arquivo deletado, em quarentena e suspeito nao gera signed URL.
+- Producao com scan mock mantem arquivo em quarentena.
+- Orfaos identificados por janela configuravel.
+- Falha de storage e falha de banco com compensacao.
+- E2E do drawer cobre anexar, listar, abrir via signed URL e remover comprovante.
+
+Comandos executados:
+
+- Backend: `.venv\Scripts\python.exe -m pytest` -> `73 passed, 1 warning`.
+- Frontend: `npm.cmd run typecheck` -> passou.
+- Frontend: `npm.cmd run lint` -> passou.
+- Frontend: `npm.cmd run build` -> passou.
+- Frontend: `npm.cmd run e2e` -> `22 passed`.
+
+Risco residual:
+
+- Nao ha antivirus comercial integrado; a arquitetura deixa scanner real como configuracao futura.
+- Purge fisico de orfaos ainda nao possui scheduler.
+- Uma signed URL ja emitida pode permanecer valida ate expirar conforme comportamento do provider; mitigacao atual e TTL curto configuravel.
+- Aviso conhecido do Next sobre `script` em componente client segue como divida tecnica independente.
+
+## Fundacao 1 - Dominio owner-only de ressarcimentos
+
+Status: concluido.
+
+Escopo entregue:
+
+- Migration `006_reimbursements_domain.sql` criada e revisada, mas nao executada.
+- Enums de ressarcimentos adicionados no backend.
+- Schemas Pydantic adicionados para contatos, cobrancas, itens e eventos.
+- Repositories local JSON e PostgreSQL preparados para:
+  - `reimbursement_contacts`;
+  - `reimbursement_claims`;
+  - `reimbursement_items`;
+  - `reimbursement_events`.
+- Service `ReimbursementService` criado com regras de dominio owner-only.
+- Router FastAPI `/reimbursements` criado e registrado.
+- Testes backend adicionados para contatos, cobrancas, itens, snapshots, envio, cancelamento, isolamento por owner e travas de status.
+
+APIs adicionadas nesta fundacao:
+
+- `GET /reimbursements/contacts`
+- `POST /reimbursements/contacts`
+- `PATCH /reimbursements/contacts/{contact_id}`
+- `DELETE /reimbursements/contacts/{contact_id}`
+- `GET /reimbursements/claims`
+- `POST /reimbursements/claims`
+- `GET /reimbursements/claims/{claim_id}`
+- `PATCH /reimbursements/claims/{claim_id}`
+- `POST /reimbursements/claims/{claim_id}/send`
+- `POST /reimbursements/claims/{claim_id}/cancel`
+- `POST /reimbursements/claims/{claim_id}/items`
+- `PATCH /reimbursements/claims/{claim_id}/items/{item_id}`
+- `DELETE /reimbursements/claims/{claim_id}/items/{item_id}`
+
+Decisoes implementadas:
+
+- Ressarcimentos ficam como modulo dentro do backend atual, seguindo o padrao `api -> service -> repository`.
+- `owner_user_id` nunca e aceito do cliente; ele vem da dependencia de usuario autenticado.
+- Contato pode existir sem login e e escopado por owner.
+- Cobranca nasce como `draft`; status nao pode ser alterado livremente por payload.
+- Apenas despesas (`type=expense`) podem ser adicionadas como item ressarcivel no MVP.
+- Ressarcimento parcial e suportado por `amount_requested`.
+- A soma de itens ativos para a mesma transacao, no mesmo owner, nao pode exceder o valor absoluto da transacao.
+- Itens cancelados deixam de consumir alocacao.
+- `send` exige ao menos um item ativo, muda status para `sent`, registra `sent_at` e congela `total_snapshot`.
+- Depois de enviada, a cobranca nao pode receber edicao de metadados nem alteracao/adicao/remocao de itens.
+- Cada item guarda `transaction_snapshot` com dados essenciais da transacao, incluindo descricao, data, valor, valor solicitado, categoria, conta, cartao, fatura e versao do snapshot.
+- Eventos de dominio registram criacao/atualizacao de contato, criacao/atualizacao/envio/cancelamento de cobranca e adicao/alteracao/remocao de item.
+
+Fora de escopo mantido:
+
+- Nenhuma UI de Ressarcimentos foi criada.
+- Nenhum portal guest foi iniciado.
+- Nenhum convite real, membership, comentario ou pagamento foi implementado.
+- Nenhuma integracao Telegram, OCR, audio ou fila assincrona foi implementada.
+
+Validacoes executadas:
+
+- Backend especifico: `backend/.venv/Scripts/python.exe -m pytest tests/test_reimbursements_api.py -q` -> `9 passed`.
+- Backend completo: `backend/.venv/Scripts/python.exe -m pytest` -> `82 passed, 1 warning`.
+- Frontend typecheck: `npm.cmd run typecheck` -> passou.
+- Frontend lint: `npm.cmd run lint` -> passou.
+- Frontend build: `npm.cmd run build` -> passou.
+- Frontend E2E: `npm.cmd run e2e` -> `22 passed`.
+
+Risco residual:
+
+- A migration `006_reimbursements_domain.sql` ainda nao foi executada em Supabase.
+- As regras de soma de alocacao sao validadas no service; em producao com concorrencia alta, a etapa futura deve adicionar protecao transacional/lock ou constraint complementar.
+- Ainda nao ha RLS final para as novas tabelas; a autorizacao atual esta no backend.
+- Portal guest, convites, comentarios e pagamentos continuam como Fundacoes/Fases futuras.
+
+## Fundacao 2 - Interface owner-only de ressarcimentos
+
+Status: concluido.
+
+Fechamento critico da Fundacao 1:
+
+- Concorrencia de alocacao:
+  - PostgreSQL agora usa operacoes atomicas no repository com transacao e `select ... for update` na transacao financeira antes de calcular saldo e inserir/atualizar item.
+  - Repository local usa `RLock` para simular a mesma serializacao nos testes e ambiente local.
+  - Criacao e atualizacao concorrentes de `amount_requested` nao conseguem exceder o valor ressarcivel da despesa.
+  - Itens em claim `draft` ou `sent` reservam saldo enquanto estiverem ativos.
+  - Claim `canceled` deixa de reservar saldo; ao cancelar, os itens ativos sao marcados como `canceled`, preservando historico e snapshots.
+- Snapshots:
+  - Ao adicionar item em draft, o backend cria snapshot preliminar.
+  - Em draft, o owner pode atualizar snapshots da claim via endpoint dedicado.
+  - No `send`, o backend rele a transacao, valida owner/tipo/valor/alocacao e finaliza o snapshot com assinatura da fonte e `finalized_at`.
+  - Depois de `sent`, o snapshot nao e alterado silenciosamente; se a transacao original mudar, a UI indica que o snapshot ficou diferente da fonte atual.
+
+Interface criada:
+
+- Nova rota owner-only `/reimbursements`.
+- Item `Ressarcimentos` adicionado na sidebar desktop, sidebar recolhida e menu mobile.
+- Tela com tabs:
+  - `Visao geral`;
+  - `Cobrancas`;
+  - `Pessoas`.
+- Visao geral com total em cobrancas enviadas, quantidade de rascunhos, quantidade finalizada, cobrancas recentes e rascunhos pendentes.
+- Pessoas:
+  - listar;
+  - buscar;
+  - criar;
+  - editar;
+  - inativar sem hard delete;
+  - exibir quantidade de cobrancas associadas;
+  - indicar que acesso compartilhado ainda nao esta configurado.
+- Cobrancas:
+  - listar com filtros por busca, pessoa e status;
+  - criar draft;
+  - editar draft;
+  - adicionar transacoes elegiveis;
+  - definir valor integral/parcial;
+  - editar/remover item em draft;
+  - atualizar snapshots em draft;
+  - finalizar cobranca;
+  - cancelar cobranca;
+  - visualizar timeline owner-only;
+  - abrir comprovante da transacao quando houver anexo.
+- Transacoes:
+  - acao individual `Solicitar ressarcimento`;
+  - acao em lote `Solicitar ressarcimento`;
+  - selecao mista mostra itens inelegiveis e permite prosseguir apenas com despesas elegiveis;
+  - fluxo sempre exige revisao antes de incluir itens.
+
+Endpoints reutilizados/adicionados:
+
+- Reutilizados da Fundacao 1:
+  - contatos, cobrancas, itens, envio e cancelamento sob `/reimbursements`.
+- Adicionados para UI:
+  - `GET /reimbursements/overview`;
+  - `GET /reimbursements/eligible-transactions`;
+  - `POST /reimbursements/claims/{claim_id}/refresh-snapshots`;
+  - `GET /reimbursements/claims/{claim_id}/events`.
+- Reutilizados da Fundacao 0:
+  - `GET /transactions/{transaction_id}/attachments`;
+  - `GET /files/{file_id}/signed-url`.
+
+Arquivos principais alterados/criados:
+
+- Backend:
+  - `backend/app/api/reimbursements.py`;
+  - `backend/app/schemas/reimbursements.py`;
+  - `backend/app/services/reimbursement_service.py`;
+  - `backend/app/repositories/postgres.py`;
+  - `backend/app/repositories/local_json.py`;
+  - `backend/tests/test_reimbursements_api.py`.
+- Frontend:
+  - `frontend/src/app/reimbursements/page.tsx`;
+  - `frontend/src/components/reimbursements-content.tsx`;
+  - `frontend/src/components/app-shell.tsx`;
+  - `frontend/src/components/page-loaders.tsx`;
+  - `frontend/src/components/transactions-table.tsx`;
+  - `frontend/src/lib/api.ts`;
+  - `frontend/src/lib/types.ts`;
+  - `frontend/tests/e2e/reimbursements.spec.ts`.
+
+Migrations:
+
+- Nenhuma migration foi executada.
+- Nenhuma migration nova foi necessaria para a Fundacao 2; as mudancas de concorrencia e snapshot foram resolvidas por codigo usando as tabelas da `006_reimbursements_domain.sql`.
+- `005_private_files.sql` e `006_reimbursements_domain.sql` continuam criadas e nao executadas.
+
+Validacoes executadas:
+
+- Backend especifico: `backend/.venv/Scripts/python.exe -m pytest tests/test_reimbursements_api.py -q` -> `15 passed`.
+- Backend completo: `backend/.venv/Scripts/python.exe -m pytest` -> `88 passed, 1 warning`.
+- Frontend typecheck: `npm.cmd run typecheck` -> passou.
+- Frontend lint: `npm.cmd run lint` -> passou.
+- Frontend build: `npm.cmd run build` -> passou.
+- Frontend E2E especifico: `npx.cmd playwright test tests/e2e/reimbursements.spec.ts --reporter=line` -> `4 passed`.
+- Frontend E2E completo: `npm.cmd run e2e` -> `26 passed`.
+
+Warning restante:
+
+- Backend: warning deprecado do `reportlab` em `.venv/Lib/site-packages/reportlab/lib/rl_safe_eval.py`, uso de `ast.NameConstant` que sera removido no Python 3.14.
+- Frontend E2E: aviso existente do navegador sobre `script` renderizado dentro de componente React client; ficou como divida tecnica da Fundacao 2 e foi corrigido na Fundacao 2.5.
+
+Fora de escopo mantido:
+
+- Fundacao 3 nao foi iniciada.
+- Portal guest nao foi iniciado.
+- Convites reais, memberships, comentarios e pagamentos nao foram implementados.
+- Telegram, OCR, audio, inbox e filas nao foram implementados.
+
+Risco residual:
+
+- RLS final das novas tabelas ainda precisa ser criada antes de producao publica.
+- A protecao concorrente real depende da migration 006 aplicada no PostgreSQL; no local JSON ela e apenas simulada para desenvolvimento/testes.
+- A UI de Ressarcimentos ainda usava `window.confirm` para finalizacao/cancelamento na Fundacao 2; isso foi substituido por dialog visual dedicado na Fundacao 2.5.
+
+## Fundacao 2.5 - Validacao PostgreSQL e polimento owner-only
+
+Status: parcialmente concluido; polimento e validacoes automatizadas locais concluidos, validacao real em PostgreSQL/Supabase bloqueada por seguranca de ambiente.
+
+Seguranca de ambiente:
+
+- Ambiente local inspecionado: `backend/.env` declara `ENVIRONMENT=local`.
+- `DATABASE_URL`, `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` estao vazios no ambiente local inspecionado.
+- `docker-compose.yml` contem um PostgreSQL local descartavel em `postgres:16-alpine`, mas o Docker daemon nao estava disponivel nesta sessao.
+- `docker ps` falhou com acesso negado ao `C:\Users\Gabriel\.docker\config.json` e ausencia do named pipe do Docker.
+- `psql` e `supabase` CLI nao estavam disponiveis no PATH.
+- Como nao foi possivel confirmar um alvo PostgreSQL/Supabase de desenvolvimento com backup/descartabilidade e credenciais nao produtivas, nenhuma migration foi aplicada.
+
+Migrations revisadas:
+
+- `docs/supabase/migrations/005_private_files.sql`:
+  - cria enums de arquivo, scanner e eventos;
+  - cria `stored_files`, `transaction_attachments` e `stored_file_events`;
+  - usa `owner_user_id`, timestamps, soft delete, status de arquivo, status de scan, SHA-256, chaves estrangeiras e indices;
+  - nao depende de bucket publico;
+  - nao altera destrutivamente transacoes existentes.
+- `docs/supabase/migrations/006_reimbursements_domain.sql`:
+  - cria enums de contatos, claims, itens e eventos;
+  - cria `reimbursement_contacts`, `reimbursement_claims`, `reimbursement_items` e `reimbursement_events`;
+  - usa `owner_user_id`, `numeric(14,2)`, timestamps, soft/inactive status, snapshots `jsonb`, FKs e indices por owner/status/transacao;
+  - preserva historico por status/cancelamento e nao altera destrutivamente dados existentes.
+- Ordem validada estaticamente: aplicar `005_private_files.sql` antes de `006_reimbursements_domain.sql`.
+- Nenhuma migration foi editada nesta etapa e nenhuma migration nova foi criada.
+
+Aplicacao em desenvolvimento:
+
+- `005_private_files.sql`: nao aplicada.
+- `006_reimbursements_domain.sql`: nao aplicada.
+- Motivo: ausencia de ambiente PostgreSQL/Supabase de desenvolvimento confirmavel nesta sessao.
+- Consultas de sanidade, verificacao de tabelas/indices e smoke real com fixtures nao foram executados por esse bloqueio.
+
+Repository PostgreSQL e concorrencia real:
+
+- A validacao real com repository PostgreSQL nao foi executada porque nao havia `DATABASE_URL` seguro/disponivel nem servidor PostgreSQL acessivel.
+- A protecao concorrente continua implementada no repository PostgreSQL por transacao e lock em registro estavel da transacao financeira antes de calcular saldo e inserir/atualizar item.
+- A prova automatizada local continua cobrindo a regra de dominio com repository local serializado, mas isso nao substitui o teste concorrente real em PostgreSQL.
+- Divida tecnica obrigatoria antes de producao publica: rodar teste de integracao PostgreSQL com duas alocacoes simultaneas de R$ 70 em uma despesa de R$ 100 e confirmar que no maximo uma e aceita.
+
+Supabase Storage real:
+
+- Nao validado nesta sessao porque `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e bucket real nao estavam configurados no ambiente local.
+- A Fundacao 0 permanece validada por testes com providers locais/mocks, mas falta smoke real em bucket privado Supabase.
+- Divida tecnica obrigatoria antes de producao publica: validar bucket privado, upload JPEG/PNG/WebP/PDF, metadata, signed URL, expiracao, soft delete, bloqueio pos-delete, owner diferente e compensacao banco/storage em Supabase dev/staging.
+
+Polimento de dialogos:
+
+- Substituidos os `window.confirm` dos fluxos owner-only de Ressarcimentos por dialogo visual consistente:
+  - finalizar cobranca;
+  - cancelar cobranca;
+  - inativar pessoa;
+  - remover item.
+- O dialogo mostra detalhes seguros da acao, tem estado de loading, botao de retorno focavel, fechamento por Escape quando nao ha acao em andamento e bloqueia duplo envio.
+- `window.confirm` ainda existe em areas fora do escopo desta fase (`Contas`, `Cartoes` e `Faturas`), sem alteracao nesta entrega.
+
+Warnings:
+
+- Backend: permanece 1 warning de dependencia em `reportlab==4.2.5`: `ast.NameConstant is deprecated and will be removed in Python 3.14`.
+- Origem: `.venv/Lib/site-packages/reportlab/lib/rl_safe_eval.py`.
+- Impacto atual: baixo em Python 3.12; nao quebra testes nem execucao atual.
+- Existe versao mais nova do ReportLab, mas upgrade foi adiado para evitar mudanca indireta no fluxo de PDF/importacao sem tarefa especifica.
+- Frontend: warning de `<script>` em componente React client foi corrigido removendo o script inline do layout e adicionando `ThemeInitializer` client-side sem renderizar tag `<script>`.
+- Frontend: warning de key duplicada em toast foi corrigido trocando IDs baseados em tempo por contador monotono em memoria.
+
+Arquivos alterados nesta Fundacao 2.5:
+
+- `frontend/src/app/layout.tsx`;
+- `frontend/src/components/theme-initializer.tsx`;
+- `frontend/src/components/reimbursements-content.tsx`;
+- `frontend/src/components/toast-provider.tsx`;
+- `frontend/tests/e2e/reimbursements.spec.ts`;
+- `output.md`.
+
+Validacoes executadas:
+
+- Backend completo: `backend/.venv/Scripts/python.exe -m pytest` -> `88 passed, 1 warning in 18.59s`.
+- Frontend typecheck: `npm.cmd run typecheck` -> passou.
+- Frontend lint: `npm.cmd run lint` -> passou.
+- Frontend build: `npm.cmd run build` -> passou.
+- Frontend E2E especifico responsivo: `npx.cmd playwright test tests/e2e/responsive-buttons.spec.ts --reporter=line` -> `2 passed`.
+- Frontend E2E completo: `npm.cmd run e2e` -> `26 passed (48.6s)`.
+
+Smoke tests:
+
+- Smoke automatizado owner-only passou via E2E:
+  - navegacao Ressarcimentos desktop/mobile;
+  - criar/editar/inativar pessoa;
+  - criar claim;
+  - adicionar item com erro acima do saldo e valor parcial valido;
+  - finalizar com dialogo;
+  - bloquear edicao apos sent;
+  - cancelar com dialogo;
+  - timeline;
+  - iniciar fluxo a partir de Transacoes com selecao mista.
+- Smoke manual real em PostgreSQL/Supabase nao foi executado por falta de ambiente seguro confirmado.
+
+Fora de escopo preservado:
+
+- Fundacao 3 nao foi iniciada.
+- Portal guest, invitations, memberships, comentarios, pagamentos, Telegram, OCR, audio, inbox e filas nao foram implementados.
+
+## Ajuste do smoke Supabase Storage - DATABASE_URL fallback
+
+Status: concluido.
+
+Alteracao:
+
+- `scripts/smoke_supabase_storage.ps1` agora resolve a URL de metadata nesta ordem:
+  1. parametro explicito `-DatabaseUrl`;
+  2. variavel da sessao `$env:DATABASE_URL`;
+  3. `DATABASE_URL` em `backend/.env`.
+- O parser de `backend/.env`:
+  - ignora comentarios;
+  - ignora linhas vazias;
+  - aceita linhas `KEY=VALUE`;
+  - aceita valor entre aspas simples ou duplas;
+  - le somente `DATABASE_URL`;
+  - nao sobrescreve variavel de sessao;
+  - nao carrega nem imprime outros secrets.
+- O script imprime apenas a URL mascarada, por exemplo `postgresql://user:***@localhost:5432/db`.
+- A protecao contra ambiente de producao permanece no smoke Python (`backend/scripts/smoke_supabase_storage.py`).
+
+Documentacao:
+
+- `scripts/README.md` atualizado com a ordem de resolucao e comportamento do parser.
+
+Testes executados:
+
+- Parametro explicito tem prioridade sobre variavel de sessao e `.env`: passou.
+- Variavel `$env:DATABASE_URL` e usada quando nao ha parametro: passou.
+- Fallback para `backend/.env` quando nao ha parametro nem variavel de sessao: passou.
+- Ausencia total de URL retorna erro claro `DATABASE_URL is required`: passou.
+- Valor com aspas em `backend/.env` e aceito: passou.
+
+Observacao:
+
+- Os testes esperaram falha do smoke real porque Supabase dev ainda nao esta configurado, mas validaram a resolucao da URL e a mascara sem imprimir senha.
+
+## Fundacao 2.5 - Rodada final de validacao
+
+Status: concluido para avanco tecnico; nao foi iniciada a Fundacao 3.
+
+PostgreSQL local:
+
+- Container `financy-postgres-1` confirmado como `healthy`.
+- Ambiente: `postgresql://financy_dev:***@localhost:5432/financy_dev`.
+- Migrations idempotentes:
+  - `backend/.venv/Scripts/python.exe scripts/apply_migrations.py` -> `Migrations applied: none`.
+- Schema inspecionado:
+  - `18` tabelas publicas;
+  - `25` indices das fundacoes de arquivos/ressarcimentos;
+  - `0` transacoes no banco dev descartavel.
+
+Backend:
+
+- Suite local/unitaria: `backend/.venv/Scripts/python.exe -m pytest` -> `88 passed, 1 warning in 15.92s`.
+- Suite PostgreSQL real: `backend/.venv/Scripts/python.exe -m pytest tests_postgres -m postgres` -> `5 passed in 6.22s`.
+- Concorrencia real permanece validada com conexoes independentes e `SELECT ... FOR UPDATE`.
+
+Frontend:
+
+- `npm.cmd run typecheck` -> passou.
+- `npm.cmd run lint` -> passou.
+- `npm.cmd run build` -> passou.
+- `npm.cmd run e2e` -> `26 passed (49.3s)`.
+
+Supabase Storage dev:
+
+- Ambiente lido sem imprimir secrets:
+  - `ENVIRONMENT=development`;
+  - `PRIVATE_FILES_BACKEND=supabase`;
+  - `FILE_STORAGE_PROVIDER=supabase`;
+  - bucket configurado: `private-files`;
+  - Supabase URL identificada apenas pelo host.
+- Smoke real executado:
+  - `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke_supabase_storage.ps1`;
+  - resultado: `Supabase Storage smoke passed with metadata database postgresql://financy_dev:***@localhost:5432/financy_dev`;
+  - signed URL foi gerada/validada sem ser impressa.
+- Testes do fallback de `DATABASE_URL` do wrapper:
+  - parametro explicito: passou;
+  - variavel da sessao: passou;
+  - fallback para `backend/.env`: passou;
+  - variavel ausente: passou;
+  - valor com aspas: passou.
+
+Warning restante:
+
+- Permanece apenas o warning de dependencia do `reportlab==4.2.5` sobre `ast.NameConstant` deprecado para Python 3.14.
+- Decisao mantida: nao fazer upgrade nessa etapa para nao arriscar fluxo de PDF/importacao.
+
+Conclusao:
+
+- Fundacao 2.5 esta finalizada do ponto de vista de infraestrutura/testes locais e smoke Supabase dev.
+- Pendencia antes de Fundacao 3 nao e bloqueio de teste, e sim decisao/implementacao de produto-seguranca: RLS final e desenho do acesso guest/convites.
+- Fundacao 3, portal guest, invitations, memberships, comentarios, pagamentos, Telegram, OCR, audio, inbox e filas nao foram iniciados.
+
+## Ambiente dev reproduzivel - fechamento das pendencias da Fundacao 2.5
+
+Status: concluido para PostgreSQL local; Supabase Storage real preparado e pendente de credenciais/projeto dev.
+
+Seguranca de ambiente:
+
+- Nenhuma URL remota foi usada para migrations.
+- Nenhum projeto Supabase de producao foi acessado.
+- Nenhum secret real foi impresso ou adicionado ao repositorio.
+- Scripts de dev recusam hosts fora de `localhost`, `127.0.0.1`, `::1` ou `postgres`.
+- Identificadores de banco sao exibidos com senha mascarada.
+
+PostgreSQL local reproduzivel:
+
+- `docker-compose.yml` agora usa PostgreSQL `postgres:16-alpine` com:
+  - database: `financy_dev`;
+  - user: `financy_dev`;
+  - senha local: `financy_dev_local`;
+  - volume nomeado `postgres_data`;
+  - healthcheck;
+  - porta configuravel por `POSTGRES_PORT`.
+- Criado `scripts/setup_dev_db.ps1`.
+- O script valida Docker, sobe `postgres`, aguarda healthcheck, valida URL local, aplica migrations e inspeciona schema.
+- `-ResetSchema` recria o schema public.
+- `-ResetVolume` recria apenas o volume local do PostgreSQL no script corrigido.
+- Observacao: uma primeira tentativa usou `docker compose down -v` para remover o volume antigo com credenciais anteriores; o script foi corrigido em seguida para preservar demais volumes/servicos.
+
+Migrations aplicadas localmente:
+
+- Ambiente: PostgreSQL local descartavel `postgresql://financy_dev:***@localhost:5432/financy_dev`.
+- Comando: `.\scripts\setup_dev_db.ps1 -ResetVolume -ResetSchema`, depois `.\scripts\setup_dev_db.ps1 -ResetSchema`.
+- Resultado aplicado:
+  - `001_initial_schema.sql`;
+  - `002_default_categories.sql`;
+  - `003_phase2_indexes.sql`;
+  - `004_nullable_card_account.sql`;
+  - `005_private_files.sql`;
+  - `006_reimbursements_domain.sql`.
+- Schema inspecionado:
+  - `18` tabelas publicas;
+  - `25` indices das fundacoes de arquivos/ressarcimentos;
+  - `0` transacoes existentes no banco descartavel.
+- Idempotencia validada sem reset:
+  - `backend/.venv/Scripts/python.exe scripts/apply_migrations.py` -> `Migrations applied: none`.
+- Container confirmado:
+  - `financy-postgres-1`;
+  - imagem `postgres:16-alpine`;
+  - status `healthy`;
+  - porta `5432`.
+
+Repository PostgreSQL real:
+
+- Criado `backend/tests_postgres/test_reimbursements_postgres.py` com marker `postgres`.
+- Criado `backend/pytest.ini` para manter a suite padrao em `backend/tests` e separar testes com infraestrutura.
+- Comando:
+  - `cd backend`;
+  - `$env:TEST_DATABASE_URL='postgresql://financy_dev:financy_dev_local@localhost:5432/financy_dev_test'`;
+  - `.\.venv\Scripts\python.exe -m pytest tests_postgres -m postgres`.
+- Resultado: `5 passed in 6.85s`.
+- Fluxos cobertos em PostgreSQL real:
+  - criar/editar/inativar contato;
+  - criar claim draft;
+  - adicionar item;
+  - atualizar valor parcial;
+  - atualizar snapshot;
+  - finalizar claim;
+  - bloquear edicao apos `sent`;
+  - cancelar;
+  - liberar saldo;
+  - listar timeline.
+
+Concorrencia real:
+
+- Testes usam conexoes/pools independentes contra PostgreSQL real.
+- Cenario principal validado:
+  - transacao expense de R$ 100;
+  - duas claims diferentes tentam alocar R$ 70 simultaneamente;
+  - exatamente uma operacao conclui;
+  - a outra retorna `reimbursement_amount_exceeds_transaction`;
+  - total persistido permanece `<= R$ 100`.
+- Cenarios adicionais cobertos:
+  - atualizacao simultanea de dois itens;
+  - cancelamento concorrente com inclusao;
+  - retry/duplicidade na mesma claim;
+  - item draft reservando saldo;
+  - claim canceled liberando saldo.
+- A protecao exercitada e a do repository PostgreSQL com `SELECT ... FOR UPDATE` na transacao financeira.
+
+Supabase Storage dev:
+
+- Criado `backend/scripts/smoke_supabase_storage.py`.
+- Criado wrapper `scripts/smoke_supabase_storage.ps1`.
+- Configuracao preparada com aliases:
+  - `FILE_STORAGE_PROVIDER`;
+  - `SUPABASE_STORAGE_BUCKET`;
+  - `SIGNED_URL_TTL_SECONDS`;
+  - `FILE_SCAN_PROVIDER`.
+- Smoke test preparado para:
+  - recusar `APP_ENV=production`;
+  - exigir provider `supabase`;
+  - verificar bucket privado;
+  - fazer upload de PNG de teste;
+  - confirmar metadata em `stored_files`;
+  - gerar signed URL sem imprimi-la;
+  - soft delete;
+  - confirmar bloqueio de nova URL;
+  - remover objeto e metadata de teste.
+- Smoke real nao foi executado porque `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e bucket dev nao estao configurados.
+- Comando executado sem credenciais/provider:
+  - `backend/.venv/Scripts/python.exe scripts/smoke_supabase_storage.py --database-url <local>`;
+  - resultado esperado: `PRIVATE_FILES_BACKEND must be 'supabase' for this smoke test.`
+
+Documentacao atualizada:
+
+- `README.md`:
+  - como iniciar PostgreSQL;
+  - como aplicar migrations;
+  - como resetar schema/volume dev;
+  - como rodar testes PostgreSQL;
+  - checklist Supabase Storage dev;
+  - nota de RLS/service role.
+- `scripts/README.md`:
+  - comandos curtos para setup DB, testes PostgreSQL e smoke Supabase.
+- `docs/postgres-migration-checklist.md`:
+  - URLs e comandos atualizados para `financy_dev`.
+
+Validacoes finais:
+
+- Backend unitario/local: `backend/.venv/Scripts/python.exe -m pytest` -> `88 passed, 1 warning in 17.27s`.
+- Backend PostgreSQL: `backend/.venv/Scripts/python.exe -m pytest tests_postgres -m postgres` -> `5 passed in 6.85s`.
+- Frontend typecheck: `npm.cmd run typecheck` -> passou.
+- Frontend lint: `npm.cmd run lint` -> passou.
+- Frontend build: `npm.cmd run build` -> passou.
+- Frontend E2E: `npm.cmd run e2e` -> `26 passed (52.0s)`.
+
+Warning restante:
+
+- Permanece o warning de dependencia `reportlab==4.2.5` usando `ast.NameConstant`, deprecado para Python 3.14.
+- Nao foi feito upgrade nesta etapa para evitar risco indireto no fluxo de PDF/importacao.
+
+Dvidas tecnicas restantes:
+
+- Configurar um projeto Supabase development/staging real e bucket privado para executar o smoke de storage.
+- Avaliar upgrade controlado do ReportLab em tarefa isolada.
+- Implementar RLS final antes de qualquer exposicao publica ampla, especialmente para `stored_files`, `transaction_attachments`, `stored_file_events`, `reimbursement_contacts`, `reimbursement_claims`, `reimbursement_items` e `reimbursement_events`.
+
+Fora de escopo preservado:
+
+- Fundacao 3 nao foi iniciada.
+- Portal guest, invitations, memberships, comentarios, pagamentos, Telegram, OCR, audio, inbox e filas nao foram implementados.

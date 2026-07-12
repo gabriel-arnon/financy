@@ -5,14 +5,14 @@ Use este checklist antes de migrar dados locais do JSON para PostgreSQL.
 ## Pre-migracao
 
 - [ ] Confirmar que o Docker esta rodando.
-- [ ] Subir PostgreSQL: `docker-compose up --build -d postgres`.
+- [ ] Subir PostgreSQL: `.\scripts\setup_dev_db.ps1 -ResetSchema`.
 - [ ] Confirmar `DATABASE_URL` do destino.
 - [ ] Confirmar se o destino e local/teste ou producao Supabase/Neon.
 - [ ] Se for producao, confirmar backup automatico do provedor antes do apply.
 - [ ] Rodar `docker-compose config`.
 - [ ] Rodar testes JSON: `cd backend && .\.venv\Scripts\python.exe -m pytest`.
 - [ ] Preparar banco de teste: `scripts\prepare_test_database.py`.
-- [ ] Rodar testes PostgreSQL contra `financy_test`.
+- [ ] Rodar testes PostgreSQL contra `financy_dev_test`.
 
 ## Dry-run
 
@@ -60,8 +60,9 @@ Para resetar o banco de teste:
 
 ```powershell
 cd backend
-$env:TEST_DATABASE_URL='postgresql://financy:financy@localhost:5432/financy_test'
+$env:TEST_DATABASE_URL='postgresql://financy_dev:financy_dev_local@localhost:5432/financy_dev_test'
 .\.venv\Scripts\python.exe scripts\prepare_test_database.py
+.\.venv\Scripts\python.exe -m pytest tests_postgres -m postgres
 ```
 
 ## Riscos remanescentes

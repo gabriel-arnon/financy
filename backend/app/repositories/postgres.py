@@ -606,3 +606,387 @@ class PostgresRepository:
                 "source_file_id": source_file_id,
             }
         )
+
+    def create_stored_file(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_profile(user_id)
+        return self._insert(
+            "stored_files",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                "created_at": datetime.now(timezone.utc),
+                **payload,
+            },
+        )
+
+    def get_stored_file(self, user_id: str, file_id: str) -> dict[str, Any] | None:
+        return self._fetch_one("select * from stored_files where id = %s and owner_user_id = %s", (file_id, user_id))
+
+    def update_stored_file(self, user_id: str, file_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update("stored_files", payload, "id = %s and owner_user_id = %s", (file_id, user_id))
+
+    def create_transaction_attachment(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert(
+            "transaction_attachments",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                "status": "active",
+                "created_at": datetime.now(timezone.utc),
+                **payload,
+            },
+        )
+
+    def list_transaction_attachments(self, user_id: str, transaction_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            """
+            select
+              ta.id,
+              ta.owner_user_id,
+              ta.transaction_id,
+              ta.file_id,
+              ta.status,
+              ta.created_at,
+              ta.deleted_at,
+              sf.storage_bucket,
+              sf.storage_path,
+              sf.original_filename,
+              sf.declared_mime_type,
+              sf.detected_mime_type,
+              sf.size_bytes,
+              sf.sha256_hash,
+              sf.source,
+              sf.status as file_status,
+              sf.scan_status,
+              sf.metadata,
+              sf.created_at as file_created_at,
+              sf.deleted_at as file_deleted_at
+            from transaction_attachments ta
+            join stored_files sf on sf.id = ta.file_id
+            where ta.owner_user_id = %s and ta.transaction_id = %s and ta.status = 'active'
+            order by ta.created_at desc
+            """,
+            (user_id, transaction_id),
+        )
+
+    def get_transaction_attachment(self, user_id: str, attachment_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            "select * from transaction_attachments where id = %s and owner_user_id = %s",
+            (attachment_id, user_id),
+        )
+
+    def delete_transaction_attachment(self, user_id: str, attachment_id: str) -> dict[str, Any] | None:
+        return self._update(
+            "transaction_attachments",
+            {"status": "inactive", "deleted_at": datetime.now(timezone.utc)},
+            "id = %s and owner_user_id = %s",
+            (attachment_id, user_id),
+        )
+
+    def create_stored_file_event(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert(
+            "stored_file_events",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                "created_at": datetime.now(timezone.utc),
+                **payload,
+            },
+        )
+
+    def list_orphan_stored_files(self, user_id: str, older_than: datetime) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            """
+            select sf.*
+            from stored_files sf
+            where sf.owner_user_id = %s
+              and sf.created_at < %s
+              and sf.status in ('uploaded', 'quarantined', 'available')
+              and not exists (
+                select 1
+                from transaction_attachments ta
+                where ta.file_id = sf.id and ta.status = 'active'
+              )
+            order by sf.created_at
+            """,
+            (user_id, older_than),
+        )
+
+    def list_reimbursement_contacts(self, user_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            "select * from reimbursement_contacts where owner_user_id = %s order by created_at desc",
+            (user_id,),
+        )
+
+    def get_reimbursement_contact(self, user_id: str, contact_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            "select * from reimbursement_contacts where id = %s and owner_user_id = %s",
+            (contact_id, user_id),
+        )
+
+    def create_reimbursement_contact(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_profile(user_id)
+        now = datetime.now(timezone.utc)
+        return self._insert(
+            "reimbursement_contacts",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                "status": "active",
+                "metadata": {},
+                "created_at": now,
+                "updated_at": now,
+                **payload,
+            },
+        )
+
+    def update_reimbursement_contact(self, user_id: str, contact_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update(
+            "reimbursement_contacts",
+            {**payload, "updated_at": datetime.now(timezone.utc)},
+            "id = %s and owner_user_id = %s",
+            (contact_id, user_id),
+        )
+
+    def list_reimbursement_claims(self, user_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            "select * from reimbursement_claims where owner_user_id = %s order by created_at desc",
+            (user_id,),
+        )
+
+    def get_reimbursement_claim(self, user_id: str, claim_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            "select * from reimbursement_claims where id = %s and owner_user_id = %s",
+            (claim_id, user_id),
+        )
+
+    def create_reimbursement_claim(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        now = datetime.now(timezone.utc)
+        return self._insert(
+            "reimbursement_claims",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                "status": "draft",
+                "version": 1,
+                "view_count": 0,
+                "created_at": now,
+                "updated_at": now,
+                **payload,
+            },
+        )
+
+    def update_reimbursement_claim(self, user_id: str, claim_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update(
+            "reimbursement_claims",
+            {**payload, "updated_at": datetime.now(timezone.utc)},
+            "id = %s and owner_user_id = %s",
+            (claim_id, user_id),
+        )
+
+    def list_reimbursement_items(self, user_id: str, claim_id: str | None = None) -> list[dict[str, Any]]:
+        if claim_id:
+            return self._fetch_all(
+                "select * from reimbursement_items where owner_user_id = %s and claim_id = %s order by position, created_at",
+                (user_id, claim_id),
+            )
+        return self._fetch_all(
+            "select * from reimbursement_items where owner_user_id = %s order by created_at desc",
+            (user_id,),
+        )
+
+    def list_reimbursement_items_by_transaction(self, user_id: str, transaction_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            """
+            select ri.*
+            from reimbursement_items ri
+            join reimbursement_claims rc on rc.id = ri.claim_id
+            where ri.owner_user_id = %s
+              and ri.transaction_id = %s
+              and ri.status = 'active'
+              and rc.status <> 'canceled'
+            """,
+            (user_id, transaction_id),
+        )
+
+    def get_reimbursement_item(self, user_id: str, item_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            "select * from reimbursement_items where id = %s and owner_user_id = %s",
+            (item_id, user_id),
+        )
+
+    def create_reimbursement_item(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert(
+            "reimbursement_items",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                "status": "active",
+                "created_at": datetime.now(timezone.utc),
+                **payload,
+            },
+        )
+
+    def create_reimbursement_item_with_allocation(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        requested = Decimal(str(payload["amount_requested"])).quantize(Decimal("0.01"))
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "select * from transactions where id = %s and user_id = %s for update",
+                (payload["transaction_id"], user_id),
+            )
+            transaction = _record(cur.fetchone())
+            if not transaction:
+                return {"error": "transaction_not_found"}
+            if transaction.get("type") != "expense" or Decimal(str(transaction.get("amount", "0"))) == Decimal("0"):
+                return {"error": "transaction_not_reimbursable"}
+            cur.execute(
+                """
+                select 1
+                from reimbursement_items
+                where owner_user_id = %s
+                  and claim_id = %s
+                  and transaction_id = %s
+                  and status = 'active'
+                limit 1
+                """,
+                (user_id, payload["claim_id"], payload["transaction_id"]),
+            )
+            if cur.fetchone():
+                return {"error": "reimbursement_item_duplicate"}
+            cur.execute(
+                """
+                select coalesce(sum(ri.amount_requested), 0) as allocated_amount
+                from reimbursement_items ri
+                join reimbursement_claims rc on rc.id = ri.claim_id
+                where ri.owner_user_id = %s
+                  and ri.transaction_id = %s
+                  and ri.status = 'active'
+                  and rc.status <> 'canceled'
+                """,
+                (user_id, payload["transaction_id"]),
+            )
+            allocated = Decimal(str((cur.fetchone() or {}).get("allocated_amount", "0"))).quantize(Decimal("0.01"))
+            if allocated + requested > abs(Decimal(str(transaction["amount"]))).quantize(Decimal("0.01")):
+                return {"error": "reimbursement_amount_exceeds_transaction"}
+
+            record = {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                "status": "active",
+                "created_at": datetime.now(timezone.utc),
+                **payload,
+            }
+            data = {key: value for key, value in record.items() if value is not None}
+            columns = list(data.keys())
+            placeholders = ", ".join(["%s"] * len(columns))
+            names = ", ".join(columns)
+            values = tuple(_adapt(data[column]) for column in columns)
+            cur.execute(f"insert into reimbursement_items ({names}) values ({placeholders}) returning *", values)
+            return {"item": _record(cur.fetchone()) or {}}
+
+    def update_reimbursement_item(self, user_id: str, item_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update(
+            "reimbursement_items",
+            payload,
+            "id = %s and owner_user_id = %s",
+            (item_id, user_id),
+        )
+
+    def update_reimbursement_item_with_allocation(self, user_id: str, item_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        requested = Decimal(str(payload["amount_requested"])).quantize(Decimal("0.01"))
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "select * from reimbursement_items where id = %s and owner_user_id = %s for update",
+                (item_id, user_id),
+            )
+            current = _record(cur.fetchone())
+            if not current:
+                return {"error": "reimbursement_item_not_found"}
+            cur.execute(
+                "select * from transactions where id = %s and user_id = %s for update",
+                (current["transaction_id"], user_id),
+            )
+            transaction = _record(cur.fetchone())
+            if not transaction:
+                return {"error": "transaction_not_found"}
+            if transaction.get("type") != "expense" or Decimal(str(transaction.get("amount", "0"))) == Decimal("0"):
+                return {"error": "transaction_not_reimbursable"}
+            cur.execute(
+                """
+                select coalesce(sum(ri.amount_requested), 0) as allocated_amount
+                from reimbursement_items ri
+                join reimbursement_claims rc on rc.id = ri.claim_id
+                where ri.owner_user_id = %s
+                  and ri.transaction_id = %s
+                  and ri.status = 'active'
+                  and rc.status <> 'canceled'
+                  and ri.id <> %s
+                """,
+                (user_id, current["transaction_id"], item_id),
+            )
+            allocated = Decimal(str((cur.fetchone() or {}).get("allocated_amount", "0"))).quantize(Decimal("0.01"))
+            if allocated + requested > abs(Decimal(str(transaction["amount"]))).quantize(Decimal("0.01")):
+                return {"error": "reimbursement_amount_exceeds_transaction"}
+            data = {key: value for key, value in payload.items() if value is not None}
+            columns = list(data.keys())
+            assignments = ", ".join(f"{column} = %s" for column in columns)
+            values = tuple(_adapt(data[column]) for column in columns)
+            cur.execute(
+                f"update reimbursement_items set {assignments} where id = %s and owner_user_id = %s returning *",
+                values + (item_id, user_id),
+            )
+            return {"item": _record(cur.fetchone()) or {}}
+
+    def create_reimbursement_event(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert(
+            "reimbursement_events",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                "actor_type": "owner",
+                "actor_user_id": user_id,
+                "metadata": {},
+                "created_at": datetime.now(timezone.utc),
+                **payload,
+            },
+        )
+
+    def list_reimbursement_events(self, user_id: str, claim_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            """
+            select * from reimbursement_events
+            where owner_user_id = %s and claim_id = %s
+            order by created_at
+            """,
+            (user_id, claim_id),
+        )
+
+    def list_reimbursement_candidate_transactions(self, user_id: str, query: str | None = None, limit: int = 30) -> list[dict[str, Any]]:
+        params: list[Any] = [user_id, user_id]
+        search = ""
+        if query and query.strip():
+            search = "and t.description ilike %s"
+            params.append(f"%{query.strip()}%")
+        params.append(limit)
+        return self._fetch_all(
+            f"""
+            select
+              t.*,
+              coalesce(a.allocated_amount, 0) as allocated_amount
+            from transactions t
+            left join (
+              select ri.transaction_id, sum(ri.amount_requested) as allocated_amount
+              from reimbursement_items ri
+              join reimbursement_claims rc on rc.id = ri.claim_id
+              where ri.owner_user_id = %s
+                and ri.status = 'active'
+                and rc.status <> 'canceled'
+              group by ri.transaction_id
+            ) a on a.transaction_id = t.id
+            where t.user_id = %s
+              {search}
+            order by t.transaction_date desc, t.created_at desc
+            limit %s
+            """,
+            tuple(params),
+        )

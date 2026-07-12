@@ -1,4 +1,5 @@
 import json
+from threading import RLock
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -68,6 +69,7 @@ def _is_active_entity(item: dict[str, Any]) -> bool:
 
 class LocalJsonRepository:
     def __init__(self, upload_dir: Path) -> None:
+        self._lock = RLock()
         self.upload_dir = upload_dir
         self.upload_dir.mkdir(parents=True, exist_ok=True)
         self.path = self.upload_dir / "local_dev_db.json"
@@ -96,6 +98,13 @@ class LocalJsonRepository:
                     "import_preview_items": [],
                     "transactions": [],
                     "card_statements": [],
+                    "stored_files": [],
+                    "transaction_attachments": [],
+                    "stored_file_events": [],
+                    "reimbursement_contacts": [],
+                    "reimbursement_claims": [],
+                    "reimbursement_items": [],
+                    "reimbursement_events": [],
                 }
             )
 
@@ -625,3 +634,423 @@ class LocalJsonRepository:
         data["card_statements"].append(record)
         self._write(data)
         return record
+
+    def _ensure_file_collections(self, data: dict[str, Any]) -> None:
+        data.setdefault("stored_files", [])
+        data.setdefault("transaction_attachments", [])
+        data.setdefault("stored_file_events", [])
+
+    def create_stored_file(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_file_collections(data)
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **payload,
+        }
+        data["stored_files"].append(record)
+        self._write(data)
+        return record
+
+    def get_stored_file(self, user_id: str, file_id: str) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_file_collections(data)
+        return next((item for item in data["stored_files"] if item["id"] == file_id and item["owner_user_id"] == user_id), None)
+
+    def update_stored_file(self, user_id: str, file_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_file_collections(data)
+        for index, item in enumerate(data["stored_files"]):
+            if item["id"] == file_id and item["owner_user_id"] == user_id:
+                updated = {**item, **payload}
+                data["stored_files"][index] = updated
+                self._write(data)
+                return updated
+        return None
+
+    def create_transaction_attachment(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_file_collections(data)
+        existing = next(
+            (
+                item
+                for item in data["transaction_attachments"]
+                if item["owner_user_id"] == user_id
+                and item["transaction_id"] == payload["transaction_id"]
+                and item["file_id"] == payload["file_id"]
+                and item.get("status", "active") == "active"
+            ),
+            None,
+        )
+        if existing:
+            return existing
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            "status": "active",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **payload,
+        }
+        data["transaction_attachments"].append(record)
+        self._write(data)
+        return record
+
+    def list_transaction_attachments(self, user_id: str, transaction_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_file_collections(data)
+        files_by_id = {item["id"]: item for item in data["stored_files"]}
+        records = []
+        for attachment in data["transaction_attachments"]:
+            if attachment["owner_user_id"] != user_id or attachment["transaction_id"] != transaction_id:
+                continue
+            if attachment.get("status", "active") != "active":
+                continue
+            stored_file = files_by_id.get(attachment["file_id"])
+            if not stored_file:
+                continue
+            records.append(
+                {
+                    **attachment,
+                    "storage_bucket": stored_file.get("storage_bucket"),
+                    "storage_path": stored_file.get("storage_path"),
+                    "original_filename": stored_file.get("original_filename"),
+                    "declared_mime_type": stored_file.get("declared_mime_type"),
+                    "detected_mime_type": stored_file.get("detected_mime_type"),
+                    "size_bytes": stored_file.get("size_bytes"),
+                    "sha256_hash": stored_file.get("sha256_hash"),
+                    "source": stored_file.get("source"),
+                    "file_status": stored_file.get("status"),
+                    "scan_status": stored_file.get("scan_status"),
+                    "metadata": stored_file.get("metadata"),
+                    "file_created_at": stored_file.get("created_at"),
+                    "file_deleted_at": stored_file.get("deleted_at"),
+                }
+            )
+        return sorted(records, key=lambda item: item.get("created_at", ""), reverse=True)
+
+    def get_transaction_attachment(self, user_id: str, attachment_id: str) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_file_collections(data)
+        return next(
+            (item for item in data["transaction_attachments"] if item["id"] == attachment_id and item["owner_user_id"] == user_id),
+            None,
+        )
+
+    def delete_transaction_attachment(self, user_id: str, attachment_id: str) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_file_collections(data)
+        for index, item in enumerate(data["transaction_attachments"]):
+            if item["id"] == attachment_id and item["owner_user_id"] == user_id:
+                updated = {**item, "status": "inactive", "deleted_at": datetime.now(timezone.utc).isoformat()}
+                data["transaction_attachments"][index] = updated
+                self._write(data)
+                return updated
+        return None
+
+    def create_stored_file_event(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_file_collections(data)
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **payload,
+        }
+        data["stored_file_events"].append(record)
+        self._write(data)
+        return record
+
+    def list_orphan_stored_files(self, user_id: str, older_than: datetime) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_file_collections(data)
+        linked_file_ids = {
+            item["file_id"]
+            for item in data["transaction_attachments"]
+            if item["owner_user_id"] == user_id and item.get("status", "active") == "active"
+        }
+        records = []
+        for item in data["stored_files"]:
+            created_at = datetime.fromisoformat(str(item["created_at"]))
+            if item["owner_user_id"] != user_id:
+                continue
+            if item.get("status") not in {"uploaded", "quarantined", "available"}:
+                continue
+            if item["id"] in linked_file_ids:
+                continue
+            if created_at < older_than:
+                records.append(item)
+        return sorted(records, key=lambda item: item.get("created_at", ""))
+
+    def _ensure_reimbursement_collections(self, data: dict[str, Any]) -> None:
+        data.setdefault("reimbursement_contacts", [])
+        data.setdefault("reimbursement_claims", [])
+        data.setdefault("reimbursement_items", [])
+        data.setdefault("reimbursement_events", [])
+
+    def list_reimbursement_contacts(self, user_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        return [item for item in data["reimbursement_contacts"] if item["owner_user_id"] == user_id]
+
+    def get_reimbursement_contact(self, user_id: str, contact_id: str) -> dict[str, Any] | None:
+        return next((item for item in self.list_reimbursement_contacts(user_id) if item["id"] == contact_id), None)
+
+    def create_reimbursement_contact(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        now = datetime.now(timezone.utc).isoformat()
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            "status": "active",
+            "metadata": {},
+            "created_at": now,
+            "updated_at": now,
+            **payload,
+        }
+        data["reimbursement_contacts"].append(record)
+        self._write(data)
+        return record
+
+    def update_reimbursement_contact(self, user_id: str, contact_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        for index, item in enumerate(data["reimbursement_contacts"]):
+            if item["id"] == contact_id and item["owner_user_id"] == user_id:
+                updated = {**item, **payload, "updated_at": datetime.now(timezone.utc).isoformat()}
+                data["reimbursement_contacts"][index] = updated
+                self._write(data)
+                return updated
+        return None
+
+    def list_reimbursement_claims(self, user_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        return [item for item in data["reimbursement_claims"] if item["owner_user_id"] == user_id]
+
+    def get_reimbursement_claim(self, user_id: str, claim_id: str) -> dict[str, Any] | None:
+        return next((item for item in self.list_reimbursement_claims(user_id) if item["id"] == claim_id), None)
+
+    def create_reimbursement_claim(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        now = datetime.now(timezone.utc).isoformat()
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            "status": "draft",
+            "version": 1,
+            "view_count": 0,
+            "created_at": now,
+            "updated_at": now,
+            **payload,
+        }
+        data["reimbursement_claims"].append(record)
+        self._write(data)
+        return record
+
+    def update_reimbursement_claim(self, user_id: str, claim_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        for index, item in enumerate(data["reimbursement_claims"]):
+            if item["id"] == claim_id and item["owner_user_id"] == user_id:
+                updated = {**item, **payload, "updated_at": datetime.now(timezone.utc).isoformat()}
+                data["reimbursement_claims"][index] = updated
+                self._write(data)
+                return updated
+        return None
+
+    def list_reimbursement_items(self, user_id: str, claim_id: str | None = None) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        items = [item for item in data["reimbursement_items"] if item["owner_user_id"] == user_id]
+        if claim_id:
+            items = [item for item in items if item["claim_id"] == claim_id]
+        return sorted(items, key=lambda item: (item.get("position", 0), item.get("created_at", "")))
+
+    def list_reimbursement_items_by_transaction(self, user_id: str, transaction_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        canceled_claim_ids = {
+            claim["id"]
+            for claim in data["reimbursement_claims"]
+            if claim["owner_user_id"] == user_id and claim.get("status") == "canceled"
+        }
+        return [
+            item
+            for item in data["reimbursement_items"]
+            if item["owner_user_id"] == user_id
+            and item["transaction_id"] == transaction_id
+            and item.get("status") == "active"
+            and item.get("claim_id") not in canceled_claim_ids
+        ]
+
+    def get_reimbursement_item(self, user_id: str, item_id: str) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        return next((item for item in data["reimbursement_items"] if item["id"] == item_id and item["owner_user_id"] == user_id), None)
+
+    def create_reimbursement_item(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            "status": "active",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **payload,
+        }
+        data["reimbursement_items"].append(record)
+        self._write(data)
+        return record
+
+    def update_reimbursement_item(self, user_id: str, item_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        for index, item in enumerate(data["reimbursement_items"]):
+            if item["id"] == item_id and item["owner_user_id"] == user_id:
+                updated = {**item, **payload}
+                data["reimbursement_items"][index] = updated
+                self._write(data)
+                return updated
+        return None
+
+    def _active_reimbursement_allocation(
+        self,
+        data: dict[str, Any],
+        user_id: str,
+        transaction_id: str,
+        excluding_item_id: str | None = None,
+    ) -> Decimal:
+        canceled_claim_ids = {
+            claim["id"]
+            for claim in data["reimbursement_claims"]
+            if claim["owner_user_id"] == user_id and claim.get("status") == "canceled"
+        }
+        total = Decimal("0.00")
+        for item in data["reimbursement_items"]:
+            if item["owner_user_id"] != user_id or item["transaction_id"] != transaction_id:
+                continue
+            if item.get("status") != "active" or item.get("claim_id") in canceled_claim_ids:
+                continue
+            if excluding_item_id and item["id"] == excluding_item_id:
+                continue
+            total += Decimal(str(item["amount_requested"]))
+        return total.quantize(Decimal("0.01"))
+
+    def _transaction_reimbursable_amount(self, transaction: dict[str, Any]) -> Decimal:
+        return abs(Decimal(str(transaction["amount"]))).quantize(Decimal("0.01"))
+
+    def create_reimbursement_item_with_allocation(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            data = self._read()
+            self._ensure_reimbursement_collections(data)
+            transaction = next(
+                (item for item in data["transactions"] if item["id"] == payload["transaction_id"] and item["user_id"] == user_id),
+                None,
+            )
+            if not transaction:
+                return {"error": "transaction_not_found"}
+            if transaction.get("type") != "expense" or Decimal(str(transaction.get("amount", "0"))) == Decimal("0"):
+                return {"error": "transaction_not_reimbursable"}
+            duplicate = next(
+                (
+                    item
+                    for item in data["reimbursement_items"]
+                    if item["owner_user_id"] == user_id
+                    and item["claim_id"] == payload["claim_id"]
+                    and item["transaction_id"] == payload["transaction_id"]
+                    and item.get("status") == "active"
+                ),
+                None,
+            )
+            if duplicate:
+                return {"error": "reimbursement_item_duplicate"}
+            requested = Decimal(str(payload["amount_requested"])).quantize(Decimal("0.01"))
+            allocated = self._active_reimbursement_allocation(data, user_id, transaction["id"])
+            if allocated + requested > self._transaction_reimbursable_amount(transaction):
+                return {"error": "reimbursement_amount_exceeds_transaction"}
+            record = {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                "status": "active",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                **payload,
+            }
+            data["reimbursement_items"].append(record)
+            self._write(data)
+            return {"item": record}
+
+    def update_reimbursement_item_with_allocation(self, user_id: str, item_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        with self._lock:
+            data = self._read()
+            self._ensure_reimbursement_collections(data)
+            item_index = next(
+                (
+                    index
+                    for index, item in enumerate(data["reimbursement_items"])
+                    if item["id"] == item_id and item["owner_user_id"] == user_id
+                ),
+                None,
+            )
+            if item_index is None:
+                return {"error": "reimbursement_item_not_found"}
+            current = data["reimbursement_items"][item_index]
+            transaction = next(
+                (item for item in data["transactions"] if item["id"] == current["transaction_id"] and item["user_id"] == user_id),
+                None,
+            )
+            if not transaction:
+                return {"error": "transaction_not_found"}
+            if transaction.get("type") != "expense" or Decimal(str(transaction.get("amount", "0"))) == Decimal("0"):
+                return {"error": "transaction_not_reimbursable"}
+            requested = Decimal(str(payload["amount_requested"])).quantize(Decimal("0.01"))
+            allocated = self._active_reimbursement_allocation(data, user_id, transaction["id"], excluding_item_id=item_id)
+            if allocated + requested > self._transaction_reimbursable_amount(transaction):
+                return {"error": "reimbursement_amount_exceeds_transaction"}
+            updated = {**current, **payload}
+            data["reimbursement_items"][item_index] = updated
+            self._write(data)
+            return {"item": updated}
+
+    def create_reimbursement_event(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            "actor_type": "owner",
+            "actor_user_id": user_id,
+            "metadata": {},
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **payload,
+        }
+        data["reimbursement_events"].append(record)
+        self._write(data)
+        return record
+
+    def list_reimbursement_events(self, user_id: str, claim_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        return [
+            item
+            for item in sorted(data["reimbursement_events"], key=lambda item: item.get("created_at", ""))
+            if item["owner_user_id"] == user_id and item.get("claim_id") == claim_id
+        ]
+
+    def list_reimbursement_candidate_transactions(self, user_id: str, query: str | None = None, limit: int = 30) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        normalized_query = (query or "").strip().lower()
+        records = []
+        for transaction in sorted(data["transactions"], key=lambda item: item.get("transaction_date", ""), reverse=True):
+            if transaction["user_id"] != user_id:
+                continue
+            if normalized_query and normalized_query not in transaction.get("description", "").lower():
+                continue
+            allocated = self._active_reimbursement_allocation(data, user_id, transaction["id"])
+            records.append({**transaction, "allocated_amount": str(allocated)})
+            if len(records) >= limit:
+                break
+        return records

@@ -63,6 +63,95 @@ function transaction(index: number) {
 const transactions = Array.from({ length: 30 }, (_, index) => transaction(index + 1));
 
 async function mockCoreApi(page: Page) {
+  let attachments = [] as Array<{
+    id: string;
+    owner_user_id: string;
+    transaction_id: string;
+    file_id: string;
+    status: string;
+    created_at: string;
+    deleted_at: string | null;
+    file: {
+      id: string;
+      owner_user_id: string;
+      original_filename: string;
+      declared_mime_type: string;
+      detected_mime_type: string;
+      size_bytes: number;
+      sha256_hash: string;
+      source: string;
+      status: string;
+      scan_status: string;
+      metadata: Record<string, unknown>;
+      created_at: string;
+      deleted_at: string | null;
+    };
+  }>;
+  await page.route("**/transactions/*/attachments", async (route) => {
+    if (route.request().method() === "POST") {
+      const payload = route.request().postDataJSON() as { file_id: string };
+      const attachment = {
+        id: "attachment-1",
+        owner_user_id: "dev-user",
+        transaction_id: "tx-1",
+        file_id: payload.file_id,
+        status: "active",
+        created_at: "2026-07-01T00:00:00Z",
+        deleted_at: null,
+        file: {
+          id: payload.file_id,
+          owner_user_id: "dev-user",
+          original_filename: "comprovante.png",
+          declared_mime_type: "image/png",
+          detected_mime_type: "image/png",
+          size_bytes: 1280,
+          sha256_hash: "a".repeat(64),
+          source: "transaction_attachment",
+          status: "available",
+          scan_status: "skipped",
+          metadata: {},
+          created_at: "2026-07-01T00:00:00Z",
+          deleted_at: null
+        }
+      };
+      attachments = [attachment];
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(attachment) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(attachments) });
+  });
+  await page.route("**/transactions/*/attachments/*", async (route) => {
+    attachments = [];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "deleted" }) });
+  });
+  await page.route("**/files/upload?**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "file-1",
+        owner_user_id: "dev-user",
+        original_filename: "comprovante.png",
+        declared_mime_type: "image/png",
+        detected_mime_type: "image/png",
+        size_bytes: 1280,
+        sha256_hash: "a".repeat(64),
+        source: "transaction_attachment",
+        status: "available",
+        scan_status: "skipped",
+        metadata: {},
+        created_at: "2026-07-01T00:00:00Z",
+        deleted_at: null
+      })
+    });
+  });
+  await page.route("**/files/*/signed-url", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ file_id: "file-1", url: "https://example.test/comprovante.png", expires_at: "2026-07-01T00:05:00Z" })
+    });
+  });
   await page.route("**/transactions", async (route) => {
     if (route.request().resourceType() === "document") {
       await route.fallback();
@@ -79,6 +168,10 @@ async function mockCoreApi(page: Page) {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(transactions) });
   });
   await page.route("**/transactions/**", async (route) => {
+    if (route.request().url().includes("/attachments")) {
+      await route.fallback();
+      return;
+    }
     if (route.request().resourceType() === "document") {
       await route.fallback();
       return;
@@ -229,6 +322,31 @@ test("opens manual transaction drawer and validates required fields", async ({ p
   await drawer.getByLabel("Valor").fill("");
   await page.getByRole("button", { name: "Criar transação" }).click();
   await expect(page.getByText("Informe data, descrição e valor para criar a transação.")).toBeVisible();
+});
+
+test("supports transaction attachment upload open and removal", async ({ page }) => {
+  await gotoTransactions(page);
+
+  await page.locator("tbody tr").first().click();
+  const drawer = page.locator("aside");
+  await expect(drawer.getByText("Nenhum comprovante anexado.")).toBeVisible();
+
+  await drawer.locator("input[type='file']").setInputFiles({
+    name: "comprovante.png",
+    mimeType: "image/png",
+    buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47])
+  });
+
+  await expect(drawer.getByText("comprovante.png")).toBeVisible();
+  const popupPromise = page.waitForEvent("popup");
+  const signedUrlRequest = page.waitForRequest(/\/files\/file-1\/signed-url/);
+  await drawer.getByRole("button", { name: "Abrir comprovante" }).click();
+  await signedUrlRequest;
+  const popup = await popupPromise;
+  await popup.close();
+
+  await drawer.getByRole("button", { name: "Remover comprovante" }).click();
+  await expect(drawer.getByText("Nenhum comprovante anexado.")).toBeVisible();
 });
 
 test("opens manual transaction drawer from create query params", async ({ page }) => {

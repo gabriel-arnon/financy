@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: financy
-      POSTGRES_PASSWORD: financy
-      POSTGRES_DB: financy
+      POSTGRES_USER: financy_dev
+      POSTGRES_PASSWORD: financy_dev_local
+      POSTGRES_DB: financy_dev
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U financy -d financy"]
+      test: ["CMD-SHELL", "pg_isready -U financy_dev -d financy_dev"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -22,7 +22,7 @@ services:
       APP_ENV: local
       APP_NAME: Financy API
       DEV_USER_ID: 00000000-0000-4000-8000-000000000001
-      DATABASE_URL: postgresql://financy:financy@postgres:5432/financy
+      DATABASE_URL: postgresql://financy_dev:financy_dev_local@postgres:5432/financy_dev
       JWT_SECRET: change-me-local-only
       STORAGE_BACKEND: json
       UPLOAD_STORAGE_PATH: /app/.uploads

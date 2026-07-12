@@ -524,6 +524,52 @@ Não feito:
 
 - Validação visual com screenshots em browser real não foi executada nesta entrega.
 
+### [x] P9.1 - Fundacao 2 de Ressarcimentos owner-only
+
+Objetivo:
+
+- Criar interface owner-only de ressarcimentos e fechar concorrencia/snapshots da Fundacao 1.
+
+Feito:
+
+- Navegacao `Ressarcimentos` adicionada.
+- Rota `/reimbursements` criada com Visao geral, Cobrancas e Pessoas.
+- Contatos podem ser criados, editados e inativados.
+- Cobrancas draft podem ser criadas, editadas, receber itens, atualizar snapshots, finalizar e cancelar.
+- Acao `Solicitar ressarcimento` adicionada em Transacoes para item individual e selecao em lote.
+- Backend usa lock transacional no PostgreSQL para impedir alocacao concorrente acima do valor da despesa.
+- Cancelamento libera saldo ressarcivel e preserva historico.
+- Snapshots sao preliminares em draft e finalizados no envio.
+
+Nao feito:
+
+- Portal guest, convites, memberships, comentarios, pagamentos, Telegram, OCR, audio, inbox e filas.
+- Migrations nao foram executadas.
+
+### [x] P9.2 - Ambiente dev PostgreSQL para Fundacao 2.5
+
+Objetivo:
+
+- Criar e validar ambiente PostgreSQL local reproduzivel para fechar as pendencias tecnicas da Fundacao 2.5.
+
+Feito:
+
+- Docker Compose ajustado para banco local `financy_dev` com credencial apenas de desenvolvimento.
+- Criado `scripts/setup_dev_db.ps1` com validacao anti-remoto, healthcheck, migrations e inspecao de schema.
+- Migrations `001` a `006` aplicadas com sucesso no PostgreSQL local descartavel.
+- Idempotencia validada via `schema_migrations`.
+- Criados testes PostgreSQL reais separados por marker `postgres`.
+- Repository PostgreSQL validado com fluxo owner-only de ressarcimentos.
+- Concorrencia real validada com conexoes independentes e `SELECT ... FOR UPDATE`.
+- Criado smoke test seguro para Supabase Storage dev, pendente de credenciais/projeto development.
+- Documentacao atualizada em `README.md`, `scripts/README.md`, `docs/postgres-migration-checklist.md` e `output.md`.
+
+Nao feito:
+
+- Smoke real Supabase Storage nao foi executado porque nao ha `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e bucket dev configurados.
+- RLS final ainda nao foi implementada.
+- Fundacao 3 nao foi iniciada.
+
 ## Validações obrigatórias por entrega
 
 Frontend:

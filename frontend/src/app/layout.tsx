@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/app-shell";
 import { AuthProvider } from "@/components/auth-provider";
+import { ThemeInitializer } from "@/components/theme-initializer";
 import { ToastProvider } from "@/components/toast-provider";
 import "./globals.css";
 
@@ -14,24 +15,11 @@ export const metadata: Metadata = {
   }
 };
 
-const themeInitScript = `
-try {
-  var raw = window.localStorage.getItem("financy_user_preferences");
-  var preferences = raw ? JSON.parse(raw) : {};
-  var theme = preferences.theme === "dark" ? "dark" : "light";
-  document.documentElement.dataset.theme = theme;
-  document.documentElement.dataset.density = preferences.density === "compact" ? "compact" : "comfortable";
-  document.documentElement.dataset.reduceMotion = preferences.reduceMotion ? "true" : "false";
-} catch (error) {
-  document.documentElement.dataset.theme = "light";
-}
-`;
-
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="pt-BR" suppressHydrationWarning>
+    <html lang="pt-BR" data-theme="light" data-density="comfortable" data-reduce-motion="false" suppressHydrationWarning>
       <body>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <ThemeInitializer />
         <AuthProvider>
           <ToastProvider>
             <AppShell>{children}</AppShell>

@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpDown, Pencil, Plus, Save, Search, Trash2, Wand2, X } from "lucide-react";
+import { ArrowUpDown, ExternalLink, HandCoins, Paperclip, Pencil, Plus, Save, Search, Trash2, Upload, Wand2, X } from "lucide-react";
 import { UiButton } from "@/components/ui-button";
 import { useToast } from "@/components/toast-provider";
-import { createClassificationRule, createTransaction, deleteTransaction, updateTransaction } from "@/lib/api";
+import { addReimbursementItem, attachFileToTransaction, createClassificationRule, createReimbursementClaim, createTransaction, deleteTransaction, deleteTransactionAttachment, getFileSignedUrl, getReimbursementClaims, getReimbursementContacts, getTransactionAttachments, updateTransaction, uploadPrivateFile } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { formatAccountName, formatCardName, formatCardWithAccount, getAccountName, getCardNameWithAccount, getCategoryName, isActiveEntity, translateTransactionType } from "@/lib/labels";
-import type { Account, Card, Category, Transaction, TransactionPayload, TransactionType } from "@/lib/types";
+import type { Account, Card, Category, ReimbursementClaim, ReimbursementContact, Transaction, TransactionAttachment, TransactionPayload, TransactionType } from "@/lib/types";
 
 interface TransactionsTableProps {
   transactions: Transaction[];
@@ -32,7 +32,7 @@ interface TransactionsTableProps {
 
 type SortKey = "date" | "amount" | "description";
 type SortDirection = "asc" | "desc";
-type AsyncAction = "save" | "rule" | "delete" | "bulk-category" | "bulk-rule" | "bulk-delete" | "create" | null;
+type AsyncAction = "save" | "rule" | "delete" | "bulk-category" | "bulk-rule" | "bulk-delete" | "create" | "attachment" | "reimbursement" | null;
 
 interface ManualTransactionForm {
   transaction_date: string;
@@ -51,6 +51,10 @@ interface ConfirmDialogState {
   onConfirm: () => Promise<void>;
 }
 
+interface ReimbursementDialogState {
+  transactions: Transaction[];
+}
+
 const transactionTypes: Array<TransactionType | "all"> = ["all", "expense", "income", "transfer", "payment", "refund"];
 const manualTransactionTypes: TransactionType[] = ["expense", "income", "transfer", "payment", "refund"];
 const uncategorizedValue = "__none__";
@@ -58,6 +62,7 @@ const ignoredWords = new Set(["PARC", "COMPRA", "PAGAMENTO", "PGTO", "BR", "SAO"
 const incomeTypes = new Set<TransactionType>(["income", "refund"]);
 const expenseTypes = new Set<TransactionType>(["expense", "payment"]);
 const pageSize = 25;
+const attachmentAccept = "image/jpeg,image/png,image/webp,application/pdf";
 
 function firstRelevantKeyword(description: string) {
   return description
@@ -189,6 +194,15 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   const [bulkCategoryId, setBulkCategoryId] = useState("");
   const [asyncAction, setAsyncAction] = useState<AsyncAction>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [reimbursementDialog, setReimbursementDialog] = useState<ReimbursementDialogState | null>(null);
+  const [reimbursementContacts, setReimbursementContacts] = useState<ReimbursementContact[]>([]);
+  const [reimbursementClaims, setReimbursementClaims] = useState<ReimbursementClaim[]>([]);
+  const [reimbursementClaimId, setReimbursementClaimId] = useState("");
+  const [reimbursementContactId, setReimbursementContactId] = useState("");
+  const [reimbursementTitle, setReimbursementTitle] = useState("");
+  const [reimbursementAmounts, setReimbursementAmounts] = useState<Record<string, string>>({});
+  const [attachmentsByTransaction, setAttachmentsByTransaction] = useState<Record<string, TransactionAttachment[]>>({});
+  const [attachmentsLoadingId, setAttachmentsLoadingId] = useState<string | null>(null);
   const [isCreateDrawerOpen, setIsCreateDrawerOpen] = useState(Boolean(requestedCreateType));
   const [manualForm, setManualForm] = useState<ManualTransactionForm>(() => ({
     ...defaultManualForm(),
@@ -213,6 +227,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   const initialCard = useMemo(() => cards.find((item) => item.id === initialCardId), [cards, initialCardId]);
   const statuses = useMemo(() => Array.from(new Set(rows.map((transaction) => transaction.status).filter(Boolean))).sort(), [rows]);
   const drawerTransaction = useMemo(() => rows.find((transaction) => transaction.id === drawerTransactionId) ?? null, [drawerTransactionId, rows]);
+  const drawerAttachments = drawerTransaction ? attachmentsByTransaction[drawerTransaction.id] ?? [] : [];
   const isBusy = asyncAction !== null;
 
   function rememberFocusedElement() {
@@ -297,6 +312,9 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   const visibleTransactions = useMemo(() => sortedTransactions.slice(0, visibleCount), [sortedTransactions, visibleCount]);
   const uncategorizedCount = useMemo(() => filtered.filter((transaction) => isTransactionUncategorized(transaction, categoryIds)).length, [categoryIds, filtered]);
   const selectedTransactions = useMemo(() => rows.filter((transaction) => selectedIds.has(transaction.id)), [rows, selectedIds]);
+  const reimbursementEligibleTransactions = useMemo(() => reimbursementDialog?.transactions.filter((transaction) => transaction.type === "expense" && transaction.status !== "ignored") ?? [], [reimbursementDialog]);
+  const reimbursementIneligibleTransactions = useMemo(() => reimbursementDialog?.transactions.filter((transaction) => transaction.type !== "expense" || transaction.status === "ignored") ?? [], [reimbursementDialog]);
+  const draftReimbursementClaims = useMemo(() => reimbursementClaims.filter((claim) => claim.status === "draft"), [reimbursementClaims]);
   const selectedCount = selectedIds.size;
   const visibleIds = useMemo(() => visibleTransactions.map((transaction) => transaction.id), [visibleTransactions]);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
@@ -326,11 +344,25 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
     resetVisibleList();
   }
 
+  async function loadTransactionAttachments(transactionId: string) {
+    if (attachmentsByTransaction[transactionId]) return;
+    setAttachmentsLoadingId(transactionId);
+    try {
+      const items = await getTransactionAttachments(transactionId);
+      setAttachmentsByTransaction((current) => ({ ...current, [transactionId]: Array.isArray(items) ? items : [] }));
+    } catch (err) {
+      showMessage("error", err instanceof Error ? err.message : "Falha ao carregar comprovantes.");
+    } finally {
+      setAttachmentsLoadingId(null);
+    }
+  }
+
   function openDrawer(transaction: Transaction) {
     rememberFocusedElement();
     setSelectedTransactionId(transaction.id);
     setDrawerTransactionId(transaction.id);
     setDetailForm(formFromTransaction(transaction));
+    void loadTransactionAttachments(transaction.id);
   }
 
   const closeDrawer = useCallback(function closeDrawer(restoreFocus = true) {
@@ -354,6 +386,15 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   const closeConfirmDialog = useCallback(function closeConfirmDialog(restoreFocus = true) {
     setConfirmDialog(null);
     if (restoreFocus) restorePreviousFocus();
+  }, [restorePreviousFocus]);
+
+  const closeReimbursementDialog = useCallback(function closeReimbursementDialog() {
+    setReimbursementDialog(null);
+    setReimbursementClaimId("");
+    setReimbursementContactId("");
+    setReimbursementTitle("");
+    setReimbursementAmounts({});
+    restorePreviousFocus();
   }, [restorePreviousFocus]);
 
   useEffect(() => {
@@ -385,6 +426,10 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
         closeCreateDrawer();
         return;
       }
+      if (reimbursementDialog) {
+        closeReimbursementDialog();
+        return;
+      }
       if (drawerTransaction) {
         closeDrawer();
       }
@@ -392,7 +437,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [closeConfirmDialog, closeCreateDrawer, closeDrawer, confirmDialog, drawerTransaction, isCreateDrawerOpen]);
+  }, [closeConfirmDialog, closeCreateDrawer, closeDrawer, closeReimbursementDialog, confirmDialog, drawerTransaction, isCreateDrawerOpen, reimbursementDialog]);
 
   function updateManualForm(patch: Partial<ManualTransactionForm>) {
     setManualForm((current) => ({ ...current, ...patch }));
@@ -452,6 +497,86 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
     } finally {
       setAsyncAction(null);
     }
+  }
+
+  async function uploadAttachment(transaction: Transaction, file: File | null) {
+    if (!file) return;
+    await runAsync("attachment", async () => {
+      const storedFile = await uploadPrivateFile(file, "transaction_attachment");
+      const attachment = await attachFileToTransaction(transaction.id, storedFile.id);
+      setAttachmentsByTransaction((current) => ({
+        ...current,
+        [transaction.id]: [attachment, ...(current[transaction.id] ?? []).filter((item) => item.id !== attachment.id)]
+      }));
+      showMessage("success", "Comprovante anexado.");
+    });
+  }
+
+  async function openAttachment(attachment: TransactionAttachment) {
+    await runAsync("attachment", async () => {
+      const signed = await getFileSignedUrl(attachment.file_id);
+      window.open(signed.url, "_blank", "noopener,noreferrer");
+    });
+  }
+
+  async function removeAttachment(transaction: Transaction, attachment: TransactionAttachment) {
+    await runAsync("attachment", async () => {
+      await deleteTransactionAttachment(transaction.id, attachment.id);
+      setAttachmentsByTransaction((current) => ({
+        ...current,
+        [transaction.id]: (current[transaction.id] ?? []).filter((item) => item.id !== attachment.id)
+      }));
+      showMessage("success", "Comprovante removido.");
+    });
+  }
+
+  async function openReimbursementDialog(transactionsToRequest: Transaction[]) {
+    const uniqueTransactions = Array.from(new Map(transactionsToRequest.map((transaction) => [transaction.id, transaction])).values());
+    if (uniqueTransactions.length === 0) return;
+    rememberFocusedElement();
+    setReimbursementDialog({ transactions: uniqueTransactions });
+    setReimbursementAmounts(Object.fromEntries(uniqueTransactions.map((transaction) => [transaction.id, Math.abs(Number(transaction.amount)).toFixed(2)])));
+    try {
+      const [contacts, claims] = await Promise.all([getReimbursementContacts(), getReimbursementClaims()]);
+      setReimbursementContacts(contacts);
+      setReimbursementClaims(claims);
+      const firstDraft = claims.find((claim) => claim.status === "draft");
+      setReimbursementClaimId(firstDraft?.id ?? "");
+      setReimbursementContactId(contacts.find(isActiveEntity)?.id ?? "");
+      setReimbursementTitle(`Ressarcimento ${new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}`);
+    } catch (err) {
+      showMessage("error", err instanceof Error ? err.message : "Falha ao carregar ressarcimentos.");
+    }
+  }
+
+  async function confirmReimbursementRequest() {
+    if (!reimbursementDialog) return;
+    await runAsync("reimbursement", async () => {
+      if (reimbursementEligibleTransactions.length === 0) {
+        showMessage("error", "Nenhuma despesa elegível foi selecionada.");
+        return;
+      }
+      let claimId = reimbursementClaimId;
+      if (!claimId) {
+        if (!reimbursementContactId || !reimbursementTitle.trim()) {
+          showMessage("error", "Escolha uma pessoa e informe o título da cobrança.");
+          return;
+        }
+        const created = await createReimbursementClaim({
+          contact_id: reimbursementContactId,
+          title: reimbursementTitle.trim()
+        });
+        claimId = created.id;
+      }
+      for (const transaction of reimbursementEligibleTransactions) {
+        const amount = reimbursementAmounts[transaction.id] || Math.abs(Number(transaction.amount)).toFixed(2);
+        await addReimbursementItem(claimId, { transaction_id: transaction.id, amount_requested: amount });
+      }
+      showMessage("success", "Itens adicionados ao rascunho de ressarcimento.");
+      setSelectedIds(new Set());
+      closeReimbursementDialog();
+      router.push("/reimbursements");
+    });
   }
 
   async function createManualTransaction(options: { createAnother?: boolean } = {}) {
@@ -839,6 +964,9 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
           <UiButton icon={<Wand2 className="h-4 w-4" />} onClick={() => { void createBulkRules(); }} variant="secondary" disabled={selectedCount === 0 || isBusy}>
             {asyncAction === "bulk-rule" ? "Criando..." : "Criar regras"}
           </UiButton>
+          <UiButton icon={<HandCoins className="h-4 w-4" />} onClick={() => { void openReimbursementDialog(selectedTransactions); }} variant="secondary" disabled={selectedCount === 0 || isBusy}>
+            Solicitar ressarcimento
+          </UiButton>
           <UiButton icon={<Trash2 className="h-4 w-4" />} onClick={requestDeleteSelected} variant="danger" disabled={selectedCount === 0 || isBusy}>
             Excluir selecionadas
           </UiButton>
@@ -937,6 +1065,19 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                           size="sm"
                           title="Editar"
                           variant="secondary"
+                        />
+                        <UiButton
+                          aria-label="Solicitar ressarcimento"
+                          className="h-9 w-9 px-0 md:opacity-70 md:hover:opacity-100"
+                          icon={<HandCoins className="h-4 w-4" />}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void openReimbursementDialog([transaction]);
+                          }}
+                          size="sm"
+                          title="Solicitar ressarcimento"
+                          variant="secondary"
+                          disabled={isBusy || transaction.type !== "expense"}
                         />
                         <UiButton
                           aria-label="Excluir transação"
@@ -1137,6 +1278,72 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                   <input className="h-4 w-4 rounded border-stone-300" type="checkbox" checked={detailForm?.pending ?? false} onChange={(event) => updateDetailForm({ pending: event.target.checked })} disabled={isBusy} />
                   Pendente
                 </label>
+
+                <section className="rounded-md border border-stone-200 bg-stone-50 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-ink">Comprovantes</h3>
+                      <p className="mt-1 text-xs text-stone-500">JPEG, PNG, WebP ou PDF ate 10 MB.</p>
+                    </div>
+                    <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-stone-200 bg-white px-3 text-sm font-semibold text-stone-700 transition hover:bg-stone-100">
+                      <Upload className="h-4 w-4" />
+                      Anexar
+                      <input
+                        accept={attachmentAccept}
+                        className="sr-only"
+                        disabled={isBusy}
+                        type="file"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null;
+                          event.target.value = "";
+                          void uploadAttachment(drawerTransaction, file);
+                        }}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mt-3 grid gap-2">
+                    {attachmentsLoadingId === drawerTransaction.id ? (
+                      <p className="text-sm text-stone-500">Carregando comprovantes...</p>
+                    ) : drawerAttachments.length === 0 ? (
+                      <p className="text-sm text-stone-500">Nenhum comprovante anexado.</p>
+                    ) : (
+                      drawerAttachments.map((attachment) => (
+                        <div key={attachment.id} className="flex items-center justify-between gap-3 rounded-md border border-stone-200 bg-white px-3 py-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium text-ink">
+                              <Paperclip className="mr-1 inline h-4 w-4 text-stone-500" />
+                              {attachment.file.original_filename}
+                            </p>
+                            <p className="mt-1 text-xs text-stone-500">{(attachment.file.size_bytes / 1024).toFixed(1)} KB</p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <UiButton
+                              aria-label="Abrir comprovante"
+                              className="h-8 w-8 px-0"
+                              icon={<ExternalLink className="h-4 w-4" />}
+                              onClick={() => { void openAttachment(attachment); }}
+                              size="sm"
+                              title="Abrir"
+                              variant="secondary"
+                              disabled={isBusy}
+                            />
+                            <UiButton
+                              aria-label="Remover comprovante"
+                              className="h-8 w-8 px-0"
+                              icon={<Trash2 className="h-4 w-4" />}
+                              onClick={() => { void removeAttachment(drawerTransaction, attachment); }}
+                              size="sm"
+                              title="Remover"
+                              variant="danger"
+                              disabled={isBusy}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </section>
               </div>
             </div>
 
@@ -1159,6 +1366,90 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
               </div>
             </div>
           </aside>
+        </div>
+      ) : null}
+
+      {reimbursementDialog ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 p-4 sm:items-center">
+          <div aria-labelledby="reimbursement-dialog-title" aria-modal="true" className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-lg border border-stone-200 bg-white shadow-2xl" role="dialog">
+            <div className="flex items-start justify-between gap-4 border-b border-stone-200 px-5 py-4">
+              <div>
+                <p className="text-sm font-medium text-mint">Ressarcimento</p>
+                <h2 id="reimbursement-dialog-title" className="mt-1 text-xl font-semibold text-ink">Solicitar ressarcimento</h2>
+                <p className="mt-1 text-sm text-stone-500">Revise os valores antes de adicionar os itens a uma cobrança em rascunho.</p>
+              </div>
+              <button aria-label="Fechar" className="rounded-md border border-stone-200 p-2 text-stone-600 hover:bg-stone-50" onClick={closeReimbursementDialog} type="button" disabled={isBusy}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid gap-4 px-5 py-5">
+              {reimbursementIneligibleTransactions.length > 0 ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  {reimbursementIneligibleTransactions.length} transação(ões) não entram no ressarcimento porque não são despesas elegíveis.
+                </div>
+              ) : null}
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="grid gap-1.5 text-sm font-medium text-ink">
+                  Cobrança existente
+                  <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal outline-none focus:border-mint" value={reimbursementClaimId} onChange={(event) => setReimbursementClaimId(event.target.value)} disabled={isBusy}>
+                    <option value="">Criar nova cobrança</option>
+                    {draftReimbursementClaims.map((claim) => (
+                      <option key={claim.id} value={claim.id}>{claim.title} · {claim.contact?.display_name ?? "Sem pessoa"}</option>
+                    ))}
+                  </select>
+                </label>
+                {!reimbursementClaimId ? (
+                  <label className="grid gap-1.5 text-sm font-medium text-ink">
+                    Pessoa
+                    <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal outline-none focus:border-mint" value={reimbursementContactId} onChange={(event) => setReimbursementContactId(event.target.value)} disabled={isBusy} required>
+                      <option value="">Selecione</option>
+                      {reimbursementContacts.filter(isActiveEntity).map((contact) => (
+                        <option key={contact.id} value={contact.id}>{contact.display_name}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {!reimbursementClaimId ? (
+                  <label className="grid gap-1.5 text-sm font-medium text-ink md:col-span-2">
+                    Título da nova cobrança
+                    <input className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal outline-none focus:border-mint" value={reimbursementTitle} onChange={(event) => setReimbursementTitle(event.target.value)} disabled={isBusy} />
+                  </label>
+                ) : null}
+              </div>
+
+              <div className="grid gap-2">
+                {reimbursementEligibleTransactions.length === 0 ? (
+                  <p className="rounded-md bg-stone-50 p-4 text-sm text-stone-500">Nenhuma despesa elegível selecionada.</p>
+                ) : reimbursementEligibleTransactions.map((transaction) => (
+                  <div key={transaction.id} className="grid gap-2 rounded-md border border-stone-200 p-3 md:grid-cols-[1fr_9rem] md:items-center">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-ink">{transaction.description}</p>
+                      <p className="mt-1 text-xs text-stone-500">{formatDate(transaction.transaction_date)} · {formatCurrency(Math.abs(Number(transaction.amount)))}</p>
+                    </div>
+                    <label className="grid gap-1 text-xs font-medium text-stone-500">
+                      Valor
+                      <input
+                        aria-label={`Valor de ressarcimento para ${transaction.description}`}
+                        className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint"
+                        value={reimbursementAmounts[transaction.id] ?? ""}
+                        onChange={(event) => setReimbursementAmounts((current) => ({ ...current, [transaction.id]: event.target.value }))}
+                        disabled={isBusy}
+                      />
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid gap-2 border-t border-stone-200 px-5 py-4 sm:grid-cols-2">
+              <UiButton onClick={closeReimbursementDialog} variant="ghost" disabled={isBusy}>Cancelar</UiButton>
+              <UiButton icon={<HandCoins className="h-4 w-4" />} onClick={() => { void confirmReimbursementRequest(); }} variant="primary" disabled={isBusy || reimbursementEligibleTransactions.length === 0}>
+                {asyncAction === "reimbursement" ? "Adicionando..." : "Confirmar inclusão"}
+              </UiButton>
+            </div>
+          </div>
         </div>
       ) : null}
 

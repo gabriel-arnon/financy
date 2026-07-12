@@ -12,6 +12,7 @@ sys.path.insert(0, str(BACKEND_DIR))
 import psycopg
 
 from app.core.config import settings
+from scripts.dev_db_safety import assert_local_database_url
 
 
 MIGRATIONS_DIR = ROOT_DIR / "docs" / "supabase" / "migrations"
@@ -72,6 +73,8 @@ def main() -> None:
     if not args.database_url:
         raise SystemExit("DATABASE_URL is required.")
 
+    safe = assert_local_database_url(args.database_url, purpose="migrations")
+    print(f"Target database: {safe.display}")
     applied = apply_migrations(args.database_url, reset=args.reset_schema)
     print("Migrations applied:")
     if applied:

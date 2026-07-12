@@ -16,8 +16,18 @@ import type {
   ClassificationRulePayload,
   ConfirmImportResponse,
   ImportPreviewResponse,
+  ReimbursementClaim,
+  ReimbursementClaimPayload,
+  ReimbursementContact,
+  ReimbursementContactPayload,
+  ReimbursementEligibleTransaction,
+  ReimbursementEvent,
+  ReimbursementOverview,
   Transaction,
+  TransactionAttachment,
   TransactionPayload,
+  FileSignedUrl,
+  StoredFile,
   UploadImportResponse
 } from "@/lib/types";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
@@ -109,6 +119,35 @@ export async function uploadImport(file: File): Promise<UploadImportResponse> {
   return request<UploadImportResponse>("/imports/upload", { method: "POST", body: form });
 }
 
+export async function uploadPrivateFile(file: File, source = "manual"): Promise<StoredFile> {
+  const form = new FormData();
+  form.append("file", file);
+  return request<StoredFile>(`/files/upload?source=${encodeURIComponent(source)}`, { method: "POST", body: form });
+}
+
+export async function getFileSignedUrl(fileId: string): Promise<FileSignedUrl> {
+  return request<FileSignedUrl>(`/files/${fileId}/signed-url`);
+}
+
+export async function deletePrivateFile(fileId: string): Promise<StoredFile> {
+  return request<StoredFile>(`/files/${fileId}`, { method: "DELETE" });
+}
+
+export async function getTransactionAttachments(transactionId: string): Promise<TransactionAttachment[]> {
+  return request<TransactionAttachment[]>(`/transactions/${transactionId}/attachments`);
+}
+
+export async function attachFileToTransaction(transactionId: string, fileId: string): Promise<TransactionAttachment> {
+  return request<TransactionAttachment>(`/transactions/${transactionId}/attachments`, {
+    method: "POST",
+    body: JSON.stringify({ file_id: fileId })
+  });
+}
+
+export async function deleteTransactionAttachment(transactionId: string, attachmentId: string): Promise<{ status: string }> {
+  return request<{ status: string }>(`/transactions/${transactionId}/attachments/${attachmentId}`, { method: "DELETE" });
+}
+
 export async function getImportPreview(importId: string): Promise<ImportPreviewResponse> {
   return request<ImportPreviewResponse>(`/imports/${importId}/preview`);
 }
@@ -149,6 +188,74 @@ export async function updateTransaction(transactionId: string, payload: Transact
 
 export async function deleteTransaction(transactionId: string): Promise<{ status: string }> {
   return request<{ status: string }>(`/transactions/${transactionId}`, { method: "DELETE" });
+}
+
+export async function getReimbursementOverview(): Promise<ReimbursementOverview> {
+  return request<ReimbursementOverview>("/reimbursements/overview");
+}
+
+export async function getReimbursementContacts(): Promise<ReimbursementContact[]> {
+  return request<ReimbursementContact[]>("/reimbursements/contacts");
+}
+
+export async function createReimbursementContact(payload: ReimbursementContactPayload): Promise<ReimbursementContact> {
+  return request<ReimbursementContact>("/reimbursements/contacts", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateReimbursementContact(contactId: string, payload: Partial<ReimbursementContactPayload>): Promise<ReimbursementContact> {
+  return request<ReimbursementContact>(`/reimbursements/contacts/${contactId}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function deleteReimbursementContact(contactId: string): Promise<ReimbursementContact> {
+  return request<ReimbursementContact>(`/reimbursements/contacts/${contactId}`, { method: "DELETE" });
+}
+
+export async function getReimbursementClaims(): Promise<ReimbursementClaim[]> {
+  return request<ReimbursementClaim[]>("/reimbursements/claims");
+}
+
+export async function createReimbursementClaim(payload: ReimbursementClaimPayload): Promise<ReimbursementClaim> {
+  return request<ReimbursementClaim>("/reimbursements/claims", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateReimbursementClaim(claimId: string, payload: Partial<ReimbursementClaimPayload>): Promise<ReimbursementClaim> {
+  return request<ReimbursementClaim>(`/reimbursements/claims/${claimId}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function addReimbursementItem(claimId: string, payload: { transaction_id: string; amount_requested: string }): Promise<ReimbursementClaim> {
+  return request<ReimbursementClaim>(`/reimbursements/claims/${claimId}/items`, { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateReimbursementItem(claimId: string, itemId: string, payload: { amount_requested: string }): Promise<ReimbursementClaim> {
+  return request<ReimbursementClaim>(`/reimbursements/claims/${claimId}/items/${itemId}`, { method: "PATCH", body: JSON.stringify(payload) });
+}
+
+export async function deleteReimbursementItem(claimId: string, itemId: string): Promise<ReimbursementClaim> {
+  return request<ReimbursementClaim>(`/reimbursements/claims/${claimId}/items/${itemId}`, { method: "DELETE" });
+}
+
+export async function sendReimbursementClaim(claimId: string): Promise<ReimbursementClaim> {
+  return request<ReimbursementClaim>(`/reimbursements/claims/${claimId}/send`, { method: "POST" });
+}
+
+export async function cancelReimbursementClaim(claimId: string): Promise<ReimbursementClaim> {
+  return request<ReimbursementClaim>(`/reimbursements/claims/${claimId}/cancel`, { method: "POST" });
+}
+
+export async function refreshReimbursementSnapshots(claimId: string): Promise<ReimbursementClaim> {
+  return request<ReimbursementClaim>(`/reimbursements/claims/${claimId}/refresh-snapshots`, { method: "POST" });
+}
+
+export async function getReimbursementEvents(claimId: string): Promise<ReimbursementEvent[]> {
+  return request<ReimbursementEvent[]>(`/reimbursements/claims/${claimId}/events`);
+}
+
+export async function getReimbursementEligibleTransactions(params?: { q?: string; limit?: number }): Promise<ReimbursementEligibleTransaction[]> {
+  const search = new URLSearchParams();
+  if (params?.q) search.set("q", params.q);
+  if (params?.limit) search.set("limit", String(params.limit));
+  const query = search.toString();
+  return request<ReimbursementEligibleTransaction[]>(`/reimbursements/eligible-transactions${query ? `?${query}` : ""}`);
 }
 
 export async function getCategories(): Promise<Category[]> {

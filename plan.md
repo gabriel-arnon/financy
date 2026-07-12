@@ -50,6 +50,17 @@ Foco:
 - detecção de recorrências;
 - renomeação de descrições importadas.
 
+### 4. Ressarcimentos
+
+Arquivo principal: `docs/reimbursements-plan.md`
+
+Foco:
+
+- manter Fundacoes 0, 1 e 2 estabilizadas;
+- manter migrations validadas em PostgreSQL local e aplicar em Supabase remoto apenas com autorizacao explicita;
+- preparar Fundacao 3 somente depois de validar RLS, convites e escopo de portal guest;
+- nao iniciar Telegram, OCR, audio, pagamentos ou inbox antes das fundacoes owner/guest estarem seguras.
+
 ## Sequência Recomendada
 
 1. Resolver P7.1, P7.3, P7.6 por serem ajustes diretos e visíveis.
@@ -60,6 +71,7 @@ Foco:
 6. Implementar P6.3 depois que agregações e filtros do dashboard estiverem sólidos.
 7. Implementar P6.4/P6.5 quando houver escopo claro de intents e limites de segurança.
 8. Implementar P6.6/P6.7 como refinamentos contínuos.
+9. Para Ressarcimentos, proxima fase recomendada: RLS final, convites/memberships e portal guest limitado, sem pagamentos integrados.
 
 ## Critérios de Pronto
 

@@ -58,3 +58,40 @@ class ClassificationMatchScope(StrEnum):
     description = "description"
     original_description = "original_description"
     both = "both"
+
+
+class StoredFileStatus(StrEnum):
+    uploaded = "uploaded"
+    quarantined = "quarantined"
+    available = "available"
+    rejected = "rejected"
+    deleted = "deleted"
+
+
+class StoredFileScanStatus(StrEnum):
+    pending = "pending"
+    clean = "clean"
+    suspicious = "suspicious"
+    failed = "failed"
+    skipped = "skipped"
+
+
+class ReimbursementClaimStatus(StrEnum):
+    draft = "draft"
+    sent = "sent"
+    acknowledged = "acknowledged"
+    disputed = "disputed"
+    partially_paid = "partially_paid"
+    paid = "paid"
+    canceled = "canceled"
+
+
+class ReimbursementItemStatus(StrEnum):
+    active = "active"
+    canceled = "canceled"
+
+
+class ReimbursementEventActorType(StrEnum):
+    owner = "owner"
+    guest = "guest"
+    system = "system"

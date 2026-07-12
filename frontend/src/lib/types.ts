@@ -4,6 +4,8 @@ export type AccountType = "checking" | "savings" | "wallet" | "investment";
 export type EntityStatus = "active" | "inactive";
 export type ClassificationMatchScope = "description" | "original_description" | "both";
 export type CategoryType = "expense" | "income" | "both";
+export type ReimbursementClaimStatus = "draft" | "sent" | "acknowledged" | "disputed" | "partially_paid" | "paid" | "canceled";
+export type ReimbursementItemStatus = "active" | "canceled";
 
 export interface Category {
   id: string;
@@ -161,6 +163,39 @@ export interface UploadImportResponse {
   file_id: string;
   filename: string;
   preview_count: number;
+}
+
+export interface StoredFile {
+  id: string;
+  owner_user_id: string;
+  original_filename: string;
+  declared_mime_type: string | null;
+  detected_mime_type: string;
+  size_bytes: number;
+  sha256_hash: string;
+  source: string;
+  status: "uploaded" | "quarantined" | "available" | "rejected" | "deleted";
+  scan_status: "pending" | "clean" | "suspicious" | "failed" | "skipped";
+  metadata: Record<string, unknown>;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+export interface FileSignedUrl {
+  file_id: string;
+  url: string;
+  expires_at: string;
+}
+
+export interface TransactionAttachment {
+  id: string;
+  owner_user_id: string;
+  transaction_id: string;
+  file_id: string;
+  status: EntityStatus;
+  created_at: string;
+  deleted_at: string | null;
+  file: StoredFile;
 }
 
 export interface AiImportAnalysisResponse {
@@ -349,4 +384,106 @@ export interface CardSummary {
   upcoming_statements: CardSummaryStatement[];
   statement_history: CardSummaryStatement[];
   recent_transactions: CardSummaryTransaction[];
+}
+
+export interface ReimbursementContact {
+  id: string;
+  owner_user_id: string;
+  display_name: string;
+  email: string | null;
+  phone: string | null;
+  status: EntityStatus;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface ReimbursementContactPayload {
+  display_name: string;
+  email?: string | null;
+  phone?: string | null;
+  status?: EntityStatus;
+}
+
+export interface ReimbursementItem {
+  id: string;
+  owner_user_id: string;
+  claim_id: string;
+  transaction_id: string;
+  amount_requested: string;
+  status: ReimbursementItemStatus;
+  transaction_snapshot: Record<string, unknown>;
+  snapshot_is_current: boolean | null;
+  position: number;
+  canceled_at: string | null;
+  created_at: string;
+}
+
+export interface ReimbursementClaim {
+  id: string;
+  owner_user_id: string;
+  contact_id: string;
+  title: string;
+  description: string | null;
+  due_date: string | null;
+  status: ReimbursementClaimStatus;
+  total_snapshot: string | null;
+  total_amount: string;
+  version: number;
+  sent_at: string | null;
+  canceled_at: string | null;
+  first_viewed_at: string | null;
+  last_viewed_at: string | null;
+  view_count: number;
+  created_at: string;
+  updated_at: string | null;
+  contact: ReimbursementContact | null;
+  items: ReimbursementItem[];
+}
+
+export interface ReimbursementClaimPayload {
+  contact_id: string;
+  title: string;
+  description?: string | null;
+  due_date?: string | null;
+}
+
+export interface ReimbursementOverview {
+  total_sent: string;
+  draft_count: number;
+  sent_count: number;
+  canceled_count: number;
+  recent_claims: ReimbursementClaim[];
+  draft_claims: ReimbursementClaim[];
+  upcoming_claims: ReimbursementClaim[];
+}
+
+export interface ReimbursementEligibleTransaction {
+  id: string;
+  transaction_date: string;
+  description: string;
+  amount: string;
+  type: string;
+  status: string;
+  category_id: string | null;
+  account_id: string | null;
+  card_id: string | null;
+  card_statement_id: string | null;
+  allocated_amount: string;
+  available_amount: string;
+  eligible: boolean;
+  ineligible_reason: string | null;
+}
+
+export interface ReimbursementEvent {
+  id: string;
+  owner_user_id: string;
+  claim_id: string | null;
+  contact_id: string | null;
+  item_id: string | null;
+  actor_type: "owner" | "guest" | "system";
+  actor_user_id: string | null;
+  event_type: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }

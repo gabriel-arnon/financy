@@ -5,6 +5,7 @@ import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import { AccountsContent } from "@/components/accounts-content";
 import { CardsContent } from "@/components/cards-content";
 import { DashboardContent } from "@/components/dashboard-content";
+import { ReimbursementsContent } from "@/components/reimbursements-content";
 import { RulesContent } from "@/components/rules-content";
 import { StatementsContent } from "@/components/statements-content";
 import { TransactionsTable } from "@/components/transactions-table";
@@ -16,6 +17,10 @@ import {
   getCards,
   getCategories,
   getClassificationRules,
+  getReimbursementClaims,
+  getReimbursementContacts,
+  getReimbursementEligibleTransactions,
+  getReimbursementOverview,
   getStatements,
   getTransactions
 } from "@/lib/api";
@@ -378,6 +383,42 @@ export function StatementsPageLoader() {
       label="Carregando faturas..."
       variant="list"
       render={({ statements, accounts, cards }) => <StatementsContent accounts={accounts} cards={cards} statements={statements} />}
+    />
+  );
+}
+
+export function ReimbursementsPageLoader() {
+  const ready = useReadyForData();
+  const load = useCallback(async () => {
+    const [overview, contacts, claims, eligibleTransactions, categories, accounts, cards] = await Promise.all([
+      getReimbursementOverview(),
+      getReimbursementContacts(),
+      getReimbursementClaims(),
+      getReimbursementEligibleTransactions({ limit: 50 }),
+      getCategories(),
+      getAccounts(),
+      getCards()
+    ]);
+    return { overview, contacts, claims, eligibleTransactions, categories, accounts, cards };
+  }, []);
+  const state = usePageData(ready, load, "Falha ao carregar ressarcimentos.");
+
+  return (
+    <PageDataBoundary
+      {...state}
+      label="Carregando ressarcimentos..."
+      variant="list"
+      render={({ overview, contacts, claims, eligibleTransactions, categories, accounts, cards }) => (
+        <ReimbursementsContent
+          initialAccounts={accounts}
+          initialCards={cards}
+          initialCategories={categories}
+          initialClaims={claims}
+          initialContacts={contacts}
+          initialEligibleTransactions={eligibleTransactions}
+          initialOverview={overview}
+        />
+      )}
     />
   );
 }

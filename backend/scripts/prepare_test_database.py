@@ -13,6 +13,7 @@ from psycopg import sql
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from app.core.config import settings
+from scripts.dev_db_safety import assert_local_database_url
 from scripts.apply_migrations import apply_migrations
 
 
@@ -42,6 +43,8 @@ def main() -> None:
     if not args.database_url:
         raise SystemExit("TEST_DATABASE_URL or DATABASE_URL is required.")
 
+    safe = assert_local_database_url(args.database_url, purpose="test database preparation")
+    print(f"Target test database: {safe.display}")
     ensure_database(args.database_url)
     applied = apply_migrations(args.database_url, reset=True)
     print("Test database prepared.")

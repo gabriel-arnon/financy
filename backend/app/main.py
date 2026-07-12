@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import accounts, ai_finance, categories, classification_rules, imports, statements, transactions
+from app.api import accounts, ai_finance, categories, classification_rules, files, imports, reimbursements, statements, transactions
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 
 
 app = FastAPI(title=settings.app_name)
+settings.validate_private_files_config()
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,6 +20,9 @@ app.add_middleware(
 register_exception_handlers(app)
 
 app.include_router(imports.router)
+app.include_router(files.files_router)
+app.include_router(files.transaction_attachments_router)
+app.include_router(reimbursements.router)
 app.include_router(ai_finance.router)
 app.include_router(statements.router)
 app.include_router(transactions.router)
