@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { AppShell } from "@/components/app-shell";
 import { AuthProvider } from "@/components/auth-provider";
 import { ThemeInitializer } from "@/components/theme-initializer";
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <AppShell>{children}</AppShell>
           </ToastProvider>
         </AuthProvider>
+        <Analytics />
       </body>
     </html>
   );
