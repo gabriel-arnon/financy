@@ -610,3 +610,33 @@ Backend, quando houver alteração de API, serviços, parser ou persistência:
 cd backend
 .\.venv\Scripts\python.exe -m pytest
 ```
+
+### [ ] P9.4 - Fundacao 3.5 de Ressarcimentos
+
+Objetivo:
+
+- Implementar comunicacao segura owner/guest em claims e reforcar protecao de convites antes de pagamentos e automacoes.
+
+Feito na Etapa A:
+
+- Plano registrado em `docs/foundation-3.5-plan.md`.
+
+Feito na Etapa B:
+
+- Criadas migrations `009_reimbursement_comments.sql` e `010_invitation_accept_rate_limits.sql`.
+- Backend de comentarios implementado com autorizacao owner/guest, texto puro, paginacao e soft delete.
+- Rate limiting persistente do aceite de convites implementado com token hash e origem derivada.
+- Testes unitarios e PostgreSQL reais adicionados.
+
+Feito na Etapa C:
+
+- UI owner de comentarios adicionada ao detalhe de cobranca.
+- UI guest de comentarios adicionada ao portal compartilhado.
+- Componente reutilizavel de comentarios criado com listagem, envio, exclusao, estados de loading/erro/vazio e dialogo de confirmacao.
+- Client API tipado integrado aos endpoints de comentarios.
+- E2E owner/guest adicionados para envio, ordem cronologica, exclusao, ausencia de HTML renderizado e feedback de rate limit.
+
+Pendente:
+
+- Etapa D: auditoria RLS final, tratamento de erros complementar, protecao do fallback de API URL e validacao final.
+- Nao iniciar pagamentos, Telegram, OCR, audio, inbox, filas ou Fundacao 4 antes do fechamento.

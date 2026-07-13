@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.enums import (
     EntityStatus,
@@ -11,7 +11,11 @@ from app.models.enums import (
     ReimbursementInvitationStatus,
     ReimbursementItemStatus,
     ReimbursementMembershipStatus,
+    ReimbursementCommentAuthorRole,
 )
+
+
+REIMBURSEMENT_COMMENT_MAX_LENGTH = 2000
 
 
 class ReimbursementContactCreate(BaseModel):
@@ -154,6 +158,29 @@ class ReimbursementMembershipRead(BaseModel):
     revoked_at: datetime | None = None
     created_at: datetime
     contact: ReimbursementContactRead | None = None
+
+
+class ReimbursementCommentCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=REIMBURSEMENT_COMMENT_MAX_LENGTH)
+
+    @field_validator("body")
+    @classmethod
+    def normalize_body(cls, value: str) -> str:
+        body = value.strip()
+        if not body:
+            raise ValueError("Comentario nao pode ficar vazio.")
+        return body
+
+
+class ReimbursementCommentRead(BaseModel):
+    id: str
+    claim_id: str
+    author_role: ReimbursementCommentAuthorRole
+    author_label: str
+    is_mine: bool
+    body: str
+    created_at: datetime
+    updated_at: datetime | None = None
 
 
 class GuestReimbursementAction(BaseModel):

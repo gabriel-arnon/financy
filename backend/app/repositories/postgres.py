@@ -961,6 +961,59 @@ class PostgresRepository:
             (user_id, claim_id),
         )
 
+    def create_reimbursement_comment(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert(
+            "reimbursement_comments",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                "updated_at": None,
+                "deleted_at": None,
+                "deleted_by_user_id": None,
+                "deleted_by_role": None,
+                **payload,
+            },
+        )
+
+    def list_reimbursement_comments(self, user_id: str, claim_id: str, limit: int = 50, cursor: str | None = None) -> list[dict[str, Any]]:
+        params: list[Any] = [user_id, claim_id]
+        cursor_filter = ""
+        if cursor:
+            try:
+                created_at, comment_id = cursor.rsplit("|", 1)
+            except ValueError:
+                created_at, comment_id = "", ""
+            if created_at and comment_id:
+                cursor_filter = "and (created_at, id) > (%s::timestamptz, %s::uuid)"
+                params.extend([created_at, comment_id])
+        params.append(limit)
+        return self._fetch_all(
+            f"""
+            select * from reimbursement_comments
+            where owner_user_id = %s
+              and claim_id = %s
+              and deleted_at is null
+              {cursor_filter}
+            order by created_at, id
+            limit %s
+            """,
+            tuple(params),
+        )
+
+    def get_reimbursement_comment(self, user_id: str, comment_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            "select * from reimbursement_comments where id = %s and owner_user_id = %s",
+            (comment_id, user_id),
+        )
+
+    def update_reimbursement_comment(self, user_id: str, comment_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update(
+            "reimbursement_comments",
+            payload,
+            "id = %s and owner_user_id = %s",
+            (comment_id, user_id),
+        )
+
     def list_reimbursement_invitations(self, user_id: str) -> list[dict[str, Any]]:
         return self._fetch_all(
             "select * from reimbursement_invitations where owner_user_id = %s order by created_at desc",
@@ -984,6 +1037,52 @@ class PostgresRepository:
                 "owner_user_id": user_id,
                 **payload,
             },
+        )
+
+    def begin_invitation_accept_attempt(
+        self,
+        *,
+        token_hash: str,
+        ip_hash: str,
+        auth_user_id: str,
+        max_attempts: int,
+        window_started_at: datetime,
+        attempted_at: datetime,
+    ) -> dict[str, Any]:
+        attempt_id = str(uuid4())
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("select pg_advisory_xact_lock(hashtext(%s))", (f"{token_hash}:{ip_hash}",))
+            cur.execute(
+                """
+                select count(*) as attempt_count
+                from reimbursement_invitation_accept_attempts
+                where token_hash = %s
+                  and ip_hash = %s
+                  and attempted_at >= %s
+                """,
+                (token_hash, ip_hash, window_started_at),
+            )
+            attempt_count = int(cur.fetchone()["attempt_count"])
+            allowed = attempt_count < max_attempts
+            cur.execute(
+                """
+                insert into reimbursement_invitation_accept_attempts
+                  (id, token_hash, ip_hash, auth_user_id, attempted_at, success, failure_code)
+                values (%s, %s, %s, %s, %s, false, %s)
+                returning id
+                """,
+                (attempt_id, token_hash, ip_hash, auth_user_id, attempted_at, None if allowed else "rate_limited"),
+            )
+            return {"allowed": allowed, "attempt_id": str(cur.fetchone()["id"])}
+
+    def complete_invitation_accept_attempt(self, attempt_id: str, *, success: bool, failure_code: str | None) -> None:
+        self._execute(
+            """
+            update reimbursement_invitation_accept_attempts
+            set success = %s, failure_code = %s
+            where id = %s
+            """,
+            (success, failure_code, attempt_id),
         )
 
     def update_reimbursement_invitation(self, user_id: str, invitation_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:

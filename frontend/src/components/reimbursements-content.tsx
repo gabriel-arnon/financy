@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, FileText, Pencil, Plus, RefreshCw, Search, Send, Trash2, UserPlus, X } from "lucide-react";
 import { UiButton } from "@/components/ui-button";
+import { ReimbursementComments } from "@/components/reimbursement-comments";
 import { useToast } from "@/components/toast-provider";
 import {
   addReimbursementItem,
@@ -856,6 +857,8 @@ export function ReimbursementsContent({
                       ))}
                     </div>
                   </section>
+
+                  <ReimbursementComments claimId={selectedClaim.id} context="owner" />
                 </div>
               </div>
             ) : (

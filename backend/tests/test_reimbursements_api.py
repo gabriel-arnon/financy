@@ -1,5 +1,6 @@
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -68,6 +69,19 @@ def _create_claim(client: TestClient, contact_id: str, title: str = "Julho") -> 
     response = client.post("/reimbursements/claims", json={"contact_id": contact_id, "title": title, "due_date": "2026-07-31"})
     assert response.status_code == 200
     return response.json()
+
+
+def _create_sent_claim_with_guest(client: TestClient, repo: LocalJsonRepository) -> tuple[dict, str, str]:
+    transaction = _seed_transaction(repo, amount="100.00")
+    contact = _create_contact(client)
+    claim = _create_claim(client, contact["id"])
+    assert client.post(f"/reimbursements/claims/{claim['id']}/items", json={"transaction_id": transaction["id"], "amount_requested": "100.00"}).status_code == 200
+    assert client.post(f"/reimbursements/claims/{claim['id']}/send").status_code == 200
+    invite = client.post("/reimbursements/invitations", json={"contact_id": contact["id"], "claim_id": claim["id"]}).json()
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    membership = client.post("/reimbursements/guest/invitations/accept", json={"token": invite["accept_token"]}).json()
+    _override_current_user(USER_ID, "owner@example.com")
+    return claim, invite["accept_token"], membership["id"]
 
 
 def test_contact_crud_is_owner_scoped_and_soft_deletes(tmp_path: Path, monkeypatch) -> None:
@@ -592,3 +606,145 @@ def test_guest_claim_attachments_are_explicit_and_revocable(tmp_path: Path, monk
     assert client.post(f"/reimbursements/memberships/{membership['id']}/revoke").status_code == 200
     _override_current_user(GUEST_USER_ID, "mae@example.com")
     assert client.get(f"/reimbursements/guest/claims/{claim['id']}/attachments").status_code == 404
+
+
+def test_owner_and_guest_can_comment_shared_claim(tmp_path: Path, monkeypatch) -> None:
+    client, repo = _client_with_repo(tmp_path, monkeypatch)
+    claim, _token, _membership_id = _create_sent_claim_with_guest(client, repo)
+
+    owner_comment = client.post(
+        f"/reimbursements/claims/{claim['id']}/comments",
+        json={"body": " Segue comprovante. ", "author_user_id": OTHER_USER_ID, "author_role": "guest"},
+    )
+    assert owner_comment.status_code == 200
+    owner_body = owner_comment.json()
+    assert owner_body["body"] == "Segue comprovante."
+    assert owner_body["author_role"] == "owner"
+    assert owner_body["author_label"] == "Voce"
+    assert "author_user_id" not in owner_body
+
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    guest_comment = client.post(f"/reimbursements/claims/{claim['id']}/comments", json={"body": "Foi para mim mesmo?"})
+    assert guest_comment.status_code == 200
+    assert guest_comment.json()["author_role"] == "guest"
+
+    listed = client.get(f"/reimbursements/claims/{claim['id']}/comments")
+    assert listed.status_code == 200
+    assert [item["body"] for item in listed.json()] == ["Segue comprovante.", "Foi para mim mesmo?"]
+    assert listed.json()[0]["author_label"] == "Titular"
+    assert listed.json()[1]["author_label"] == "Voce"
+
+    event_types = [event["event_type"] for event in repo._read()["reimbursement_events"]]
+    assert event_types.count("comment_created") == 2
+    comment_events = [event for event in repo._read()["reimbursement_events"] if event["event_type"] == "comment_created"]
+    assert all("body" not in event.get("metadata", {}) for event in comment_events)
+
+
+def test_comment_access_is_blocked_for_guest_without_active_membership(tmp_path: Path, monkeypatch) -> None:
+    client, repo = _client_with_repo(tmp_path, monkeypatch)
+    claim, _token, membership_id = _create_sent_claim_with_guest(client, repo)
+
+    _override_current_user(OTHER_USER_ID, "outra@example.com")
+    assert client.get(f"/reimbursements/claims/{claim['id']}/comments").status_code == 404
+    assert client.post(f"/reimbursements/claims/{claim['id']}/comments", json={"body": "Oi"}).status_code == 404
+
+    _override_current_user(USER_ID, "owner@example.com")
+    assert client.post(f"/reimbursements/memberships/{membership_id}/revoke").status_code == 200
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    assert client.get(f"/reimbursements/claims/{claim['id']}/comments").status_code == 404
+    assert client.post(f"/reimbursements/claims/{claim['id']}/comments", json={"body": "Depois da revogacao"}).status_code == 404
+
+
+def test_comment_validation_pagination_and_soft_delete(tmp_path: Path, monkeypatch) -> None:
+    client, repo = _client_with_repo(tmp_path, monkeypatch)
+    claim, _token, _membership_id = _create_sent_claim_with_guest(client, repo)
+
+    empty = client.post(f"/reimbursements/claims/{claim['id']}/comments", json={"body": "   "})
+    assert empty.status_code == 422
+    too_long = client.post(f"/reimbursements/claims/{claim['id']}/comments", json={"body": "x" * 2001})
+    assert too_long.status_code == 422
+
+    first = client.post(f"/reimbursements/claims/{claim['id']}/comments", json={"body": "Primeiro"}).json()
+    second = client.post(f"/reimbursements/claims/{claim['id']}/comments", json={"body": "Segundo"}).json()
+
+    limited = client.get(f"/reimbursements/claims/{claim['id']}/comments?limit=1")
+    assert limited.status_code == 200
+    assert [item["body"] for item in limited.json()] == ["Primeiro"]
+    cursor = f"{first['created_at']}|{first['id']}"
+    paged = client.get(f"/reimbursements/claims/{claim['id']}/comments?limit=1&cursor={cursor}")
+    assert paged.status_code == 200
+    assert [item["body"] for item in paged.json()] == ["Segundo"]
+
+    deleted = client.delete(f"/reimbursements/claims/{claim['id']}/comments/{first['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json()["status"] == "deleted"
+    assert client.delete(f"/reimbursements/claims/{claim['id']}/comments/{first['id']}").status_code == 409
+    remaining = client.get(f"/reimbursements/claims/{claim['id']}/comments")
+    assert [item["id"] for item in remaining.json()] == [second["id"]]
+    stored = repo.get_reimbursement_comment(USER_ID, first["id"])
+    assert stored["deleted_at"] is not None
+    assert stored["deleted_by_user_id"] == USER_ID
+
+
+def test_guest_can_delete_own_comment_but_not_owner_comment(tmp_path: Path, monkeypatch) -> None:
+    client, _repo = _client_with_repo(tmp_path, monkeypatch)
+    claim, _token, _membership_id = _create_sent_claim_with_guest(client, _repo)
+    owner_comment = client.post(f"/reimbursements/claims/{claim['id']}/comments", json={"body": "Owner"}).json()
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    guest_comment = client.post(f"/reimbursements/claims/{claim['id']}/comments", json={"body": "Guest"}).json()
+
+    forbidden = client.delete(f"/reimbursements/claims/{claim['id']}/comments/{owner_comment['id']}")
+    assert forbidden.status_code == 403
+    own = client.delete(f"/reimbursements/claims/{claim['id']}/comments/{guest_comment['id']}")
+    assert own.status_code == 200
+
+
+def test_owner_can_moderate_guest_comment_and_other_owner_cannot(tmp_path: Path, monkeypatch) -> None:
+    client, _repo = _client_with_repo(tmp_path, monkeypatch)
+    claim, _token, _membership_id = _create_sent_claim_with_guest(client, _repo)
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    guest_comment = client.post(f"/reimbursements/claims/{claim['id']}/comments", json={"body": "Guest"}).json()
+
+    _override_current_user(OTHER_USER_ID, "other@example.com")
+    assert client.delete(f"/reimbursements/claims/{claim['id']}/comments/{guest_comment['id']}").status_code == 404
+
+    _override_current_user(USER_ID, "owner@example.com")
+    moderated = client.delete(f"/reimbursements/claims/{claim['id']}/comments/{guest_comment['id']}")
+    assert moderated.status_code == 200
+
+
+def test_invitation_accept_rate_limit_blocks_without_token_enumeration(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "invitation_accept_rate_limit_enabled", True)
+    monkeypatch.setattr(settings, "invitation_accept_rate_limit_max_attempts", 2)
+    monkeypatch.setattr(settings, "invitation_accept_rate_limit_window_seconds", 60)
+    client, repo = _client_with_repo(tmp_path, monkeypatch)
+
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    assert client.post("/reimbursements/guest/invitations/accept", json={"token": "invalid-token-value-123"}).status_code == 404
+    assert client.post("/reimbursements/guest/invitations/accept", json={"token": "invalid-token-value-123"}).status_code == 404
+    blocked = client.post("/reimbursements/guest/invitations/accept", json={"token": "invalid-token-value-123"})
+    assert blocked.status_code == 429
+    assert blocked.json()["error"]["code"] == "reimbursement_invitation_rate_limited"
+    attempts = repo._read()["reimbursement_invitation_accept_attempts"]
+    assert len(attempts) == 3
+    assert all("invalid-token-value-123" not in str(item) for item in attempts)
+
+
+def test_invitation_accept_rate_limit_can_be_disabled_and_window_expires(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "invitation_accept_rate_limit_enabled", True)
+    monkeypatch.setattr(settings, "invitation_accept_rate_limit_max_attempts", 1)
+    monkeypatch.setattr(settings, "invitation_accept_rate_limit_window_seconds", 60)
+    client, repo = _client_with_repo(tmp_path, monkeypatch)
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+
+    assert client.post("/reimbursements/guest/invitations/accept", json={"token": "invalid-token-value-abc"}).status_code == 404
+    assert client.post("/reimbursements/guest/invitations/accept", json={"token": "invalid-token-value-abc"}).status_code == 429
+    data = repo._read()
+    for attempt in data["reimbursement_invitation_accept_attempts"]:
+        attempt["attempted_at"] = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
+    repo._write(data)
+    assert client.post("/reimbursements/guest/invitations/accept", json={"token": "invalid-token-value-abc"}).status_code == 404
+
+    monkeypatch.setattr(settings, "invitation_accept_rate_limit_enabled", False)
+    for _ in range(3):
+        assert client.post("/reimbursements/guest/invitations/accept", json={"token": "another-invalid-token-value"}).status_code == 404

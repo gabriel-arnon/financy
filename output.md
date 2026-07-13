@@ -1229,3 +1229,159 @@ Fora de escopo preservado:
 
 - Fundacao 3 nao foi iniciada.
 - Portal guest, invitations, memberships, comentarios, pagamentos, Telegram, OCR, audio, inbox e filas nao foram implementados.
+
+## Fundacao 3.5 - Etapa B backend
+
+Data: 2026-07-13.
+
+Escopo executado:
+
+- Migrations backend/PostgreSQL para comentarios e rate limit de convites.
+- Backend de comentarios em ressarcimentos.
+- Rate limiting persistente no aceite de convites.
+- Testes unitarios e PostgreSQL reais.
+- Documentacao operacional de variaveis e checklist.
+
+Arquivos criados:
+
+- `docs/foundation-3.5-plan.md`;
+- `docs/environments.md`;
+- `docs/deploy-checklist.md`;
+- `docs/supabase/migrations/009_reimbursement_comments.sql`;
+- `docs/supabase/migrations/010_invitation_accept_rate_limits.sql`.
+
+Arquivos alterados:
+
+- `backend/.env.example`;
+- `backend/.env.production.example`;
+- `backend/app/api/reimbursements.py`;
+- `backend/app/core/config.py`;
+- `backend/app/models/enums.py`;
+- `backend/app/repositories/local_json.py`;
+- `backend/app/repositories/postgres.py`;
+- `backend/app/schemas/reimbursements.py`;
+- `backend/app/services/reimbursement_service.py`;
+- `backend/tests/test_reimbursements_api.py`;
+- `backend/tests_postgres/test_reimbursements_postgres.py`;
+- `output.md`;
+- `plan.md`;
+- `task.md`.
+
+Modelo final:
+
+- `reimbursement_comments` guarda comentarios por claim com `owner_user_id`, `claim_id`, `author_user_id`, `author_role`, `body`, timestamps e soft delete.
+- Comentarios sao imutaveis nesta versao; exclusao e logica.
+- `reimbursement_invitation_accept_attempts` guarda somente `token_hash`, `ip_hash`, usuario autenticado opcional, timestamp e resultado.
+- Token bruto e IP bruto nao sao persistidos.
+
+Endpoints implementados:
+
+- `GET /reimbursements/claims/{claim_id}/comments`;
+- `POST /reimbursements/claims/{claim_id}/comments`;
+- `DELETE /reimbursements/claims/{claim_id}/comments/{comment_id}`.
+
+Regras de autorizacao:
+
+- Owner pode listar/comentar/moderar comentarios de claims proprios.
+- Guest precisa de membership ativa e claim compartilhada.
+- Guest pode excluir somente comentario proprio.
+- Guest revogado ou sem acesso recebe bloqueio sem acessar comentarios.
+- `author_user_id`, `author_role`, `deleted_at` e dados internos nao sao aceitos do cliente.
+
+Rate limiting:
+
+- Configurado por:
+  - `INVITATION_ACCEPT_RATE_LIMIT_ENABLED`;
+  - `INVITATION_ACCEPT_RATE_LIMIT_MAX_ATTEMPTS`;
+  - `INVITATION_ACCEPT_RATE_LIMIT_WINDOW_SECONDS`.
+- Implementacao principal usa PostgreSQL com lock transacional via advisory lock por `token_hash` + `ip_hash`.
+- Repository local simula a mesma regra com lock para testes deterministicos.
+- Excesso retorna `429` com `reimbursement_invitation_rate_limited`.
+
+RLS:
+
+- Nao foi criada migration `011`.
+- Decisao: RLS final permanece para a Etapa D, porque esta etapa nao aplica policies remotas e nao deve criar migration vazia.
+- Autorizacao backend foi reforcada e testada; service role permanece exclusiva do backend.
+
+Validacoes:
+
+- `cd backend; .venv\Scripts\python.exe -m pytest tests\test_reimbursements_api.py -q` -> `26 passed in 5.97s`.
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_dev_db.ps1 -ResetSchema` -> migrations `001` a `010` aplicadas no PostgreSQL local `localhost`.
+- `cd backend; $env:TEST_DATABASE_URL='postgresql://financy_dev:financy_dev_local@localhost:5432/financy_dev_test'; .venv\Scripts\python.exe -m pytest tests_postgres -m postgres -q` -> `14 passed in 18.33s`.
+- `cd backend; .venv\Scripts\python.exe -m pytest` -> `99 passed, 1 warning in 17.43s`.
+
+Warning restante:
+
+- Permanece o warning conhecido do ReportLab em `reportlab/lib/rl_safe_eval.py` sobre `ast.NameConstant` deprecado para Python 3.14.
+
+Pendencias:
+
+- Etapa C: frontend owner e portal guest para comentarios.
+- Etapa D: auditoria RLS final, hardening de fallback de API URL, documentacao final e validacoes completas.
+- Frontend nao foi implementado nesta etapa.
+- Pagamentos, Telegram, OCR, audio, inbox, filas e Fundacao 4 nao foram iniciados.
+
+## Fundacao 3.5 - Etapa C frontend
+
+Data: 2026-07-13.
+
+Escopo executado:
+
+- UI owner para comentarios no detalhe de cobranca de ressarcimento.
+- UI guest para comentarios no portal `/guest/reimbursements`.
+- Integracao frontend com endpoints de comentarios ja existentes.
+- Testes E2E para owner e guest.
+- Documentacao da etapa e pendencias para Etapa D.
+
+Arquivos criados:
+
+- `frontend/src/components/reimbursement-comments.tsx`.
+
+Arquivos alterados:
+
+- `frontend/src/components/reimbursements-content.tsx`;
+- `frontend/src/components/guest-reimbursements-content.tsx`;
+- `frontend/src/lib/api.ts`;
+- `frontend/src/lib/types.ts`;
+- `frontend/tests/e2e/reimbursements.spec.ts`;
+- `docs/foundation-3.5-plan.md`;
+- `docs/deploy-checklist.md`;
+- `output.md`;
+- `plan.md`;
+- `task.md`.
+
+Comportamento implementado:
+
+- Owner e guest autorizados listam comentarios em ordem cronologica.
+- Comentarios usam texto puro, trim obrigatorio e limite de 2000 caracteres.
+- O envio atualiza a lista sem reload completo.
+- Exclusao logica e acionada por dialog proprio, sem `window.confirm`.
+- Owner pode acionar moderacao quando o backend autoriza; guest ve apenas exclusao de comentarios proprios.
+- HTML digitado no comentario e exibido como texto, sem parser Markdown e sem `dangerouslySetInnerHTML`.
+- Erros `401`, `403`, `404`, `409`, `422` e `429` sao convertidos em mensagens amigaveis.
+
+Endpoints consumidos:
+
+- `GET /reimbursements/claims/{claim_id}/comments`;
+- `POST /reimbursements/claims/{claim_id}/comments`;
+- `DELETE /reimbursements/claims/{claim_id}/comments/{comment_id}`.
+
+Validacoes:
+
+- `cd frontend; npm.cmd run typecheck` -> passou.
+- `cd frontend; npm.cmd run lint` -> passou.
+- `cd frontend; npm.cmd run build` -> passou.
+- `cd frontend; npx.cmd playwright test -g comments --reporter=line` -> `2 passed`.
+- `cd frontend; npm.cmd run e2e` -> `29 passed (49.5s)`.
+- `cd backend; .venv\Scripts\python.exe -m pytest` -> `99 passed, 1 warning in 17.12s`.
+
+Warning restante:
+
+- Permanece o warning conhecido do ReportLab em `reportlab/lib/rl_safe_eval.py` sobre `ast.NameConstant` deprecado para Python 3.14.
+
+Pendencias:
+
+- Etapa D: auditoria RLS final, revisao de signed URLs/attachments, hardening do fallback de API URL e validacao final.
+- Testes unitarios dedicados de componente frontend nao foram adicionados porque o projeto segue cobrindo estes fluxos por Playwright E2E; a cobertura nova foi adicionada na suite E2E existente.
+- Pagamentos, Telegram, OCR, audio, inbox, filas e Fundacao 4 nao foram iniciados.

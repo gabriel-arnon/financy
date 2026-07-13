@@ -72,7 +72,7 @@ Foco:
 6. Implementar P6.3 depois que agregações e filtros do dashboard estiverem sólidos.
 7. Implementar P6.4/P6.5 quando houver escopo claro de intents e limites de segurança.
 8. Implementar P6.6/P6.7 como refinamentos contínuos.
-9. Para Ressarcimentos, proxima fase recomendada: Fundacao 3.5 com comentarios owner/guest e hardening de RLS/auditoria, sem pagamentos integrados.
+9. Para Ressarcimentos, continuar Fundacao 3.5: Etapas B e C concluidas; proximo passo e Etapa D com auditoria RLS final, hardening de erros/API URL e validacao final.
 
 ## Critérios de Pronto
 

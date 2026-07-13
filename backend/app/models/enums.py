@@ -107,3 +107,8 @@ class ReimbursementInvitationStatus(StrEnum):
 class ReimbursementMembershipStatus(StrEnum):
     active = "active"
     revoked = "revoked"
+
+
+class ReimbursementCommentAuthorRole(StrEnum):
+    owner = "owner"
+    guest = "guest"
