@@ -42,6 +42,10 @@ Variaveis obrigatorias ou relevantes:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
+`NEXT_PUBLIC_API_URL` e obrigatoria em Vercel Preview e Production. Builds
+remotos nao podem usar `localhost`, `127.0.0.1` ou `http` sem TLS. O fallback
+local para `http://127.0.0.1:8000` e permitido apenas em desenvolvimento local.
+
 ## Prevencao de cruzamento
 
 | Regra | Motivo |
@@ -58,3 +62,15 @@ Variaveis obrigatorias ou relevantes:
 Comentarios de ressarcimentos usam autorizacao no backend. O guest precisa de
 membership ativa para acessar claims compartilhadas. Convites usam `token_hash`
 e rate limiting persistente por token hash e origem derivada.
+
+## RLS e Data API
+
+Operacoes funcionais de dados financeiros passam pelo FastAPI. A migration
+`011_reimbursements_security_hardening.sql` habilita RLS e revoga privilegios
+diretos de `PUBLIC`, `anon` e `authenticated` nas tabelas financeiras,
+arquivos privados, imports e ressarcimentos. Nao ha policy permissiva para
+acesso direto pela Data API nesta fundacao.
+
+O backend usa a conexao configurada em `DATABASE_URL` e a service role apenas
+para operacoes administrativas de Storage. A service role nunca deve ser
+exposta no frontend.

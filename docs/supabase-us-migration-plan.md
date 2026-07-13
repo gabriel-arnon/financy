@@ -3,6 +3,28 @@
 Data da auditoria: 2026-07-13  
 Escopo: análise estática do repositório local. Nenhuma migration foi executada, nenhum ambiente remoto foi acessado e nenhuma credencial foi lida ou registrada.
 
+## Atualizacao 2026-07-13 - Fundacao 3.5
+
+O estado atual da branch `dev` contem migrations versionadas de
+`001_initial_schema.sql` a `011_reimbursements_security_hardening.sql`.
+
+As observacoes antigas deste documento que citam schema versionado apenas ate
+`006` ou ausencia de `007`/`008` pertencem a uma auditoria anterior e nao
+representam mais o checkout atual. Para uma nova migracao/cutover, aplicar
+sempre `001` a `011` em ordem, validar `schema_migrations` e confirmar RLS
+habilitado pela `011`.
+
+Novas migrations apos a auditoria original:
+
+- `007_reimbursement_guest_access.sql`: invitations e memberships;
+- `008_reimbursement_claim_attachments.sql`: compartilhamento explicito de anexos de claims;
+- `009_reimbursement_comments.sql`: comentarios owner/guest;
+- `010_invitation_accept_rate_limits.sql`: rate limiting persistente do aceite de convites;
+- `011_reimbursements_security_hardening.sql`: RLS habilitado e grants diretos revogados para Data API publica.
+
+Nenhuma migration deve ser aplicada em Supabase remoto sem confirmacao explicita
+do ambiente alvo.
+
 ## 1. Resumo executivo
 
 O repositório atual contém migrations versionadas de `001_initial_schema.sql` a `006_reimbursements_domain.sql`. Esse conjunto reproduz o schema esperado pelo backend atualmente versionado para as funcionalidades de contas, cartões, transações, importações, regras, arquivos privados, anexos de transação e ressarcimentos owner-only.

@@ -9,8 +9,9 @@ import type {
   Category,
   ClassificationRule
 } from "@/lib/types";
+import { resolveApiBaseUrl } from "@/lib/api-url";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+const API_URL = resolveApiBaseUrl("Financy server API");
 const RETRY_DELAYS_MS = [600, 1500, 3000];
 const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
 

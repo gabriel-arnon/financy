@@ -460,7 +460,7 @@ def test_rate_limit_window_and_distinct_tokens_in_postgres(repo: PostgresReposit
     assert distinct_token.value.code == "reimbursement_invitation_invalid"
 
 
-def test_migrations_apply_009_010_and_are_skipped_on_second_run(database_url: str) -> None:
+def test_migrations_apply_009_010_011_and_are_skipped_on_second_run(database_url: str) -> None:
     applied_again = apply_migrations(database_url, reset=False)
     assert applied_again == []
     repository = PostgresRepository(database_url, dev_user_id=USER_ID)
@@ -470,6 +470,7 @@ def test_migrations_apply_009_010_and_are_skipped_on_second_run(database_url: st
             versions = [row["version"] for row in cur.fetchall()]
             assert "009_reimbursement_comments.sql" in versions
             assert "010_invitation_accept_rate_limits.sql" in versions
+            assert "011_reimbursements_security_hardening.sql" in versions
             cur.execute(
                 """
                 select table_name
@@ -499,5 +500,48 @@ def test_migrations_apply_009_010_and_are_skipped_on_second_run(database_url: st
                 "reimbursement_comments_claim_active_idx",
                 "reimbursement_invitation_attempts_window_idx",
             ]
+            cur.execute(
+                """
+                select relname, relrowsecurity
+                from pg_class
+                where relnamespace = 'public'::regnamespace
+                  and relname in (
+                    'transactions',
+                    'stored_files',
+                    'transaction_attachments',
+                    'reimbursement_claims',
+                    'reimbursement_items',
+                    'reimbursement_invitations',
+                    'reimbursement_memberships',
+                    'reimbursement_claim_attachments',
+                    'reimbursement_comments',
+                    'reimbursement_invitation_accept_attempts'
+                  )
+                order by relname
+                """
+            )
+            rls = {row["relname"]: row["relrowsecurity"] for row in cur.fetchall()}
+            assert all(rls.values())
+            cur.execute(
+                """
+                select grantee, table_name, privilege_type
+                from information_schema.role_table_grants
+                where table_schema = 'public'
+                  and grantee in ('PUBLIC', 'anon', 'authenticated')
+                  and table_name in (
+                    'transactions',
+                    'stored_files',
+                    'transaction_attachments',
+                    'reimbursement_claims',
+                    'reimbursement_items',
+                    'reimbursement_invitations',
+                    'reimbursement_memberships',
+                    'reimbursement_claim_attachments',
+                    'reimbursement_comments',
+                    'reimbursement_invitation_accept_attempts'
+                  )
+                """
+            )
+            assert cur.fetchall() == []
     finally:
         repository.pool.close()

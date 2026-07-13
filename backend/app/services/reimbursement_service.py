@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -48,6 +49,9 @@ from app.schemas.reimbursements import (
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+logger = logging.getLogger(__name__)
 
 
 GUEST_SHARED_CLAIM_STATUSES = {
@@ -296,6 +300,15 @@ class ReimbursementService:
             actor_type=access["role"],
             actor_user_id=user.id,
         )
+        logger.info(
+            "reimbursement_comment_created",
+            extra={
+                "owner_user_id": access["owner_user_id"],
+                "claim_id": claim_id,
+                "comment_id": comment["id"],
+                "actor_role": access["role"],
+            },
+        )
         return self._comment_read(user.id, access, comment)
 
     def delete_comment(self, user: Any, claim_id: str, comment_id: str) -> dict[str, str]:
@@ -329,6 +342,15 @@ class ReimbursementService:
             metadata={"comment_id": comment_id, "author_role": comment.get("author_role"), "deleted_by_role": access["role"]},
             actor_type=access["role"],
             actor_user_id=user.id,
+        )
+        logger.info(
+            "reimbursement_comment_deleted",
+            extra={
+                "owner_user_id": access["owner_user_id"],
+                "claim_id": claim_id,
+                "comment_id": comment_id,
+                "actor_role": access["role"],
+            },
         )
         if not updated:
             raise AppError("Comentario nao encontrado.", status_code=404, code="reimbursement_comment_not_found")
@@ -580,6 +602,10 @@ class ReimbursementService:
         claim = self._guest_claim(guest_user_id, claim_id)
         attachment = self.repository.get_reimbursement_claim_attachment(claim["owner_user_id"], attachment_id)
         if not attachment or attachment.get("claim_id") != claim["id"] or attachment.get("status") != "active":
+            logger.warning(
+                "reimbursement_claim_attachment_access_denied",
+                extra={"claim_id": claim_id, "attachment_id": attachment_id, "guest_user_id": guest_user_id},
+            )
             raise AppError("Comprovante nao encontrado.", status_code=404, code="reimbursement_claim_attachment_not_found")
         return claim["owner_user_id"], attachment["file_id"]
 
@@ -717,6 +743,10 @@ class ReimbursementService:
             attempted_at=now,
         )
         if not result.get("allowed"):
+            logger.warning(
+                "reimbursement_invitation_accept_rate_limited",
+                extra={"auth_user_id": user_id, "attempt_id": result.get("attempt_id")},
+            )
             raise AppError("Muitas tentativas. Tente novamente mais tarde.", status_code=429, code="reimbursement_invitation_rate_limited")
         return result.get("attempt_id")
 

@@ -669,3 +669,15 @@ Status em 2026-07-13:
 - atualizar `.env.example`, `.env.production.example`, `docs/environments.md`, `docs/deploy-checklist.md`, `task.md`, `plan.md` e `output.md`;
 - rodar validacoes completas;
 - documentar pendencias.
+
+Status em 2026-07-13:
+
+- migration `011_reimbursements_security_hardening.sql` criada para habilitar RLS e revogar acesso direto de `PUBLIC`, `anon` e `authenticated` nas tabelas financeiras, imports, arquivos privados e ressarcimentos;
+- decisao RLS: a Fundacao 3.5 nao cria policies permissivas para Data API; toda operacao funcional continua passando pelo FastAPI;
+- service role permanece exclusiva do backend/Storage e nao deve ir ao frontend;
+- signed URLs permanecem geradas somente apos autorizacao no backend; guest acessa apenas `reimbursement_claim_attachments` explicitamente compartilhados e membership revogada bloqueia novas URLs;
+- respostas de anexos nao retornam `storage_path`, bucket interno ou service role;
+- API URL ganhou helper compartilhado entre client/server e validacao de build para impedir fallback remoto silencioso para `127.0.0.1:8000`;
+- logs seguros adicionados para comentario criado/removido, rate limit de convite e falha de signed URL, sem body de comentario, token, IP bruto, JWT, service role ou URL assinada;
+- testes PostgreSQL validam registro da migration `011`, RLS habilitado e ausencia de grants diretos para roles publicas nas tabelas sensiveis;
+- Fundacao 3.5 considerada fechada apos validacoes finais locais; aplicacao remota das migrations continua dependente de aprovacao explicita por ambiente.

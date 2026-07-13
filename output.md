@@ -1385,3 +1385,63 @@ Pendencias:
 - Etapa D: auditoria RLS final, revisao de signed URLs/attachments, hardening do fallback de API URL e validacao final.
 - Testes unitarios dedicados de componente frontend nao foram adicionados porque o projeto segue cobrindo estes fluxos por Playwright E2E; a cobertura nova foi adicionada na suite E2E existente.
 - Pagamentos, Telegram, OCR, audio, inbox, filas e Fundacao 4 nao foram iniciados.
+
+## Fundacao 3.5 - Etapa D fechamento
+
+Data: 2026-07-13.
+
+Escopo executado:
+
+- Auditoria final de RLS/Data API.
+- Hardening de acesso direto a tabelas financeiras.
+- Revisao de signed URLs e anexos.
+- Protecao contra fallback remoto silencioso de API URL.
+- Observabilidade segura para eventos sensiveis.
+- Testes PostgreSQL, backend, frontend e E2E.
+
+Migration criada:
+
+- `docs/supabase/migrations/011_reimbursements_security_hardening.sql`.
+
+Decisao RLS:
+
+- O FastAPI permanece como unica camada funcional de acesso aos dados.
+- A migration `011` habilita RLS e revoga privilegios diretos de `PUBLIC`, `anon` e `authenticated` em tabelas financeiras, imports, arquivos privados e ressarcimentos.
+- Nao foram criadas policies permissivas para Data API nesta fundacao.
+- Service role continua exclusiva do backend/Storage e nao deve ser exposta ao frontend.
+
+Auditoria de signed URLs e anexos:
+
+- Anexos de transacao nao sao compartilhados automaticamente.
+- Guest acessa somente `reimbursement_claim_attachments` explicitamente compartilhados.
+- Membership revogada bloqueia novas signed URLs por meio da autorizacao em `_guest_claim`.
+- Arquivos `deleted`, em quarentena ou sem scan liberado nao geram novas URLs.
+- Respostas publicas nao expõem `storage_path`, bucket interno ou service role.
+- Uma URL ja emitida pode continuar valida ate expirar, mitigada por TTL curto.
+
+Protecao de API URL:
+
+- Criado helper `frontend/src/lib/api-url.ts`.
+- `frontend/src/lib/api.ts` e `frontend/src/lib/server-api.ts` usam resolucao centralizada.
+- Fallback local para `http://127.0.0.1:8000` fica restrito a desenvolvimento local.
+- Preview/Production falham explicitamente se `NEXT_PUBLIC_API_URL` estiver ausente, malformada, sem `https`, com credenciais ou apontando para localhost.
+- Criados scripts `check-api-url-config.mjs` e `test-api-url-config.mjs`.
+
+Observabilidade segura:
+
+- Logs adicionados para comentario criado/removido, convite bloqueado por rate limit, acesso negado a attachment e falha de signed URL.
+- Logs nao registram body do comentario, token, token hash, IP bruto, JWT, service role, senha, URL assinada completa ou conteudo financeiro.
+
+Validacoes:
+
+- `cd frontend; npm.cmd run test:api-url` -> passou.
+- `cd frontend; npm.cmd run typecheck` -> passou.
+- `cd backend; .venv\Scripts\python.exe -m pytest tests_postgres -m postgres -q` sem `TEST_DATABASE_URL` -> falhou como esperado com mensagem clara.
+- `cd backend; $env:TEST_DATABASE_URL='postgresql://financy_dev:financy_dev_local@localhost:5432/financy_dev_test'; .venv\Scripts\python.exe -m pytest tests_postgres -m postgres -q` -> `14 passed in 20.96s`.
+
+Pendencias residuais:
+
+- Aplicar migrations `009`, `010` e `011` em Supabase Dev/Production somente com autorizacao explicita por ambiente.
+- Validar smoke remoto apos deploy Dev/Preview.
+- Revisar upgrade do ReportLab em tarefa separada.
+- Pagamentos, Telegram, OCR, audio, inbox, filas e Fundacao 4 nao foram iniciados.

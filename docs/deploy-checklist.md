@@ -10,9 +10,10 @@ secrets nos logs, documentos ou screenshots.
 - Backend tests executados.
 - Frontend build executado quando houver alteracao de frontend.
 - Migrations presentes e revisadas.
-- Migrations pendentes identificadas, incluindo `009_reimbursement_comments.sql` e `010_invitation_accept_rate_limits.sql` quando a Fundacao 3.5 for liberada.
+- Migrations pendentes identificadas, incluindo `009_reimbursement_comments.sql`, `010_invitation_accept_rate_limits.sql` e `011_reimbursements_security_hardening.sql` quando a Fundacao 3.5 for liberada.
 - `DATABASE_URL` aponta para o banco correto e nao usa `localhost` em ambiente remoto.
 - `NEXT_PUBLIC_API_URL` aponta para o backend correto e nao usa `localhost` em ambiente remoto.
+- `NEXT_PUBLIC_API_URL` usa `https` em Vercel Preview/Production.
 - JWT issuer/JWKS correspondem ao projeto Supabase correto.
 - CORS inclui somente origens esperadas do ambiente.
 - Bucket privado `private-files` existe quando storage Supabase estiver ativo.
@@ -40,6 +41,7 @@ secrets nos logs, documentos ou screenshots.
 - Exclusao de comentarios usa dialogo, respeita permissoes e nao usa confirmacao nativa do navegador.
 - Comentarios sao exibidos como texto puro e nao renderizam HTML arbitrario.
 - Aceite de convite retorna `429` apos excesso de tentativas configurado.
+- Data API nao permite leitura/escrita direta das tabelas financeiras com roles `anon` ou `authenticated`.
 - Logs revisados para `401`, `403`, `429` e `500`.
 - DevTools nao mostra chamadas para ambiente incorreto.
 - TTFB medido e registrado quando relevante.

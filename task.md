@@ -611,7 +611,7 @@ cd backend
 .\.venv\Scripts\python.exe -m pytest
 ```
 
-### [ ] P9.4 - Fundacao 3.5 de Ressarcimentos
+### [x] P9.4 - Fundacao 3.5 de Ressarcimentos
 
 Objetivo:
 
@@ -636,7 +636,17 @@ Feito na Etapa C:
 - Client API tipado integrado aos endpoints de comentarios.
 - E2E owner/guest adicionados para envio, ordem cronologica, exclusao, ausencia de HTML renderizado e feedback de rate limit.
 
-Pendente:
+Feito na Etapa D:
 
-- Etapa D: auditoria RLS final, tratamento de erros complementar, protecao do fallback de API URL e validacao final.
-- Nao iniciar pagamentos, Telegram, OCR, audio, inbox, filas ou Fundacao 4 antes do fechamento.
+- Migration `011_reimbursements_security_hardening.sql` criada para habilitar RLS e revogar acesso direto a tabelas financeiras por roles publicas.
+- Data API mantida fechada para `PUBLIC`, `anon` e `authenticated`; acesso funcional segue pelo FastAPI.
+- Signed URLs e claim attachments revisados sem compartilhamento automatico de anexos de transacao.
+- Protecao contra fallback remoto de `NEXT_PUBLIC_API_URL` implementada e testada.
+- Logs seguros adicionados para comentarios, rate limit, acesso negado a attachment e falha de signed URL.
+- Testes PostgreSQL reais, backend, frontend e E2E executados localmente.
+
+Pendente operacional:
+
+- Aplicar migrations `009`, `010` e `011` em Supabase Dev/Production somente com autorizacao explicita.
+- Validar smoke remoto apos deploy Dev/Preview.
+- Nao iniciar pagamentos, Telegram, OCR, audio, inbox, filas ou Fundacao 4 antes da validacao remota autorizada.
