@@ -150,6 +150,7 @@ function SidebarFooter({ collapsed, pathname, onNavigate }: { collapsed?: boolea
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isAuthPage = pathname === "/login";
+  const isGuestPortal = pathname.startsWith("/guest/reimbursements");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem(sidebarPreferenceKey) === "true";
@@ -166,6 +167,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (isAuthPage) {
     return <>{children}</>;
+  }
+
+  if (isGuestPortal) {
+    return (
+      <div className="min-h-screen bg-paper text-ink">
+        <header className="border-b border-stone-200 bg-white/90 px-4 py-3 backdrop-blur">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+            <Link href="/guest/reimbursements" className="flex items-center gap-2 text-lg font-semibold text-ink">
+              <Image src="/brand/financy-icon.png" alt="" width={32} height={32} priority className="h-8 w-8 rounded-md object-cover" />
+              <span>Financy</span>
+            </Link>
+            <SidebarProfileMenu />
+          </div>
+        </header>
+        <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+      </div>
+    );
   }
 
   return (

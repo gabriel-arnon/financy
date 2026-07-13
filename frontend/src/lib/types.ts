@@ -487,3 +487,73 @@ export interface ReimbursementEvent {
   metadata: Record<string, unknown>;
   created_at: string;
 }
+
+export interface ReimbursementInvitation {
+  id: string;
+  owner_user_id: string;
+  contact_id: string;
+  claim_id: string | null;
+  email: string;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  expires_at: string;
+  accepted_at: string | null;
+  accepted_by_user_id: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  contact: ReimbursementContact | null;
+  claim: ReimbursementClaim | null;
+}
+
+export interface ReimbursementInvitationCreated extends ReimbursementInvitation {
+  accept_token: string;
+  accept_path: string;
+}
+
+export interface ReimbursementMembership {
+  id: string;
+  owner_user_id: string;
+  contact_id: string;
+  auth_user_id: string;
+  email: string | null;
+  status: "active" | "revoked";
+  linked_at: string;
+  revoked_at: string | null;
+  created_at: string;
+  contact: ReimbursementContact | null;
+}
+
+export interface ReimbursementClaimAttachment {
+  id: string;
+  claim_id: string;
+  status: EntityStatus;
+  created_at: string;
+  deleted_at: string | null;
+  file: {
+    original_filename: string;
+    detected_mime_type: string;
+    size_bytes: number;
+  };
+}
+
+export interface GuestReimbursementItem {
+  id: string;
+  description: string;
+  transaction_date: string;
+  amount: string;
+  amount_requested: string;
+  currency: string;
+}
+
+export interface GuestReimbursementClaim {
+  id: string;
+  title: string;
+  description: string | null;
+  due_date: string | null;
+  status: ReimbursementClaimStatus;
+  total_amount: string;
+  sent_at: string | null;
+  first_viewed_at: string | null;
+  last_viewed_at: string | null;
+  attachment_count: number;
+  items: GuestReimbursementItem[];
+}

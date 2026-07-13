@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.api import deps
 from app.api import reimbursements as reimbursements_api
+from app.core.auth import CurrentUser
 from app.core.config import settings
 from app.main import app
 from app.repositories.local_json import LocalJsonRepository
@@ -13,6 +14,7 @@ from app.repositories.local_json import LocalJsonRepository
 
 USER_ID = settings.dev_user_id
 OTHER_USER_ID = "00000000-0000-4000-8000-000000000222"
+GUEST_USER_ID = "00000000-0000-4000-8000-000000000333"
 
 
 def _client_with_repo(tmp_path: Path, monkeypatch) -> tuple[TestClient, LocalJsonRepository]:
@@ -24,6 +26,11 @@ def _client_with_repo(tmp_path: Path, monkeypatch) -> tuple[TestClient, LocalJso
 
 def _override_user(user_id: str) -> None:
     app.dependency_overrides[reimbursements_api.get_request_user_id] = lambda: user_id
+
+
+def _override_current_user(user_id: str, email: str) -> None:
+    user = CurrentUser(id=user_id, email=email, full_name="Guest User", auth_source="test")
+    app.dependency_overrides[reimbursements_api.get_request_user] = lambda: user
 
 
 def _seed_transaction(repo: LocalJsonRepository, user_id: str = USER_ID, amount: str = "100.00", tx_type: str = "expense") -> dict:
@@ -427,3 +434,161 @@ def test_overview_eligible_transactions_timeline_and_owner_user_id_payload(tmp_p
     event_types = [event["event_type"] for event in events.json()]
     assert "claim_created" in event_types
     assert "item_added" in event_types
+
+
+def test_invitation_acceptance_creates_guest_membership_and_limits_claims(tmp_path: Path, monkeypatch) -> None:
+    client, _repo = _client_with_repo(tmp_path, monkeypatch)
+    transaction = _seed_transaction(_repo, amount="100.00")
+    contact = _create_contact(client)
+    claim = _create_claim(client, contact["id"], "Julho")
+    assert client.post(f"/reimbursements/claims/{claim['id']}/items", json={"transaction_id": transaction["id"], "amount_requested": "100.00"}).status_code == 200
+    sent = client.post(f"/reimbursements/claims/{claim['id']}/send").json()
+
+    invite = client.post("/reimbursements/invitations", json={"contact_id": contact["id"], "claim_id": claim["id"]})
+    assert invite.status_code == 200
+    token = invite.json()["accept_token"]
+    assert "token_hash" not in invite.json()
+
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    accepted = client.post("/reimbursements/guest/invitations/accept", json={"token": token})
+    assert accepted.status_code == 200
+    assert accepted.json()["contact_id"] == contact["id"]
+
+    guest_claims = client.get("/reimbursements/guest/claims")
+    assert guest_claims.status_code == 200
+    assert [item["id"] for item in guest_claims.json()] == [sent["id"]]
+    guest_payload = guest_claims.json()[0]
+    assert "owner_user_id" not in guest_payload
+    assert "contact" not in guest_payload
+    assert "transaction_id" not in guest_payload["items"][0]
+    assert "transaction_snapshot" not in guest_payload["items"][0]
+
+    _override_user(USER_ID)
+    other_claim = _create_claim(client, contact["id"], "Rascunho invisivel")
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    hidden = client.get(f"/reimbursements/guest/claims/{other_claim['id']}")
+    assert hidden.status_code == 404
+
+
+def test_guest_invitation_rejects_wrong_email_and_revoked_access(tmp_path: Path, monkeypatch) -> None:
+    client, repo = _client_with_repo(tmp_path, monkeypatch)
+    transaction = _seed_transaction(repo, amount="80.00")
+    contact = _create_contact(client)
+    claim = _create_claim(client, contact["id"])
+    assert client.post(f"/reimbursements/claims/{claim['id']}/items", json={"transaction_id": transaction["id"], "amount_requested": "80.00"}).status_code == 200
+    assert client.post(f"/reimbursements/claims/{claim['id']}/send").status_code == 200
+    invite = client.post("/reimbursements/invitations", json={"contact_id": contact["id"], "claim_id": claim["id"]}).json()
+
+    _override_current_user(GUEST_USER_ID, "outra@example.com")
+    wrong = client.post("/reimbursements/guest/invitations/accept", json={"token": invite["accept_token"]})
+    assert wrong.status_code == 404
+
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    accepted = client.post("/reimbursements/guest/invitations/accept", json={"token": invite["accept_token"]})
+    assert accepted.status_code == 200
+    membership_id = accepted.json()["id"]
+
+    _override_user(USER_ID)
+    revoked = client.post(f"/reimbursements/memberships/{membership_id}/revoke")
+    assert revoked.status_code == 200
+    assert revoked.json()["status"] == "revoked"
+
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    assert client.get("/reimbursements/guest/claims").json() == []
+
+
+def test_guest_acknowledges_and_disputes_shared_claim(tmp_path: Path, monkeypatch) -> None:
+    client, repo = _client_with_repo(tmp_path, monkeypatch)
+    transaction = _seed_transaction(repo, amount="60.00")
+    contact = _create_contact(client)
+    claim = _create_claim(client, contact["id"])
+    assert client.post(f"/reimbursements/claims/{claim['id']}/items", json={"transaction_id": transaction["id"], "amount_requested": "60.00"}).status_code == 200
+    assert client.post(f"/reimbursements/claims/{claim['id']}/send").status_code == 200
+    invite = client.post("/reimbursements/invitations", json={"contact_id": contact["id"], "claim_id": claim["id"]}).json()
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    assert client.post("/reimbursements/guest/invitations/accept", json={"token": invite["accept_token"]}).status_code == 200
+
+    acknowledged = client.post(f"/reimbursements/guest/claims/{claim['id']}/acknowledge")
+    assert acknowledged.status_code == 200
+    assert acknowledged.json()["status"] == "acknowledged"
+    assert client.post(f"/reimbursements/guest/claims/{claim['id']}/acknowledge").status_code == 200
+
+    missing_note = client.post(f"/reimbursements/guest/claims/{claim['id']}/dispute", json={"note": ""})
+    assert missing_note.status_code == 400
+    assert missing_note.json()["error"]["code"] == "reimbursement_dispute_note_required"
+
+    disputed = client.post(f"/reimbursements/guest/claims/{claim['id']}/dispute", json={"note": "Tenho duvida."})
+    assert disputed.status_code == 200
+    assert disputed.json()["status"] == "disputed"
+    event_types = [event["event_type"] for event in repo._read()["reimbursement_events"]]
+    assert "claim_acknowledged" in event_types
+    assert "claim_disputed" in event_types
+
+
+def test_guest_claim_attachments_are_explicit_and_revocable(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "private_files_backend", "local")
+    monkeypatch.setattr(settings, "upload_dir", tmp_path)
+    client, repo = _client_with_repo(tmp_path, monkeypatch)
+    transaction = _seed_transaction(repo, amount="45.00")
+    contact = _create_contact(client)
+    claim = _create_claim(client, contact["id"])
+    assert client.post(f"/reimbursements/claims/{claim['id']}/items", json={"transaction_id": transaction["id"], "amount_requested": "45.00"}).status_code == 200
+    assert client.post(f"/reimbursements/claims/{claim['id']}/send").status_code == 200
+    shared_file = repo.create_stored_file(
+        USER_ID,
+        {
+            "storage_bucket": "private",
+            "storage_path": "user/file-a.pdf",
+            "original_filename": "recibo.pdf",
+            "declared_mime_type": "application/pdf",
+            "detected_mime_type": "application/pdf",
+            "size_bytes": 20,
+            "sha256_hash": "hash-a",
+            "source": "manual",
+            "status": "available",
+            "scan_status": "skipped",
+            "metadata": {},
+        },
+    )
+    local_object = settings.upload_dir / "private_files" / shared_file["storage_path"]
+    local_object.parent.mkdir(parents=True, exist_ok=True)
+    local_object.write_bytes(b"%PDF-1.4\n%test\n")
+    unshared_file = repo.create_stored_file(
+        USER_ID,
+        {
+            "storage_bucket": "private",
+            "storage_path": "user/file-b.pdf",
+            "original_filename": "privado.pdf",
+            "declared_mime_type": "application/pdf",
+            "detected_mime_type": "application/pdf",
+            "size_bytes": 20,
+            "sha256_hash": "hash-b",
+            "source": "manual",
+            "status": "available",
+            "scan_status": "skipped",
+            "metadata": {},
+        },
+    )
+    attached = client.post(f"/reimbursements/claims/{claim['id']}/attachments", json={"file_id": shared_file["id"]})
+    assert attached.status_code == 200
+    attachment_id = attached.json()["id"]
+    assert "storage_path" not in attached.json()["file"]
+
+    invite = client.post("/reimbursements/invitations", json={"contact_id": contact["id"], "claim_id": claim["id"]}).json()
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    membership = client.post("/reimbursements/guest/invitations/accept", json={"token": invite["accept_token"]}).json()
+
+    attachments = client.get(f"/reimbursements/guest/claims/{claim['id']}/attachments")
+    assert attachments.status_code == 200
+    assert [item["id"] for item in attachments.json()] == [attachment_id]
+    assert "storage_path" not in attachments.json()[0]["file"]
+    signed = client.get(f"/reimbursements/guest/claims/{claim['id']}/attachments/{attachment_id}/signed-url")
+    assert signed.status_code == 200
+
+    blocked_unshared = client.get(f"/reimbursements/guest/claims/{claim['id']}/attachments/{unshared_file['id']}/signed-url")
+    assert blocked_unshared.status_code == 404
+
+    _override_user(USER_ID)
+    assert client.post(f"/reimbursements/memberships/{membership['id']}/revoke").status_code == 200
+    _override_current_user(GUEST_USER_ID, "mae@example.com")
+    assert client.get(f"/reimbursements/guest/claims/{claim['id']}/attachments").status_code == 404

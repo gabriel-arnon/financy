@@ -32,6 +32,12 @@ def get_request_user_id(request: Request) -> str:
     return user.id
 
 
+def get_request_user(request: Request) -> CurrentUser:
+    user = get_current_user(request)
+    _ensure_profile(user)
+    return user
+
+
 def get_import_service() -> ImportService:
     analyzer = AiImportAnalyzer(settings)
     return ImportService(repository=repository, upload_dir=settings.upload_dir, ai_analyzer=analyzer)

@@ -4,6 +4,7 @@ import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -12,6 +13,8 @@ from app.core.errors import AppError
 from app.repositories.postgres import PostgresRepository
 from app.schemas.reimbursements import (
     ReimbursementClaimCreate,
+    ReimbursementInvitationAccept,
+    ReimbursementInvitationCreate,
     ReimbursementClaimUpdate,
     ReimbursementContactCreate,
     ReimbursementContactUpdate,
@@ -27,6 +30,8 @@ from scripts.prepare_test_database import ensure_database
 pytestmark = pytest.mark.postgres
 
 USER_ID = "00000000-0000-4000-8000-00000000a001"
+GUEST_ID = "00000000-0000-4000-8000-00000000a003"
+OTHER_GUEST_ID = "00000000-0000-4000-8000-00000000a004"
 
 
 @pytest.fixture()
@@ -86,6 +91,20 @@ def _create_claim(service: ReimbursementService, title: str = "Julho") -> str:
 
 def _add_item(service: ReimbursementService, claim_id: str, transaction_id: str, amount: str):
     return service.add_item(USER_ID, claim_id, ReimbursementItemCreate(transaction_id=transaction_id, amount_requested=Decimal(amount)))
+
+
+def _guest(user_id: str = GUEST_ID, email: str = "mae@example.com"):
+    return SimpleNamespace(id=user_id, email=email, full_name="Guest", auth_source="test")
+
+
+def _sent_claim_with_contact(repository: PostgresRepository, *, email: str = "mae@example.com") -> tuple[ReimbursementService, dict, str]:
+    service = _service(repository)
+    transaction = _seed_transaction(repository, amount="100.00")
+    contact = service.create_contact(USER_ID, ReimbursementContactCreate(display_name=f"Mae {uuid4()}", email=email))
+    claim = service.create_claim(USER_ID, ReimbursementClaimCreate(contact_id=contact.id, title="Julho"))
+    _add_item(service, claim.id, transaction["id"], "100.00")
+    service.send_claim(USER_ID, claim.id)
+    return service, {"id": contact.id, "email": email}, claim.id
 
 
 def _total_allocated(repository: PostgresRepository, transaction_id: str) -> Decimal:
@@ -239,3 +258,100 @@ def test_retry_draft_reservation_and_canceled_release(repo: PostgresRepository) 
     service.cancel_claim(USER_ID, claim_a)
     _add_item(service, claim_b, transaction["id"], "100.00")
     assert _total_allocated(repo, transaction["id"]) == Decimal("100.00")
+
+
+def test_invitation_token_hash_guest_payload_and_revocation(repo: PostgresRepository) -> None:
+    service, contact, claim_id = _sent_claim_with_contact(repo)
+    invitation = service.create_invitation(
+        USER_ID,
+        ReimbursementInvitationCreate(contact_id=contact["id"], claim_id=claim_id, expires_in_days=14),
+    )
+    stored = repo.get_reimbursement_invitation(USER_ID, invitation.id)
+    assert stored is not None
+    assert stored["token_hash"] != invitation.accept_token
+    assert len(stored["token_hash"]) == 64
+
+    with pytest.raises(AppError) as wrong_email:
+        service.accept_invitation(_guest(email="outra@example.com"), ReimbursementInvitationAccept(token=invitation.accept_token))
+    assert wrong_email.value.code == "reimbursement_invitation_invalid"
+
+    membership = service.accept_invitation(_guest(), ReimbursementInvitationAccept(token=invitation.accept_token))
+    assert membership.status.value == "active"
+    duplicate = service.accept_invitation(_guest(), ReimbursementInvitationAccept(token=invitation.accept_token))
+    assert duplicate.id == membership.id
+
+    guest_claim = service.get_guest_claim(GUEST_ID, claim_id)
+    body = guest_claim.model_dump(mode="json")
+    assert "owner_user_id" not in body
+    assert "contact_id" not in body
+    assert "transaction_id" not in body["items"][0]
+    assert "account_id" not in body["items"][0]
+    assert "source_signature" not in body["items"][0]
+
+    service.revoke_membership(USER_ID, membership.id)
+    assert service.list_guest_claims(GUEST_ID) == []
+    with pytest.raises(AppError) as revoked_access:
+        service.get_guest_claim(GUEST_ID, claim_id)
+    assert revoked_access.value.code == "reimbursement_claim_not_found"
+
+
+def test_expired_and_revoked_invitations_are_rejected(repo: PostgresRepository) -> None:
+    service, contact, claim_id = _sent_claim_with_contact(repo)
+    expired = service.create_invitation(
+        USER_ID,
+        ReimbursementInvitationCreate(contact_id=contact["id"], claim_id=claim_id, expires_in_days=1),
+    )
+    repo.update_reimbursement_invitation(USER_ID, expired.id, {"expires_at": "2026-01-01T00:00:00+00:00"})
+    with pytest.raises(AppError) as expired_error:
+        service.accept_invitation(_guest(), ReimbursementInvitationAccept(token=expired.accept_token))
+    assert expired_error.value.code == "reimbursement_invitation_invalid"
+
+    active = service.create_invitation(
+        USER_ID,
+        ReimbursementInvitationCreate(contact_id=contact["id"], claim_id=claim_id, expires_in_days=14),
+    )
+    service.revoke_invitation(USER_ID, active.id)
+    with pytest.raises(AppError) as revoked_error:
+        service.accept_invitation(_guest(), ReimbursementInvitationAccept(token=active.accept_token))
+    assert revoked_error.value.code == "reimbursement_invitation_invalid"
+
+
+def test_concurrent_invitation_accept_creates_single_membership(database_url: str, repo: PostgresRepository) -> None:
+    service, contact, claim_id = _sent_claim_with_contact(repo)
+    invitation = service.create_invitation(
+        USER_ID,
+        ReimbursementInvitationCreate(contact_id=contact["id"], claim_id=claim_id, expires_in_days=14),
+    )
+
+    def accept_token():
+        isolated_repo = PostgresRepository(database_url, dev_user_id=USER_ID)
+        try:
+            return _service(isolated_repo).accept_invitation(_guest(), ReimbursementInvitationAccept(token=invitation.accept_token))
+        finally:
+            isolated_repo.pool.close()
+
+    results = _run_concurrently([accept_token, accept_token])
+    assert [result[0] for result in results] == ["ok", "ok"]
+    memberships = repo.list_reimbursement_memberships(USER_ID)
+    active = [item for item in memberships if item["contact_id"] == contact["id"] and item["auth_user_id"] == GUEST_ID and item["status"] == "active"]
+    assert len(active) == 1
+
+
+def test_same_guest_can_accept_different_owners(repo: PostgresRepository) -> None:
+    service, contact, claim_id = _sent_claim_with_contact(repo)
+    invitation = service.create_invitation(USER_ID, ReimbursementInvitationCreate(contact_id=contact["id"], claim_id=claim_id))
+    first = service.accept_invitation(_guest(), ReimbursementInvitationAccept(token=invitation.accept_token))
+
+    other_owner = "00000000-0000-4000-8000-00000000b001"
+    repo.ensure_profile(other_owner, email="owner-b@example.com")
+    transaction = _seed_transaction(repo, amount="50.00")
+    repo.update_transaction(USER_ID, transaction["id"], {"user_id": other_owner})
+    other_service = _service(repo)
+    other_contact = other_service.create_contact(other_owner, ReimbursementContactCreate(display_name="Mae B", email="mae@example.com"))
+    other_claim = other_service.create_claim(other_owner, ReimbursementClaimCreate(contact_id=other_contact.id, title="Agosto"))
+    other_service.add_item(other_owner, other_claim.id, ReimbursementItemCreate(transaction_id=transaction["id"], amount_requested=Decimal("50.00")))
+    other_service.send_claim(other_owner, other_claim.id)
+    second_invitation = other_service.create_invitation(other_owner, ReimbursementInvitationCreate(contact_id=other_contact.id, claim_id=other_claim.id))
+    second = other_service.accept_invitation(_guest(), ReimbursementInvitationAccept(token=second_invitation.accept_token))
+
+    assert first.owner_user_id != second.owner_user_id

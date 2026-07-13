@@ -570,6 +570,29 @@ Nao feito:
 - RLS final ainda nao foi implementada.
 - Fundacao 3 nao foi iniciada.
 
+### [x] P9.3 - Fundacao 3 de Ressarcimentos guest limitado
+
+Objetivo:
+
+- Implementar e fechar convites, memberships, portal guest limitado e comprovantes explicitamente compartilhados.
+
+Feito:
+
+- Migrations `007_reimbursement_guest_access.sql` e `008_reimbursement_claim_attachments.sql` criadas e validadas no PostgreSQL local.
+- Convites usam token bruto apenas na criacao e persistem somente `token_hash`.
+- Aceite exige usuario autenticado com e-mail convidado.
+- Membership ativo autoriza portal guest; revogacao bloqueia lista, detalhe, acoes e novas signed URLs.
+- Payload guest foi sanitizado para nao expor owner, transacao, contas, cartoes, storage path ou snapshot tecnico.
+- Owner compartilha comprovantes explicitamente por cobranca; anexos de transacao nao sao compartilhados por padrao.
+- Guest pode reconhecer e contestar com motivo; status livre nao e aceito.
+- Testes locais, PostgreSQL reais, frontend e E2E foram atualizados.
+
+Nao feito:
+
+- Comentarios ficaram decididos para Fundacao 3.5.
+- Pagamentos, Telegram, OCR, audio, inbox, filas, gateway e Pix nao foram iniciados.
+- RLS final ainda nao foi implementada.
+
 ## Validações obrigatórias por entrega
 
 Frontend:

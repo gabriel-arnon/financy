@@ -4,7 +4,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import EntityStatus, ReimbursementClaimStatus, ReimbursementEventActorType, ReimbursementItemStatus
+from app.models.enums import (
+    EntityStatus,
+    ReimbursementClaimStatus,
+    ReimbursementEventActorType,
+    ReimbursementInvitationStatus,
+    ReimbursementItemStatus,
+    ReimbursementMembershipStatus,
+)
 
 
 class ReimbursementContactCreate(BaseModel):
@@ -102,6 +109,97 @@ class ReimbursementEventRead(BaseModel):
     event_type: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+
+
+class ReimbursementInvitationCreate(BaseModel):
+    contact_id: str
+    claim_id: str | None = None
+    email: str | None = None
+    expires_in_days: int = Field(default=14, ge=1, le=60)
+
+
+class ReimbursementInvitationRead(BaseModel):
+    id: str
+    owner_user_id: str
+    contact_id: str
+    claim_id: str | None = None
+    email: str
+    status: ReimbursementInvitationStatus
+    expires_at: datetime
+    accepted_at: datetime | None = None
+    accepted_by_user_id: str | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime
+    contact: ReimbursementContactRead | None = None
+    claim: ReimbursementClaimRead | None = None
+
+
+class ReimbursementInvitationCreatedRead(ReimbursementInvitationRead):
+    accept_token: str
+    accept_path: str
+
+
+class ReimbursementInvitationAccept(BaseModel):
+    token: str = Field(min_length=20, max_length=256)
+
+
+class ReimbursementMembershipRead(BaseModel):
+    id: str
+    owner_user_id: str
+    contact_id: str
+    auth_user_id: str
+    email: str | None = None
+    status: ReimbursementMembershipStatus
+    linked_at: datetime
+    revoked_at: datetime | None = None
+    created_at: datetime
+    contact: ReimbursementContactRead | None = None
+
+
+class GuestReimbursementAction(BaseModel):
+    note: str | None = Field(default=None, max_length=500)
+
+
+class ReimbursementClaimAttachmentCreate(BaseModel):
+    file_id: str
+
+
+class ReimbursementClaimAttachmentFileRead(BaseModel):
+    original_filename: str
+    detected_mime_type: str
+    size_bytes: int
+
+
+class ReimbursementClaimAttachmentRead(BaseModel):
+    id: str
+    claim_id: str
+    status: EntityStatus
+    created_at: datetime
+    deleted_at: datetime | None = None
+    file: ReimbursementClaimAttachmentFileRead
+
+
+class GuestReimbursementItemRead(BaseModel):
+    id: str
+    description: str
+    transaction_date: str
+    amount: Decimal
+    amount_requested: Decimal
+    currency: str = "BRL"
+
+
+class GuestReimbursementClaimRead(BaseModel):
+    id: str
+    title: str
+    description: str | None = None
+    due_date: str | None = None
+    status: ReimbursementClaimStatus
+    total_amount: Decimal
+    sent_at: datetime | None = None
+    first_viewed_at: datetime | None = None
+    last_viewed_at: datetime | None = None
+    attachment_count: int = 0
+    items: list[GuestReimbursementItemRead] = Field(default_factory=list)
 
 
 class ReimbursementOverviewRead(BaseModel):

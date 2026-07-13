@@ -1,8 +1,14 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
-from app.api.deps import get_reimbursement_service, get_request_user_id
+from app.api.deps import get_file_service, get_reimbursement_service, get_request_user, get_request_user_id
+from app.core.auth import CurrentUser
+from app.schemas.files import FileSignedUrlRead
 from app.schemas.reimbursements import (
+    GuestReimbursementAction,
+    GuestReimbursementClaimRead,
     ReimbursementClaimCreate,
+    ReimbursementClaimAttachmentCreate,
+    ReimbursementClaimAttachmentRead,
     ReimbursementClaimRead,
     ReimbursementClaimUpdate,
     ReimbursementContactCreate,
@@ -10,11 +16,17 @@ from app.schemas.reimbursements import (
     ReimbursementContactUpdate,
     ReimbursementEligibleTransactionRead,
     ReimbursementEventRead,
+    ReimbursementInvitationAccept,
+    ReimbursementInvitationCreate,
+    ReimbursementInvitationCreatedRead,
+    ReimbursementInvitationRead,
     ReimbursementItemCreate,
     ReimbursementItemUpdate,
+    ReimbursementMembershipRead,
     ReimbursementOverviewRead,
 )
 from app.services.reimbursement_service import ReimbursementService
+from app.services.file_storage_service import FileService
 
 
 router = APIRouter(prefix="/reimbursements", tags=["reimbursements"])
@@ -175,3 +187,142 @@ def remove_item(
     service: ReimbursementService = Depends(get_reimbursement_service),
 ) -> ReimbursementClaimRead:
     return service.remove_item(user_id=user_id, claim_id=claim_id, item_id=item_id)
+
+
+@router.get("/invitations", response_model=list[ReimbursementInvitationRead])
+def list_invitations(
+    user_id: str = Depends(get_request_user_id),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> list[ReimbursementInvitationRead]:
+    return service.list_invitations(user_id=user_id)
+
+
+@router.post("/invitations", response_model=ReimbursementInvitationCreatedRead)
+def create_invitation(
+    payload: ReimbursementInvitationCreate,
+    user_id: str = Depends(get_request_user_id),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> ReimbursementInvitationCreatedRead:
+    return service.create_invitation(user_id=user_id, payload=payload)
+
+
+@router.post("/invitations/{invitation_id}/revoke", response_model=ReimbursementInvitationRead)
+def revoke_invitation(
+    invitation_id: str,
+    user_id: str = Depends(get_request_user_id),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> ReimbursementInvitationRead:
+    return service.revoke_invitation(user_id=user_id, invitation_id=invitation_id)
+
+
+@router.get("/memberships", response_model=list[ReimbursementMembershipRead])
+def list_memberships(
+    user_id: str = Depends(get_request_user_id),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> list[ReimbursementMembershipRead]:
+    return service.list_memberships(user_id=user_id)
+
+
+@router.post("/memberships/{membership_id}/revoke", response_model=ReimbursementMembershipRead)
+def revoke_membership(
+    membership_id: str,
+    user_id: str = Depends(get_request_user_id),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> ReimbursementMembershipRead:
+    return service.revoke_membership(user_id=user_id, membership_id=membership_id)
+
+
+@router.post("/guest/invitations/accept", response_model=ReimbursementMembershipRead)
+def accept_guest_invitation(
+    payload: ReimbursementInvitationAccept,
+    user: CurrentUser = Depends(get_request_user),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> ReimbursementMembershipRead:
+    return service.accept_invitation(user=user, payload=payload)
+
+
+@router.get("/guest/claims", response_model=list[GuestReimbursementClaimRead])
+def list_guest_claims(
+    user: CurrentUser = Depends(get_request_user),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> list[GuestReimbursementClaimRead]:
+    return service.list_guest_claims(guest_user_id=user.id)
+
+
+@router.get("/guest/claims/{claim_id}", response_model=GuestReimbursementClaimRead)
+def get_guest_claim(
+    claim_id: str,
+    user: CurrentUser = Depends(get_request_user),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> GuestReimbursementClaimRead:
+    return service.get_guest_claim(guest_user_id=user.id, claim_id=claim_id)
+
+
+@router.post("/guest/claims/{claim_id}/acknowledge", response_model=GuestReimbursementClaimRead)
+def acknowledge_guest_claim(
+    claim_id: str,
+    user: CurrentUser = Depends(get_request_user),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> GuestReimbursementClaimRead:
+    return service.acknowledge_guest_claim(guest_user_id=user.id, claim_id=claim_id)
+
+
+@router.post("/guest/claims/{claim_id}/dispute", response_model=GuestReimbursementClaimRead)
+def dispute_guest_claim(
+    claim_id: str,
+    payload: GuestReimbursementAction,
+    user: CurrentUser = Depends(get_request_user),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> GuestReimbursementClaimRead:
+    return service.dispute_guest_claim(guest_user_id=user.id, claim_id=claim_id, payload=payload)
+
+
+@router.post("/claims/{claim_id}/attachments", response_model=ReimbursementClaimAttachmentRead)
+def add_claim_attachment(
+    claim_id: str,
+    payload: ReimbursementClaimAttachmentCreate,
+    user_id: str = Depends(get_request_user_id),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> ReimbursementClaimAttachmentRead:
+    return service.add_claim_attachment(user_id=user_id, claim_id=claim_id, payload=payload)
+
+
+@router.get("/claims/{claim_id}/attachments", response_model=list[ReimbursementClaimAttachmentRead])
+def list_claim_attachments(
+    claim_id: str,
+    user_id: str = Depends(get_request_user_id),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> list[ReimbursementClaimAttachmentRead]:
+    return service.list_claim_attachments(user_id=user_id, claim_id=claim_id)
+
+
+@router.delete("/claims/{claim_id}/attachments/{attachment_id}", response_model=dict[str, str])
+def remove_claim_attachment(
+    claim_id: str,
+    attachment_id: str,
+    user_id: str = Depends(get_request_user_id),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> dict[str, str]:
+    return service.remove_claim_attachment(user_id=user_id, claim_id=claim_id, attachment_id=attachment_id)
+
+
+@router.get("/guest/claims/{claim_id}/attachments", response_model=list[ReimbursementClaimAttachmentRead])
+def list_guest_claim_attachments(
+    claim_id: str,
+    user: CurrentUser = Depends(get_request_user),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> list[ReimbursementClaimAttachmentRead]:
+    return service.list_guest_claim_attachments(guest_user_id=user.id, claim_id=claim_id)
+
+
+@router.get("/guest/claims/{claim_id}/attachments/{attachment_id}/signed-url", response_model=FileSignedUrlRead)
+def get_guest_claim_attachment_signed_url(
+    claim_id: str,
+    attachment_id: str,
+    request: Request,
+    user: CurrentUser = Depends(get_request_user),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+    file_service: FileService = Depends(get_file_service),
+) -> FileSignedUrlRead:
+    owner_user_id, file_id = service.guest_claim_attachment_file(guest_user_id=user.id, claim_id=claim_id, attachment_id=attachment_id)
+    return file_service.signed_url(user_id=owner_user_id, file_id=file_id, base_url=str(request.base_url).rstrip("/"))

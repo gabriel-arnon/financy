@@ -105,6 +105,9 @@ class LocalJsonRepository:
                     "reimbursement_claims": [],
                     "reimbursement_items": [],
                     "reimbursement_events": [],
+                    "reimbursement_invitations": [],
+                    "reimbursement_memberships": [],
+                    "reimbursement_claim_attachments": [],
                 }
             )
 
@@ -787,6 +790,9 @@ class LocalJsonRepository:
         data.setdefault("reimbursement_claims", [])
         data.setdefault("reimbursement_items", [])
         data.setdefault("reimbursement_events", [])
+        data.setdefault("reimbursement_invitations", [])
+        data.setdefault("reimbursement_memberships", [])
+        data.setdefault("reimbursement_claim_attachments", [])
 
     def list_reimbursement_contacts(self, user_id: str) -> list[dict[str, Any]]:
         data = self._read()
@@ -1038,6 +1044,158 @@ class LocalJsonRepository:
             for item in sorted(data["reimbursement_events"], key=lambda item: item.get("created_at", ""))
             if item["owner_user_id"] == user_id and item.get("claim_id") == claim_id
         ]
+
+    def list_reimbursement_invitations(self, user_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        return [item for item in data["reimbursement_invitations"] if item["owner_user_id"] == user_id]
+
+    def get_reimbursement_invitation(self, user_id: str, invitation_id: str) -> dict[str, Any] | None:
+        return next((item for item in self.list_reimbursement_invitations(user_id) if item["id"] == invitation_id), None)
+
+    def get_reimbursement_invitation_by_token_hash(self, token_hash: str) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        return next((item for item in data["reimbursement_invitations"] if item["token_hash"] == token_hash), None)
+
+    def create_reimbursement_invitation(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            **payload,
+        }
+        data["reimbursement_invitations"].append(record)
+        self._write(data)
+        return record
+
+    def update_reimbursement_invitation(self, user_id: str, invitation_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        for index, item in enumerate(data["reimbursement_invitations"]):
+            if item["id"] == invitation_id and item["owner_user_id"] == user_id:
+                updated = {**item, **payload}
+                data["reimbursement_invitations"][index] = updated
+                self._write(data)
+                return updated
+        return None
+
+    def list_reimbursement_memberships(self, user_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        return [item for item in data["reimbursement_memberships"] if item["owner_user_id"] == user_id]
+
+    def get_reimbursement_membership(self, user_id: str, membership_id: str) -> dict[str, Any] | None:
+        return next((item for item in self.list_reimbursement_memberships(user_id) if item["id"] == membership_id), None)
+
+    def get_active_reimbursement_membership(self, user_id: str, contact_id: str, auth_user_id: str) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        return next(
+            (
+                item for item in data["reimbursement_memberships"]
+                if item["owner_user_id"] == user_id
+                and item["contact_id"] == contact_id
+                and item["auth_user_id"] == auth_user_id
+                and item.get("status") == "active"
+            ),
+            None,
+        )
+
+    def create_reimbursement_membership(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            **payload,
+        }
+        data["reimbursement_memberships"].append(record)
+        self._write(data)
+        return record
+
+    def update_reimbursement_membership(self, user_id: str, membership_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        for index, item in enumerate(data["reimbursement_memberships"]):
+            if item["id"] == membership_id and item["owner_user_id"] == user_id:
+                updated = {**item, **payload}
+                data["reimbursement_memberships"][index] = updated
+                self._write(data)
+                return updated
+        return None
+
+    def list_guest_reimbursement_claims(self, guest_user_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        active_contact_ids = {
+            item["contact_id"]
+            for item in data["reimbursement_memberships"]
+            if item["auth_user_id"] == guest_user_id and item.get("status") == "active"
+        }
+        allowed_statuses = {"sent", "acknowledged", "disputed", "partially_paid", "paid", "canceled"}
+        return [
+            item
+            for item in sorted(data["reimbursement_claims"], key=lambda claim: claim.get("created_at", ""), reverse=True)
+            if item.get("contact_id") in active_contact_ids and item.get("status") in allowed_statuses
+        ]
+
+    def get_guest_reimbursement_claim(self, guest_user_id: str, claim_id: str) -> dict[str, Any] | None:
+        return next((item for item in self.list_guest_reimbursement_claims(guest_user_id) if item["id"] == claim_id), None)
+
+    def create_reimbursement_claim_attachment(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        existing = next(
+            (
+                item for item in data["reimbursement_claim_attachments"]
+                if item["owner_user_id"] == user_id
+                and item["claim_id"] == payload["claim_id"]
+                and item["file_id"] == payload["file_id"]
+                and item.get("status", "active") == "active"
+            ),
+            None,
+        )
+        if existing:
+            return existing
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            "status": "active",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **payload,
+        }
+        data["reimbursement_claim_attachments"].append(record)
+        self._write(data)
+        return record
+
+    def list_reimbursement_claim_attachments(self, user_id: str, claim_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        return [
+            item for item in data["reimbursement_claim_attachments"]
+            if item["owner_user_id"] == user_id and item["claim_id"] == claim_id and item.get("status", "active") == "active"
+        ]
+
+    def get_reimbursement_claim_attachment(self, user_id: str, attachment_id: str) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        return next(
+            (item for item in data["reimbursement_claim_attachments"] if item["id"] == attachment_id and item["owner_user_id"] == user_id),
+            None,
+        )
+
+    def update_reimbursement_claim_attachment(self, user_id: str, attachment_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        for index, item in enumerate(data["reimbursement_claim_attachments"]):
+            if item["id"] == attachment_id and item["owner_user_id"] == user_id:
+                updated = {**item, **payload}
+                data["reimbursement_claim_attachments"][index] = updated
+                self._write(data)
+                return updated
+        return None
 
     def list_reimbursement_candidate_transactions(self, user_id: str, query: str | None = None, limit: int = 30) -> list[dict[str, Any]]:
         data = self._read()

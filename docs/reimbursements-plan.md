@@ -709,6 +709,7 @@ LGPD:
 
 ### Fundacao 3 - Convites e portal do convidado
 
+- Status: implementada em primeira versao owner/guest limitada.
 - Objetivo: acesso limitado via Supabase Auth e membership.
 - Dependencias: Fundacoes 0-2.
 - Entidades: invitations, memberships.
@@ -815,3 +816,28 @@ Depois disso, o dominio de ressarcimentos pode ser implementado em fatias menore
 - O ciclo de snapshot foi refinado: item em draft tem snapshot preliminar; draft permite refresh owner-only; `send` rele a transacao, revalida elegibilidade/alocacao e finaliza o snapshot com assinatura da fonte e `finalized_at`; depois de `sent`, o snapshot permanece imutavel.
 - Endpoints auxiliares adicionados para a UI: overview, transacoes elegiveis, refresh de snapshots e timeline de eventos.
 - Permanece fora de escopo: portal guest, convites reais, memberships, comentarios, pagamentos, Telegram, OCR, audio, inbox e filas.
+
+## 30. Atualizacao de implementacao - Fundacao 3
+
+- Convites e memberships foram implementados com a migration incremental `007_reimbursement_guest_access.sql`, nao executada automaticamente.
+- Convite usa token bruto apenas na resposta de criacao e persiste somente `token_hash`.
+- Aceite exige usuario autenticado e e-mail igual ao e-mail convidado.
+- Portal limitado foi criado em `/guest/reimbursements`, sem AppShell financeiro.
+- Guest lista apenas claims compartilhaveis vinculadas a memberships ativos.
+- Guest pode reconhecer ou contestar cobranca; contestacao registra nota curta em evento, sem implementar comentarios.
+- Owner pode criar/revogar convites e revogar memberships.
+- Proxima etapa recomendada: Fundacao 3.5 com comentarios owner/guest, hardening de RLS e auditoria mais fina antes de pagamentos manuais.
+- Permanece fora de escopo: comentarios, pagamentos, Telegram, OCR, audio, inbox, filas, gateway e Pix.
+
+## 31. Fechamento de implementacao - Fundacao 3
+
+- Migration `007_reimbursement_guest_access.sql` aplicada e validada em PostgreSQL local seguro.
+- Migration incremental `008_reimbursement_claim_attachments.sql` adicionada para comprovantes explicitamente compartilhados por cobranca.
+- `schema_migrations` validou idempotencia operacional: reexecutar migrations apos a 008 retorna `none`.
+- Aceite de convite no PostgreSQL usa lock transacional no convite e `on conflict` no membership ativo para impedir duplicidade concorrente.
+- Payload guest foi limitado: claim publica, titulo, descricao, status, vencimento, total, datas compartilhaveis, `attachment_count` e itens sanitizados.
+- Payload guest nao retorna `owner_user_id`, `contact_id`, `transaction_id`, `account_id`, `card_id`, `storage_path`, payload bruto da transacao nem `source_signature`.
+- Comprovantes nao sao compartilhados automaticamente; owner precisa criar vinculo explicito `reimbursement_claim_attachments`.
+- Guest so recebe signed URL curta se tiver membership ativo, claim autorizada, attachment ativo e arquivo liberado pelo FileService.
+- Revogar membership bloqueia imediatamente lista, detalhe, reconhecer, contestar, listar comprovantes e gerar novas signed URLs.
+- Comentarios ficaram formalmente fora da Fundacao 3 e entram como **Fundacao 3.5**, recomendada antes de pagamentos.
