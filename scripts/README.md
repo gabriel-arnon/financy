@@ -49,7 +49,7 @@ Depois de configurar um projeto Supabase separado de desenvolvimento e um bucket
 $env:APP_ENV='development'
 $env:PRIVATE_FILES_ENABLED='true'
 $env:FILE_STORAGE_PROVIDER='supabase'
-$env:SUPABASE_STORAGE_BUCKET='financy-private-dev'
+$env:SUPABASE_STORAGE_BUCKET='private-files'
 $env:FILE_SCAN_PROVIDER='mock'
 $env:SUPABASE_URL='https://PROJECT_REF.supabase.co'
 $env:SUPABASE_SERVICE_ROLE_KEY='local-dev-service-role'

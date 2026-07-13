@@ -220,7 +220,7 @@ Riscos remanescentes da Fase 1:
 
 Para validar storage privado real em um projeto Supabase de desenvolvimento:
 
-1. crie um bucket privado, por exemplo `financy-private-dev`;
+1. crie um bucket privado, por exemplo `private-files`;
 2. configure somente o backend local com `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`;
 3. configure `FILE_STORAGE_PROVIDER=supabase`, `SUPABASE_STORAGE_BUCKET=<bucket>`, `PRIVATE_FILES_ENABLED=true`, `SIGNED_URL_TTL_SECONDS=300` e `FILE_SCAN_PROVIDER=mock` para smoke local;
 4. mantenha `DATABASE_URL` apontando para PostgreSQL local;
