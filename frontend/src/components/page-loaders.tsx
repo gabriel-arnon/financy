@@ -5,6 +5,7 @@ import { AlertCircle, Loader2, RefreshCw } from "lucide-react";
 import { AccountsContent } from "@/components/accounts-content";
 import { CardsContent } from "@/components/cards-content";
 import { DashboardContent } from "@/components/dashboard-content";
+import { GuestReimbursementsContent } from "@/components/guest-reimbursements-content";
 import { ReimbursementsContent } from "@/components/reimbursements-content";
 import { RulesContent } from "@/components/rules-content";
 import { StatementsContent } from "@/components/statements-content";
@@ -21,6 +22,9 @@ import {
   getReimbursementContacts,
   getReimbursementEligibleTransactions,
   getReimbursementOverview,
+  getReimbursementInvitations,
+  getReimbursementMemberships,
+  getGuestReimbursementClaims,
   getStatements,
   getTransactions
 } from "@/lib/api";
@@ -390,16 +394,18 @@ export function StatementsPageLoader() {
 export function ReimbursementsPageLoader() {
   const ready = useReadyForData();
   const load = useCallback(async () => {
-    const [overview, contacts, claims, eligibleTransactions, categories, accounts, cards] = await Promise.all([
+    const [overview, contacts, claims, eligibleTransactions, categories, accounts, cards, invitations, memberships] = await Promise.all([
       getReimbursementOverview(),
       getReimbursementContacts(),
       getReimbursementClaims(),
       getReimbursementEligibleTransactions({ limit: 50 }),
       getCategories(),
       getAccounts(),
-      getCards()
+      getCards(),
+      getReimbursementInvitations(),
+      getReimbursementMemberships()
     ]);
-    return { overview, contacts, claims, eligibleTransactions, categories, accounts, cards };
+    return { overview, contacts, claims, eligibleTransactions, categories, accounts, cards, invitations, memberships };
   }, []);
   const state = usePageData(ready, load, "Falha ao carregar ressarcimentos.");
 
@@ -408,7 +414,7 @@ export function ReimbursementsPageLoader() {
       {...state}
       label="Carregando ressarcimentos..."
       variant="list"
-      render={({ overview, contacts, claims, eligibleTransactions, categories, accounts, cards }) => (
+      render={({ overview, contacts, claims, eligibleTransactions, categories, accounts, cards, invitations, memberships }) => (
         <ReimbursementsContent
           initialAccounts={accounts}
           initialCards={cards}
@@ -416,9 +422,29 @@ export function ReimbursementsPageLoader() {
           initialClaims={claims}
           initialContacts={contacts}
           initialEligibleTransactions={eligibleTransactions}
+          initialInvitations={invitations}
+          initialMemberships={memberships}
           initialOverview={overview}
         />
       )}
+    />
+  );
+}
+
+export function GuestReimbursementsPageLoader() {
+  const ready = useReadyForData();
+  const load = useCallback(async () => {
+    const claims = await getGuestReimbursementClaims();
+    return { claims };
+  }, []);
+  const state = usePageData(ready, load, "Falha ao carregar portal de ressarcimentos.");
+
+  return (
+    <PageDataBoundary
+      {...state}
+      label="Carregando portal..."
+      variant="list"
+      render={({ claims }) => <GuestReimbursementsContent initialClaims={claims} />}
     />
   );
 }

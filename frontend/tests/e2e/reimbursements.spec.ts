@@ -97,6 +97,9 @@ async function mockReimbursementsApi(page: Page, options: { seeded?: boolean } =
   let contacts = options.seeded ? [buildContact()] : [] as any[];
   let claims = [] as any[];
   let events = [] as any[];
+  let invitations = [] as any[];
+  let memberships = [] as any[];
+  let guestAccessActive = true;
   let eligible = [
     {
       id: "tx-1",
@@ -210,6 +213,121 @@ async function mockReimbursementsApi(page: Page, options: { seeded?: boolean } =
     if (path === "/reimbursements/eligible-transactions") {
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(eligible) });
     }
+    if (path === "/reimbursements/invitations" && method === "GET") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(invitations) });
+    }
+    if (path === "/reimbursements/invitations" && method === "POST") {
+      const payload = request.postDataJSON();
+      const invitation = {
+        id: `invitation-${invitations.length + 1}`,
+        owner_user_id: "dev-user",
+        contact_id: payload.contact_id,
+        claim_id: payload.claim_id ?? null,
+        email: payload.email ?? contacts.find((contact) => contact.id === payload.contact_id)?.email ?? "mae@example.com",
+        status: "pending",
+        expires_at: "2026-07-26T12:00:00Z",
+        accepted_at: null,
+        accepted_by_user_id: null,
+        revoked_at: null,
+        created_at: "2026-07-12T12:00:00Z",
+        contact: contacts.find((contact) => contact.id === payload.contact_id) ?? null,
+        claim: claims.find((claim) => claim.id === payload.claim_id) ?? null,
+        accept_token: "mock-token",
+        accept_path: "/guest/reimbursements/accept?token=mock-token"
+      };
+      invitations.push(invitation);
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(invitation) });
+    }
+    const revokeInvitationMatch = path.match(/^\/reimbursements\/invitations\/([^/]+)\/revoke$/);
+    if (revokeInvitationMatch) {
+      invitations = invitations.map((invitation) => invitation.id === revokeInvitationMatch[1] ? { ...invitation, status: "revoked", revoked_at: "2026-07-12T13:00:00Z" } : invitation);
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(invitations.find((invitation) => invitation.id === revokeInvitationMatch[1])) });
+    }
+    if (path === "/reimbursements/memberships" && method === "GET") {
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(memberships) });
+    }
+    const revokeMembershipMatch = path.match(/^\/reimbursements\/memberships\/([^/]+)\/revoke$/);
+    if (revokeMembershipMatch) {
+      memberships = memberships.map((membership) => membership.id === revokeMembershipMatch[1] ? { ...membership, status: "revoked", revoked_at: "2026-07-12T13:00:00Z" } : membership);
+      guestAccessActive = false;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(memberships.find((membership) => membership.id === revokeMembershipMatch[1])) });
+    }
+    if (path === "/reimbursements/guest/invitations/accept" && method === "POST") {
+      const membership = {
+        id: "membership-1",
+        owner_user_id: "dev-user",
+        contact_id: "contact-1",
+        auth_user_id: "guest-user",
+        email: "mae@example.com",
+        status: "active",
+        linked_at: "2026-07-12T13:00:00Z",
+        revoked_at: null,
+        created_at: "2026-07-12T13:00:00Z",
+        contact: contacts[0] ?? null
+      };
+      memberships = [membership];
+      invitations = invitations.map((invitation) => ({ ...invitation, status: "accepted", accepted_at: "2026-07-12T13:00:00Z", accepted_by_user_id: "guest-user" }));
+      guestAccessActive = true;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(membership) });
+    }
+    if (path === "/reimbursements/guest/claims" && method === "GET") {
+      const visible = guestAccessActive ? claims.filter((claim) => claim.status !== "draft").map((claim) => ({
+        id: claim.id,
+        title: claim.title,
+        description: claim.description,
+        due_date: claim.due_date,
+        status: claim.status,
+        total_amount: claim.total_amount,
+        sent_at: claim.sent_at,
+        first_viewed_at: claim.first_viewed_at,
+        last_viewed_at: claim.last_viewed_at,
+        attachment_count: 1,
+        items: claim.items.map((item: any) => ({
+          id: item.id,
+          description: item.transaction_snapshot.description,
+          transaction_date: item.transaction_snapshot.transaction_date,
+          amount: item.transaction_snapshot.amount,
+          amount_requested: item.amount_requested,
+          currency: "BRL"
+        }))
+      })) : [];
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(visible) });
+    }
+    const guestActionMatch = path.match(/^\/reimbursements\/guest\/claims\/([^/]+)\/(acknowledge|dispute)$/);
+    if (guestActionMatch && method === "POST") {
+      const claim = claims.find((item) => item.id === guestActionMatch[1]);
+      claim.status = guestActionMatch[2] === "acknowledge" ? "acknowledged" : "disputed";
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        id: claim.id,
+        title: claim.title,
+        description: claim.description,
+        due_date: claim.due_date,
+        status: claim.status,
+        total_amount: claim.total_amount,
+        sent_at: claim.sent_at,
+        first_viewed_at: claim.first_viewed_at,
+        last_viewed_at: claim.last_viewed_at,
+        attachment_count: 1,
+        items: claim.items.map((item: any) => ({
+          id: item.id,
+          description: item.transaction_snapshot.description,
+          transaction_date: item.transaction_snapshot.transaction_date,
+          amount: item.transaction_snapshot.amount,
+          amount_requested: item.amount_requested,
+          currency: "BRL"
+        }))
+      }) });
+    }
+    const guestAttachmentsMatch = path.match(/^\/reimbursements\/guest\/claims\/([^/]+)\/attachments$/);
+    if (guestAttachmentsMatch && method === "GET") {
+      if (!guestAccessActive) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "not found" } }) });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "claim-attachment-1", claim_id: guestAttachmentsMatch[1], status: "active", created_at: "2026-07-12T13:00:00Z", deleted_at: null, file: { original_filename: "recibo.pdf", detected_mime_type: "application/pdf", size_bytes: 20 } }]) });
+    }
+    const guestSignedUrlMatch = path.match(/^\/reimbursements\/guest\/claims\/([^/]+)\/attachments\/([^/]+)\/signed-url$/);
+    if (guestSignedUrlMatch && method === "GET") {
+      if (!guestAccessActive) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "not found" } }) });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ file_id: "hidden", url: "http://127.0.0.1:3100/mock-recibo.pdf", expires_at: "2026-07-12T13:10:00Z" }) });
+    }
     const sendMatch = path.match(/^\/reimbursements\/claims\/([^/]+)\/send$/);
     if (sendMatch) {
       const claim = claims.find((item) => item.id === sendMatch[1]);
@@ -282,6 +400,40 @@ test("shows reimbursements navigation on desktop and mobile", async ({ page }) =
   await page.goto("/");
   await page.getByRole("button", { name: "Abrir menu" }).click();
   await expect(page.getByRole("link", { name: "Ressarcimentos" })).toBeVisible();
+});
+
+test("guest accepts invite sees limited portal acts and loses access after revocation", async ({ page }) => {
+  await mockReimbursementsApi(page, { seeded: true });
+  await page.goto("/reimbursements");
+  await page.getByRole("button", { name: "Cobranças" }).click();
+  await page.getByLabel("Valor para FARMACIA").fill("50.00");
+  await page.getByRole("button", { name: "Adicionar" }).click();
+  await page.getByRole("button", { name: "Finalizar cobrança" }).click();
+  await page.getByRole("dialog", { name: "Finalizar cobranca" }).getByRole("button", { name: "Finalizar cobranca" }).click();
+  await page.getByRole("button", { name: "Criar convite" }).click();
+  await expect(page.getByText("/guest/reimbursements/accept?token=mock-token")).toBeVisible();
+
+  await page.goto("/guest/reimbursements/accept?token=mock-token");
+  await expect(page.getByText("Acesso liberado")).toBeVisible();
+  await page.getByRole("link", { name: "Abrir portal" }).click();
+  await expect(page.getByRole("heading", { name: "Cobranças compartilhadas" })).toBeVisible();
+  await expect(page.getByText("Julho")).toBeVisible();
+  await expect(page.getByText("FARMACIA")).toBeVisible();
+  await expect(page.getByText("Conta Corrente")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Ver comprovantes" }).click();
+  await expect(page.getByRole("button", { name: "recibo.pdf" })).toBeVisible();
+  await page.getByRole("button", { name: "Reconhecer" }).click();
+  await expect(page.getByText(/Reconhecida .*1 itens/)).toBeVisible();
+  await page.getByRole("button", { name: "Contestar" }).click();
+  await expect(page.getByText(/Contestada .*1 itens/)).toBeVisible();
+
+  await page.goto("/reimbursements");
+  await page.getByRole("button", { name: "Pessoas" }).click();
+  await page.getByRole("button", { name: "Revogar" }).click();
+  await page.getByRole("dialog", { name: "Revogar acesso" }).getByRole("button", { name: "Revogar acesso" }).click();
+  await page.goto("/guest/reimbursements");
+  await expect(page.getByText("Nenhuma cobrança compartilhada")).toBeVisible();
 });
 
 test("creates edits and inactivates reimbursement contacts", async ({ page }) => {

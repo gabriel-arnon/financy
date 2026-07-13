@@ -1,12 +1,23 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
 from app.core.errors import AppError
-from app.models.enums import ReimbursementClaimStatus, ReimbursementItemStatus, TransactionType
+from app.models.enums import (
+    ReimbursementClaimStatus,
+    ReimbursementInvitationStatus,
+    ReimbursementItemStatus,
+    ReimbursementMembershipStatus,
+    TransactionType,
+)
 from app.schemas.reimbursements import (
+    GuestReimbursementAction,
+    GuestReimbursementClaimRead,
+    GuestReimbursementItemRead,
     ReimbursementClaimCreate,
     ReimbursementClaimRead,
     ReimbursementClaimUpdate,
@@ -15,9 +26,17 @@ from app.schemas.reimbursements import (
     ReimbursementContactUpdate,
     ReimbursementEligibleTransactionRead,
     ReimbursementEventRead,
+    ReimbursementInvitationAccept,
+    ReimbursementInvitationCreate,
+    ReimbursementInvitationCreatedRead,
+    ReimbursementInvitationRead,
     ReimbursementItemCreate,
     ReimbursementItemRead,
     ReimbursementItemUpdate,
+    ReimbursementClaimAttachmentCreate,
+    ReimbursementClaimAttachmentRead,
+    ReimbursementClaimAttachmentFileRead,
+    ReimbursementMembershipRead,
     ReimbursementOverviewRead,
 )
 
@@ -226,6 +245,240 @@ class ReimbursementService:
             return []
         return [ReimbursementEventRead(**item) for item in list_events(user_id, claim_id)]
 
+    def list_invitations(self, user_id: str) -> list[ReimbursementInvitationRead]:
+        list_invitations = getattr(self.repository, "list_reimbursement_invitations", None)
+        if not list_invitations:
+            return []
+        return [self._invitation_read(user_id, item) for item in list_invitations(user_id)]
+
+    def create_invitation(self, user_id: str, payload: ReimbursementInvitationCreate) -> ReimbursementInvitationCreatedRead:
+        create_invitation = getattr(self.repository, "create_reimbursement_invitation", None)
+        if not create_invitation:
+            raise AppError("Repositorio nao suporta convites.", code="reimbursement_invitations_unavailable")
+        contact = self._contact(user_id, payload.contact_id)
+        if contact.get("status") != "active":
+            raise AppError("Contato inativo nao pode receber convite.", code="reimbursement_contact_inactive")
+        claim_id = payload.claim_id
+        if claim_id:
+            claim = self._claim(user_id, claim_id)
+            if claim.get("contact_id") != contact["id"]:
+                raise AppError("Cobranca nao pertence a este contato.", code="reimbursement_claim_contact_mismatch")
+            if claim.get("status") == ReimbursementClaimStatus.draft.value:
+                raise AppError("Finalize a cobranca antes de compartilhar acesso.", code="reimbursement_claim_not_sent")
+        email = (payload.email or contact.get("email") or "").strip().casefold()
+        if not email:
+            raise AppError("Informe um e-mail para o convite.", code="reimbursement_invitation_email_required")
+        token = secrets.token_urlsafe(32)
+        record = create_invitation(
+            user_id,
+            {
+                "contact_id": contact["id"],
+                "claim_id": claim_id,
+                "email": email,
+                "token_hash": self._token_hash(token),
+                "status": ReimbursementInvitationStatus.pending.value,
+                "expires_at": _utcnow() + timedelta(days=payload.expires_in_days),
+                "created_at": _utcnow(),
+            },
+        )
+        self._event(user_id, "invitation_created", contact_id=contact["id"], claim_id=claim_id)
+        return ReimbursementInvitationCreatedRead(
+            **self._invitation_read(user_id, record).model_dump(),
+            accept_token=token,
+            accept_path=f"/guest/reimbursements/accept?token={token}",
+        )
+
+    def revoke_invitation(self, user_id: str, invitation_id: str) -> ReimbursementInvitationRead:
+        invitation = self._invitation(user_id, invitation_id)
+        if invitation.get("status") != ReimbursementInvitationStatus.pending.value:
+            raise AppError("Convite nao pode ser revogado neste status.", code="reimbursement_invitation_revoke_forbidden")
+        record = self.repository.update_reimbursement_invitation(
+            user_id,
+            invitation_id,
+            {"status": ReimbursementInvitationStatus.revoked.value, "revoked_at": _utcnow()},
+        )
+        self._event(user_id, "invitation_revoked", contact_id=invitation["contact_id"], claim_id=invitation.get("claim_id"))
+        return self._invitation_read(user_id, record or invitation)
+
+    def list_memberships(self, user_id: str) -> list[ReimbursementMembershipRead]:
+        list_memberships = getattr(self.repository, "list_reimbursement_memberships", None)
+        if not list_memberships:
+            return []
+        return [self._membership_read(user_id, item) for item in list_memberships(user_id)]
+
+    def revoke_membership(self, user_id: str, membership_id: str) -> ReimbursementMembershipRead:
+        membership = self._membership(user_id, membership_id)
+        if membership.get("status") != ReimbursementMembershipStatus.active.value:
+            raise AppError("Acesso ja esta revogado.", code="reimbursement_membership_revoke_forbidden")
+        record = self.repository.update_reimbursement_membership(
+            user_id,
+            membership_id,
+            {"status": ReimbursementMembershipStatus.revoked.value, "revoked_at": _utcnow()},
+        )
+        self._event(user_id, "membership_revoked", contact_id=membership["contact_id"])
+        return self._membership_read(user_id, record or membership)
+
+    def accept_invitation(self, user: Any, payload: ReimbursementInvitationAccept) -> ReimbursementMembershipRead:
+        user_email = (getattr(user, "email", None) or "").strip().casefold()
+        if not user_email:
+            raise AppError("Entre com o e-mail convidado para aceitar.", code="reimbursement_guest_email_required")
+        ensure_profile = getattr(self.repository, "ensure_profile", None)
+        if ensure_profile:
+            ensure_profile(user.id, email=user_email, full_name=getattr(user, "full_name", None))
+        token_hash = self._token_hash(payload.token)
+        accept_atomically = getattr(self.repository, "accept_reimbursement_invitation_atomic", None)
+        if accept_atomically:
+            result = accept_atomically(token_hash, user.id, user_email, _utcnow())
+            if result.get("error"):
+                raise AppError("Convite invalido ou expirado.", status_code=404, code="reimbursement_invitation_invalid")
+            membership = result["membership"]
+            invitation = result.get("invitation") or {}
+            self._event(
+                membership["owner_user_id"],
+                "invitation_accepted",
+                contact_id=membership["contact_id"],
+                claim_id=invitation.get("claim_id"),
+                actor_type="guest",
+                actor_user_id=user.id,
+            )
+            return self._membership_read(membership["owner_user_id"], membership)
+        get_by_token = getattr(self.repository, "get_reimbursement_invitation_by_token_hash", None)
+        if not get_by_token:
+            raise AppError("Repositorio nao suporta convites.", code="reimbursement_invitations_unavailable")
+        invitation = get_by_token(token_hash)
+        if not invitation:
+            raise AppError("Convite invalido ou expirado.", status_code=404, code="reimbursement_invitation_invalid")
+        if invitation.get("status") != ReimbursementInvitationStatus.pending.value or self._as_datetime(invitation["expires_at"]) < _utcnow():
+            raise AppError("Convite invalido ou expirado.", status_code=404, code="reimbursement_invitation_invalid")
+        if user_email != str(invitation["email"]).strip().casefold():
+            raise AppError("Este convite pertence a outro e-mail.", status_code=404, code="reimbursement_invitation_invalid")
+        owner_id = invitation["owner_user_id"]
+        contact = self._contact(owner_id, invitation["contact_id"])
+        if contact.get("status") != "active":
+            raise AppError("Convite invalido ou expirado.", status_code=404, code="reimbursement_invitation_invalid")
+        existing = self.repository.get_active_reimbursement_membership(owner_id, contact["id"], user.id)
+        if existing:
+            membership = existing
+        else:
+            membership = self.repository.create_reimbursement_membership(
+                owner_id,
+                {
+                    "contact_id": contact["id"],
+                    "auth_user_id": user.id,
+                    "email": user_email,
+                    "status": ReimbursementMembershipStatus.active.value,
+                    "linked_at": _utcnow(),
+                    "created_at": _utcnow(),
+                },
+            )
+        self.repository.update_reimbursement_invitation(
+            owner_id,
+            invitation["id"],
+            {
+                "status": ReimbursementInvitationStatus.accepted.value,
+                "accepted_at": _utcnow(),
+                "accepted_by_user_id": user.id,
+            },
+        )
+        self._event(owner_id, "invitation_accepted", contact_id=contact["id"], claim_id=invitation.get("claim_id"), actor_type="guest", actor_user_id=user.id)
+        return self._membership_read(owner_id, membership)
+
+    def list_guest_claims(self, guest_user_id: str) -> list[GuestReimbursementClaimRead]:
+        list_claims = getattr(self.repository, "list_guest_reimbursement_claims", None)
+        if not list_claims:
+            return []
+        return [self._guest_claim_read(item["owner_user_id"], item) for item in list_claims(guest_user_id)]
+
+    def get_guest_claim(self, guest_user_id: str, claim_id: str) -> GuestReimbursementClaimRead:
+        claim = self._guest_claim(guest_user_id, claim_id)
+        self.repository.update_reimbursement_claim(
+            claim["owner_user_id"],
+            claim["id"],
+            {
+                "first_viewed_at": claim.get("first_viewed_at") or _utcnow(),
+                "last_viewed_at": _utcnow(),
+                "view_count": int(claim.get("view_count") or 0) + 1,
+            },
+        )
+        self._event(claim["owner_user_id"], "claim_viewed", claim_id=claim["id"], contact_id=claim["contact_id"], actor_type="guest", actor_user_id=guest_user_id)
+        return self._guest_claim_read(claim["owner_user_id"], self._claim(claim["owner_user_id"], claim["id"]))
+
+    def acknowledge_guest_claim(self, guest_user_id: str, claim_id: str) -> GuestReimbursementClaimRead:
+        claim = self._guest_claim(guest_user_id, claim_id)
+        if claim["status"] == ReimbursementClaimStatus.acknowledged.value:
+            return self._guest_claim_read(claim["owner_user_id"], claim)
+        if claim["status"] not in {ReimbursementClaimStatus.sent.value, ReimbursementClaimStatus.disputed.value}:
+            raise AppError("Cobranca nao pode ser reconhecida neste status.", code="reimbursement_claim_transition_forbidden")
+        record = self.repository.update_reimbursement_claim(
+            claim["owner_user_id"],
+            claim["id"],
+            {"status": ReimbursementClaimStatus.acknowledged.value},
+        )
+        self._event(claim["owner_user_id"], "claim_acknowledged", claim_id=claim["id"], contact_id=claim["contact_id"], actor_type="guest", actor_user_id=guest_user_id)
+        return self._guest_claim_read(claim["owner_user_id"], record or claim)
+
+    def dispute_guest_claim(self, guest_user_id: str, claim_id: str, payload: GuestReimbursementAction) -> GuestReimbursementClaimRead:
+        claim = self._guest_claim(guest_user_id, claim_id)
+        if claim["status"] not in {ReimbursementClaimStatus.sent.value, ReimbursementClaimStatus.acknowledged.value}:
+            raise AppError("Cobranca nao pode ser contestada neste status.", code="reimbursement_claim_transition_forbidden")
+        note = (payload.note or "").strip()
+        if not note:
+            raise AppError("Informe o motivo da contestacao.", code="reimbursement_dispute_note_required")
+        record = self.repository.update_reimbursement_claim(
+            claim["owner_user_id"],
+            claim["id"],
+            {"status": ReimbursementClaimStatus.disputed.value},
+        )
+        self._event(
+            claim["owner_user_id"],
+            "claim_disputed",
+            claim_id=claim["id"],
+            contact_id=claim["contact_id"],
+            actor_type="guest",
+            actor_user_id=guest_user_id,
+            metadata={"note": note[:500]} if note else {},
+        )
+        return self._guest_claim_read(claim["owner_user_id"], record or claim)
+
+    def add_claim_attachment(self, user_id: str, claim_id: str, payload: ReimbursementClaimAttachmentCreate) -> ReimbursementClaimAttachmentRead:
+        claim = self._claim(user_id, claim_id)
+        stored_file = self.repository.get_stored_file(user_id, payload.file_id)
+        if not stored_file:
+            raise AppError("Arquivo nao encontrado.", status_code=404, code="file_not_found")
+        create_attachment = getattr(self.repository, "create_reimbursement_claim_attachment", None)
+        if not create_attachment:
+            raise AppError("Repositorio nao suporta comprovantes de cobranca.", code="reimbursement_claim_attachments_unavailable")
+        attachment = create_attachment(user_id, {"claim_id": claim["id"], "file_id": payload.file_id})
+        self._event(user_id, "claim_attachment_shared", claim_id=claim["id"], contact_id=claim["contact_id"], metadata={"file_id": payload.file_id})
+        return self._claim_attachment_read(user_id, attachment)
+
+    def list_claim_attachments(self, user_id: str, claim_id: str) -> list[ReimbursementClaimAttachmentRead]:
+        self._claim(user_id, claim_id)
+        list_attachments = getattr(self.repository, "list_reimbursement_claim_attachments", None)
+        if not list_attachments:
+            return []
+        return [self._claim_attachment_read(user_id, item) for item in list_attachments(user_id, claim_id)]
+
+    def remove_claim_attachment(self, user_id: str, claim_id: str, attachment_id: str) -> dict[str, str]:
+        claim = self._claim(user_id, claim_id)
+        attachment = self.repository.get_reimbursement_claim_attachment(user_id, attachment_id)
+        if not attachment or attachment.get("claim_id") != claim_id:
+            raise AppError("Comprovante nao encontrado.", status_code=404, code="reimbursement_claim_attachment_not_found")
+        self.repository.update_reimbursement_claim_attachment(user_id, attachment_id, {"status": "inactive", "deleted_at": _utcnow()})
+        self._event(user_id, "claim_attachment_removed", claim_id=claim["id"], contact_id=claim["contact_id"], metadata={"file_id": attachment["file_id"]})
+        return {"status": "deleted"}
+
+    def list_guest_claim_attachments(self, guest_user_id: str, claim_id: str) -> list[ReimbursementClaimAttachmentRead]:
+        claim = self._guest_claim(guest_user_id, claim_id)
+        return self.list_claim_attachments(claim["owner_user_id"], claim["id"])
+
+    def guest_claim_attachment_file(self, guest_user_id: str, claim_id: str, attachment_id: str) -> tuple[str, str]:
+        claim = self._guest_claim(guest_user_id, claim_id)
+        attachment = self.repository.get_reimbursement_claim_attachment(claim["owner_user_id"], attachment_id)
+        if not attachment or attachment.get("claim_id") != claim["id"] or attachment.get("status") != "active":
+            raise AppError("Comprovante nao encontrado.", status_code=404, code="reimbursement_claim_attachment_not_found")
+        return claim["owner_user_id"], attachment["file_id"]
+
     def list_eligible_transactions(self, user_id: str, query: str | None = None, limit: int = 30) -> list[ReimbursementEligibleTransactionRead]:
         limit = max(1, min(limit, 100))
         list_candidates = getattr(self.repository, "list_reimbursement_candidate_transactions", None)
@@ -283,6 +536,35 @@ class ReimbursementService:
         if not item:
             raise AppError("Item nao encontrado.", status_code=404, code="reimbursement_item_not_found")
         return item
+
+    def _invitation(self, user_id: str, invitation_id: str) -> dict[str, Any]:
+        invitation = self.repository.get_reimbursement_invitation(user_id, invitation_id)
+        if not invitation:
+            raise AppError("Convite nao encontrado.", status_code=404, code="reimbursement_invitation_not_found")
+        return invitation
+
+    def _membership(self, user_id: str, membership_id: str) -> dict[str, Any]:
+        membership = self.repository.get_reimbursement_membership(user_id, membership_id)
+        if not membership:
+            raise AppError("Acesso nao encontrado.", status_code=404, code="reimbursement_membership_not_found")
+        return membership
+
+    def _guest_claim(self, guest_user_id: str, claim_id: str) -> dict[str, Any]:
+        get_guest_claim = getattr(self.repository, "get_guest_reimbursement_claim", None)
+        if not get_guest_claim:
+            raise AppError("Repositorio nao suporta portal convidado.", code="reimbursement_guest_unavailable")
+        claim = get_guest_claim(guest_user_id, claim_id)
+        if not claim:
+            raise AppError("Cobranca nao encontrada.", status_code=404, code="reimbursement_claim_not_found")
+        return claim
+
+    def _token_hash(self, token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def _as_datetime(self, value: Any) -> datetime:
+        if isinstance(value, datetime):
+            return value
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
 
     def _ensure_draft(self, claim: dict[str, Any]) -> None:
         if claim["status"] != ReimbursementClaimStatus.draft.value:
@@ -419,6 +701,79 @@ class ReimbursementService:
             items=items,
         )
 
+    def _invitation_read(self, user_id: str, invitation: dict[str, Any]) -> ReimbursementInvitationRead:
+        status = invitation.get("status")
+        if status == ReimbursementInvitationStatus.pending.value and self._as_datetime(invitation["expires_at"]) < _utcnow():
+            invitation = {**invitation, "status": ReimbursementInvitationStatus.expired.value}
+        contact = self.repository.get_reimbursement_contact(user_id, invitation["contact_id"])
+        claim = self.repository.get_reimbursement_claim(user_id, invitation["claim_id"]) if invitation.get("claim_id") else None
+        return ReimbursementInvitationRead(
+            **invitation,
+            contact=ReimbursementContactRead(**contact) if contact else None,
+            claim=self._claim_read(user_id, claim) if claim else None,
+        )
+
+    def _membership_read(self, user_id: str, membership: dict[str, Any]) -> ReimbursementMembershipRead:
+        contact = self.repository.get_reimbursement_contact(user_id, membership["contact_id"])
+        return ReimbursementMembershipRead(
+            **membership,
+            contact=ReimbursementContactRead(**contact) if contact else None,
+        )
+
+    def _guest_claim_read(self, user_id: str, claim: dict[str, Any]) -> GuestReimbursementClaimRead:
+        raw_items = [
+            item
+            for item in self.repository.list_reimbursement_items(user_id, claim["id"])
+            if item.get("status") == ReimbursementItemStatus.active.value
+        ]
+        items = []
+        for item in raw_items:
+            snapshot = item.get("transaction_snapshot") or {}
+            items.append(
+                GuestReimbursementItemRead(
+                    id=item["id"],
+                    description=str(snapshot.get("description") or "Transacao"),
+                    transaction_date=str(snapshot.get("transaction_date") or ""),
+                    amount=Decimal(str(snapshot.get("amount") or "0")).copy_abs().quantize(Decimal("0.01")),
+                    amount_requested=Decimal(str(item["amount_requested"])).quantize(Decimal("0.01")),
+                    currency=str(snapshot.get("currency") or "BRL"),
+                )
+            )
+        total = claim.get("total_snapshot")
+        total_amount = Decimal(str(total)) if total is not None else sum((item.amount_requested for item in items), Decimal("0.00"))
+        attachments = getattr(self.repository, "list_reimbursement_claim_attachments", None)
+        attachment_count = len(attachments(user_id, claim["id"])) if attachments else 0
+        return GuestReimbursementClaimRead(
+            id=claim["id"],
+            title=claim["title"],
+            description=claim.get("description"),
+            due_date=str(claim["due_date"]) if claim.get("due_date") else None,
+            status=claim["status"],
+            total_amount=total_amount.quantize(Decimal("0.01")),
+            sent_at=claim.get("sent_at"),
+            first_viewed_at=claim.get("first_viewed_at"),
+            last_viewed_at=claim.get("last_viewed_at"),
+            attachment_count=attachment_count,
+            items=items,
+        )
+
+    def _claim_attachment_read(self, user_id: str, attachment: dict[str, Any]) -> ReimbursementClaimAttachmentRead:
+        stored_file = self.repository.get_stored_file(user_id, attachment["file_id"])
+        if not stored_file:
+            raise AppError("Arquivo nao encontrado.", status_code=404, code="file_not_found")
+        return ReimbursementClaimAttachmentRead(
+            id=attachment["id"],
+            claim_id=attachment["claim_id"],
+            status=attachment.get("status", "active"),
+            created_at=attachment["created_at"],
+            deleted_at=attachment.get("deleted_at"),
+            file=ReimbursementClaimAttachmentFileRead(
+                original_filename=stored_file["original_filename"],
+                detected_mime_type=stored_file["detected_mime_type"],
+                size_bytes=stored_file["size_bytes"],
+            ),
+        )
+
     def _event(
         self,
         user_id: str,
@@ -428,6 +783,8 @@ class ReimbursementService:
         contact_id: str | None = None,
         item_id: str | None = None,
         metadata: dict[str, Any] | None = None,
+        actor_type: str = "owner",
+        actor_user_id: str | None = None,
     ) -> None:
         create_event = getattr(self.repository, "create_reimbursement_event", None)
         if not create_event:
@@ -440,5 +797,7 @@ class ReimbursementService:
                 "item_id": item_id,
                 "event_type": event_type,
                 "metadata": metadata or {},
+                "actor_type": actor_type,
+                "actor_user_id": actor_user_id or (user_id if actor_type == "owner" else None),
             },
         )

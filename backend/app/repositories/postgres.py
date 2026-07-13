@@ -961,6 +961,218 @@ class PostgresRepository:
             (user_id, claim_id),
         )
 
+    def list_reimbursement_invitations(self, user_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            "select * from reimbursement_invitations where owner_user_id = %s order by created_at desc",
+            (user_id,),
+        )
+
+    def get_reimbursement_invitation(self, user_id: str, invitation_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            "select * from reimbursement_invitations where id = %s and owner_user_id = %s",
+            (invitation_id, user_id),
+        )
+
+    def get_reimbursement_invitation_by_token_hash(self, token_hash: str) -> dict[str, Any] | None:
+        return self._fetch_one("select * from reimbursement_invitations where token_hash = %s", (token_hash,))
+
+    def create_reimbursement_invitation(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert(
+            "reimbursement_invitations",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                **payload,
+            },
+        )
+
+    def update_reimbursement_invitation(self, user_id: str, invitation_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update(
+            "reimbursement_invitations",
+            payload,
+            "id = %s and owner_user_id = %s",
+            (invitation_id, user_id),
+        )
+
+    def list_reimbursement_memberships(self, user_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            "select * from reimbursement_memberships where owner_user_id = %s order by created_at desc",
+            (user_id,),
+        )
+
+    def get_reimbursement_membership(self, user_id: str, membership_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            "select * from reimbursement_memberships where id = %s and owner_user_id = %s",
+            (membership_id, user_id),
+        )
+
+    def get_active_reimbursement_membership(self, user_id: str, contact_id: str, auth_user_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            """
+            select * from reimbursement_memberships
+            where owner_user_id = %s and contact_id = %s and auth_user_id = %s and status = 'active'
+            limit 1
+            """,
+            (user_id, contact_id, auth_user_id),
+        )
+
+    def create_reimbursement_membership(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._insert(
+            "reimbursement_memberships",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "owner_user_id": user_id,
+                **payload,
+            },
+        )
+
+    def accept_reimbursement_invitation_atomic(self, token_hash: str, auth_user_id: str, email: str, now: datetime) -> dict[str, Any]:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("select * from reimbursement_invitations where token_hash = %s for update", (token_hash,))
+            invitation = _record(cur.fetchone())
+            if not invitation:
+                return {"error": "reimbursement_invitation_invalid"}
+            normalized_email = email.strip().casefold()
+            if str(invitation["email"]).strip().casefold() != normalized_email:
+                return {"error": "reimbursement_invitation_invalid"}
+            if invitation.get("status") == "accepted" and invitation.get("accepted_by_user_id") == auth_user_id:
+                cur.execute(
+                    """
+                    select * from reimbursement_memberships
+                    where owner_user_id = %s and contact_id = %s and auth_user_id = %s and status = 'active'
+                    limit 1
+                    """,
+                    (invitation["owner_user_id"], invitation["contact_id"], auth_user_id),
+                )
+                membership = _record(cur.fetchone())
+                return {"membership": membership} if membership else {"error": "reimbursement_invitation_invalid"}
+            if invitation.get("status") != "pending" or invitation["expires_at"] < now:
+                return {"error": "reimbursement_invitation_invalid"}
+            membership_id = str(uuid4())
+            cur.execute(
+                """
+                insert into reimbursement_memberships
+                  (id, owner_user_id, contact_id, auth_user_id, email, status, linked_at, created_at)
+                values (%s, %s, %s, %s, %s, 'active', %s, %s)
+                on conflict (owner_user_id, contact_id, auth_user_id) where status = 'active'
+                do update set email = excluded.email
+                returning *
+                """,
+                (
+                    membership_id,
+                    invitation["owner_user_id"],
+                    invitation["contact_id"],
+                    auth_user_id,
+                    normalized_email,
+                    now,
+                    now,
+                ),
+            )
+            membership = _record(cur.fetchone())
+            cur.execute(
+                """
+                update reimbursement_invitations
+                set status = 'accepted', accepted_at = %s, accepted_by_user_id = %s
+                where id = %s and owner_user_id = %s
+                """,
+                (now, auth_user_id, invitation["id"], invitation["owner_user_id"]),
+            )
+            return {"membership": membership, "invitation": invitation}
+
+    def update_reimbursement_membership(self, user_id: str, membership_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update(
+            "reimbursement_memberships",
+            payload,
+            "id = %s and owner_user_id = %s",
+            (membership_id, user_id),
+        )
+
+    def list_guest_reimbursement_claims(self, guest_user_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            """
+            select distinct rc.*
+            from reimbursement_claims rc
+            join reimbursement_memberships rm
+              on rm.owner_user_id = rc.owner_user_id
+             and rm.contact_id = rc.contact_id
+             and rm.status = 'active'
+            where rm.auth_user_id = %s
+              and rc.status in ('sent', 'acknowledged', 'disputed', 'partially_paid', 'paid', 'canceled')
+            order by rc.created_at desc
+            """,
+            (guest_user_id,),
+        )
+
+    def get_guest_reimbursement_claim(self, guest_user_id: str, claim_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            """
+            select rc.*
+            from reimbursement_claims rc
+            join reimbursement_memberships rm
+              on rm.owner_user_id = rc.owner_user_id
+             and rm.contact_id = rc.contact_id
+             and rm.status = 'active'
+            where rm.auth_user_id = %s
+              and rc.id = %s
+              and rc.status in ('sent', 'acknowledged', 'disputed', 'partially_paid', 'paid', 'canceled')
+            limit 1
+            """,
+            (guest_user_id, claim_id),
+        )
+
+    def create_reimbursement_claim_attachment(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            "status": "active",
+            "created_at": datetime.now(timezone.utc),
+            **payload,
+        }
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into reimbursement_claim_attachments
+                  (id, owner_user_id, claim_id, file_id, status, created_at)
+                values (%s, %s, %s, %s, %s, %s)
+                on conflict (claim_id, file_id) where status = 'active'
+                do update set status = excluded.status
+                returning *
+                """,
+                (
+                    record["id"],
+                    record["owner_user_id"],
+                    record["claim_id"],
+                    record["file_id"],
+                    record["status"],
+                    record["created_at"],
+                ),
+            )
+            return _record(cur.fetchone()) or {}
+
+    def list_reimbursement_claim_attachments(self, user_id: str, claim_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            """
+            select * from reimbursement_claim_attachments
+            where owner_user_id = %s and claim_id = %s and status = 'active'
+            order by created_at desc
+            """,
+            (user_id, claim_id),
+        )
+
+    def get_reimbursement_claim_attachment(self, user_id: str, attachment_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            "select * from reimbursement_claim_attachments where id = %s and owner_user_id = %s",
+            (attachment_id, user_id),
+        )
+
+    def update_reimbursement_claim_attachment(self, user_id: str, attachment_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update(
+            "reimbursement_claim_attachments",
+            payload,
+            "id = %s and owner_user_id = %s",
+            (attachment_id, user_id),
+        )
+
     def list_reimbursement_candidate_transactions(self, user_id: str, query: str | None = None, limit: int = 30) -> list[dict[str, Any]]:
         params: list[Any] = [user_id, user_id]
         search = ""

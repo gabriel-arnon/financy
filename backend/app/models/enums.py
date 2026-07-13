@@ -95,3 +95,15 @@ class ReimbursementEventActorType(StrEnum):
     owner = "owner"
     guest = "guest"
     system = "system"
+
+
+class ReimbursementInvitationStatus(StrEnum):
+    pending = "pending"
+    accepted = "accepted"
+    revoked = "revoked"
+    expired = "expired"
+
+
+class ReimbursementMembershipStatus(StrEnum):
+    active = "active"
+    revoked = "revoked"

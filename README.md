@@ -55,7 +55,7 @@ npm install
 Copy-Item .env.example .env.local
 npm run dev
 ```
-
+teste
 O app sobe em `http://localhost:3000`.
 
 ### Variaveis de ambiente

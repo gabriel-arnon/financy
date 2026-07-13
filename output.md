@@ -796,6 +796,157 @@ Fora de escopo preservado:
 - Fundacao 3 nao foi iniciada.
 - Portal guest, invitations, memberships, comentarios, pagamentos, Telegram, OCR, audio, inbox e filas nao foram implementados.
 
+## Fundacao 3 - Convites e Portal Guest Limitado
+
+Escopo implementado:
+
+- Criada a migration incremental `docs/supabase/migrations/007_reimbursement_guest_access.sql`, nao executada automaticamente.
+- Adicionados convites de ressarcimento com token bruto retornado apenas na criacao e `token_hash` persistido no banco.
+- Adicionados memberships para vincular um contato de ressarcimento a um usuario autenticado.
+- O aceite de convite exige usuario autenticado e e-mail igual ao e-mail convidado.
+- Owner pode listar/criar/revogar convites e listar/revogar acessos.
+- Guest pode listar apenas cobrancas compartilhadas por membership ativo e status compartilhavel.
+- Guest pode reconhecer ou contestar uma cobranca; a contestacao registra nota curta em evento de dominio.
+- Portal guest criado em `/guest/reimbursements`, sem sidebar financeira, dashboard, contas, cartoes, transacoes gerais, importacoes ou regras.
+- Rota de aceite criada em `/guest/reimbursements/accept?token=...`.
+- UI owner-only ganhou criacao de convite em cobranca finalizada e visualizacao/revogacao de convites e acessos em Pessoas.
+
+Endpoints adicionados:
+
+- `GET /reimbursements/invitations`
+- `POST /reimbursements/invitations`
+- `POST /reimbursements/invitations/{invitation_id}/revoke`
+- `GET /reimbursements/memberships`
+- `POST /reimbursements/memberships/{membership_id}/revoke`
+- `POST /reimbursements/guest/invitations/accept`
+- `GET /reimbursements/guest/claims`
+- `GET /reimbursements/guest/claims/{claim_id}`
+- `POST /reimbursements/guest/claims/{claim_id}/acknowledge`
+- `POST /reimbursements/guest/claims/{claim_id}/dispute`
+
+Seguranca e isolamento:
+
+- `owner_user_id` continua derivado do backend/JWT; o frontend nao envia owner.
+- Convite nao vira autorizacao permanente; somente membership ativo libera acesso.
+- Revogar membership remove imediatamente a listagem guest de cobrancas daquele contato.
+- Guest nao acessa cobrancas draft nem claims fora de memberships ativos.
+- Tokens sao armazenados como SHA-256; o token bruto so aparece na resposta de criacao para montar o link.
+- Eventos de aceite, visualizacao, reconhecimento, contestacao e revogacao sao registrados no dominio.
+
+Validacoes:
+
+- Backend focado: `backend/.venv/Scripts/python.exe -m pytest tests/test_reimbursements_api.py -q` -> `18 passed in 4.35s`.
+- Backend completo: `backend/.venv/Scripts/python.exe -m pytest` -> `91 passed, 1 warning in 15.70s`.
+- Frontend typecheck: `npm.cmd run typecheck` -> passou.
+- Frontend lint: `npm.cmd run lint` -> passou.
+- Frontend build: `npm.cmd run build` -> passou.
+- E2E ressarcimentos isolado: `npx.cmd playwright test tests/e2e/reimbursements.spec.ts --reporter=line` -> `4 passed (9.0s)`.
+- E2E completo final: `npm.cmd run e2e` -> `26 passed (48.9s)`.
+- PostgreSQL marcado nesta sessao: `backend/.venv/Scripts/python.exe -m pytest tests_postgres -m postgres -q` -> bloqueado por ambiente: `TEST_DATABASE_URL is required for PostgreSQL integration tests.`
+
+Observacao de E2E:
+
+- Uma execucao intermediaria de `npm.cmd run e2e` falhou em cascata apos o webServer do Playwright ficar indisponivel (`ERR_CONNECTION_REFUSED`).
+- Antes da cascata, os mocks de `reimbursements.spec.ts` ainda nao cobriam `/reimbursements/invitations` e `/reimbursements/memberships`; isso foi corrigido.
+- Reexecucoes posteriores passaram: spec isolado `4 passed` e suite completa `26 passed`.
+
+Warning restante:
+
+- Permanece o warning conhecido de `reportlab==4.2.5` usando `ast.NameConstant`, deprecado para Python 3.14.
+
+Fora de escopo preservado:
+
+- Fundacao 4 nao foi iniciada.
+- Comentarios, pagamentos, Telegram, OCR, audio, inbox, filas, gateway, Pix e portal corporativo nao foram implementados.
+
+## Fechamento da Fundacao 3 - Validacao PostgreSQL, Payload Guest e Comprovantes
+
+Ambiente e migrations:
+
+- Ambiente usado: PostgreSQL local Docker em `localhost:5432`, banco `financy_dev`, validado pelo script seguro anti-remoto.
+- Comando executado: `powershell.exe -ExecutionPolicy Bypass -File .\scripts\setup_dev_db.ps1 -ResetSchema`.
+- Resultado: migrations `001` a `007` aplicadas com sucesso no PostgreSQL local.
+- Criada migration incremental `docs/supabase/migrations/008_reimbursement_claim_attachments.sql`.
+- Comando incremental executado: `backend/.venv/Scripts/python.exe scripts/apply_migrations.py --database-url postgresql://financy_dev:***@localhost:5432/financy_dev`.
+- Resultado incremental: somente `008_reimbursement_claim_attachments.sql` aplicada.
+- Reexecucao do aplicador sem reset: `Migrations applied: none`, validando idempotencia operacional via `schema_migrations`.
+- Inspecao de schema: `21 public tables`.
+- Nenhuma migration foi executada em Supabase remoto ou producao.
+
+Schema criado no fechamento:
+
+- `reimbursement_invitations` pela migration 007:
+  - `token_hash` unico;
+  - `owner_user_id`, `contact_id`, `claim_id`, `email`, `status`, `expires_at`, `accepted_at`, `accepted_by_user_id`, `revoked_at`, `created_at`;
+  - indices por owner/contact/status/claim.
+- `reimbursement_memberships` pela migration 007:
+  - `owner_user_id`, `contact_id`, `auth_user_id`, `email`, `status`, `linked_at`, `revoked_at`, `created_at`;
+  - unique parcial para membership ativo por owner/contact/auth user.
+- `reimbursement_claim_attachments` pela migration 008:
+  - vinculo explicito entre claim e stored file;
+  - unique parcial por `claim_id` + `file_id` quando ativo;
+  - indices por owner, claim e file.
+
+Token e seguranca:
+
+- Token bruto e retornado somente na criacao do convite, para montagem do link.
+- Listagens de convites nao retornam token bruto.
+- Banco persiste somente SHA-256 em `token_hash`.
+- Aceite PostgreSQL usa `select ... for update` no convite e `on conflict` no membership ativo.
+- Aceite duplicado pelo mesmo usuario retorna o mesmo membership ativo.
+- E-mail e normalizado com `casefold`.
+- Convites expirados, revogados, com e-mail diferente ou de outro usuario retornam erro generico de convite invalido/expirado.
+- Divida tecnica registrada: rate limiting especifico para aceite de convite ainda nao foi implementado.
+
+Contrato guest:
+
+- Endpoints guest passaram a usar schema proprio limitado.
+- Guest recebe: id publico da claim, titulo, descricao, status, vencimento, total, datas compartilhaveis, quantidade de comprovantes e itens sanitizados.
+- Guest nao recebe: `owner_user_id`, `contact_id`, `transaction_id`, `account_id`, `card_id`, `storage_path`, payload bruto da transacao, `source_signature` ou metadados internos.
+
+Comprovantes:
+
+- Anexos de transacao nao sao compartilhados automaticamente.
+- Owner precisa compartilhar arquivo explicitamente com uma cobranca.
+- Guest lista somente comprovantes vinculados a `reimbursement_claim_attachments` ativos.
+- Signed URL guest exige membership ativo, claim autorizada, attachment ativo e arquivo liberado pelo FileService.
+- Arquivo deleted/quarantined/rejected/suspicious continua bloqueado pela Fundacao 0/FileService.
+- Revogacao de membership bloqueia novas listas e novas signed URLs.
+- `storage_path` nunca e retornado ao guest.
+
+Reconhecimento, contestacao e revogacao:
+
+- `acknowledge` e idempotente.
+- `dispute` exige motivo.
+- Guest nao envia status livremente.
+- Contestacao nao altera itens, valores ou snapshots.
+- Owner ve eventos de dominio.
+- Revogar membership bloqueia lista, detalhe, acknowledge, dispute, comprovantes e novas signed URLs; historico permanece.
+
+Comentarios:
+
+- Decisao formal: comentarios ficam para **Fundacao 3.5**, antes de pagamentos.
+- Justificativa: contestacao sem conversa estruturada fica incompleta, mas deve ser implementada em tarefa separada para nao misturar com auditoria/seguranca.
+
+Validacoes executadas:
+
+- Backend completo: `backend/.venv/Scripts/python.exe -m pytest` -> `92 passed, 1 warning in 16.19s`.
+- PostgreSQL real: `TEST_DATABASE_URL=postgresql://financy_dev:***@localhost:5432/financy_dev_test; backend/.venv/Scripts/python.exe -m pytest tests_postgres -m postgres -q` -> `9 passed in 11.45s`.
+- Frontend typecheck: `npm.cmd run typecheck` -> passou.
+- Frontend lint: `npm.cmd run lint` -> passou.
+- Frontend build: `npm.cmd run build` -> passou.
+- E2E ressarcimentos: `npx.cmd playwright test tests/e2e/reimbursements.spec.ts --reporter=line` -> `5 passed (13.9s)`.
+- E2E completo: `npm.cmd run e2e` -> `27 passed (52.0s)`.
+
+Warning restante:
+
+- Permanece o warning conhecido de `reportlab==4.2.5` usando `ast.NameConstant`, deprecado para Python 3.14.
+
+Fora de escopo preservado:
+
+- Pagamentos e Fundacao 4 nao foram iniciados.
+- Telegram, OCR, audio, inbox, filas, gateway e Pix nao foram implementados.
+
 ## Ajuste do smoke Supabase Storage - DATABASE_URL fallback
 
 Status: concluido.

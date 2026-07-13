@@ -6,7 +6,9 @@ import { UiButton } from "@/components/ui-button";
 import { useToast } from "@/components/toast-provider";
 import {
   addReimbursementItem,
+  addReimbursementClaimAttachment,
   cancelReimbursementClaim,
+  createReimbursementInvitation,
   createReimbursementClaim,
   createReimbursementContact,
   deleteReimbursementContact,
@@ -16,9 +18,13 @@ import {
   getReimbursementContacts,
   getReimbursementEligibleTransactions,
   getReimbursementEvents,
+  getReimbursementInvitations,
+  getReimbursementMemberships,
   getReimbursementOverview,
   getTransactionAttachments,
   refreshReimbursementSnapshots,
+  revokeReimbursementInvitation,
+  revokeReimbursementMembership,
   sendReimbursementClaim,
   updateReimbursementClaim,
   updateReimbursementContact,
@@ -34,12 +40,14 @@ import type {
   ReimbursementContact,
   ReimbursementEligibleTransaction,
   ReimbursementEvent,
+  ReimbursementInvitation,
+  ReimbursementMembership,
   ReimbursementOverview,
   TransactionAttachment
 } from "@/lib/types";
 
 type Tab = "overview" | "claims" | "contacts";
-type BusyAction = "contact" | "claim" | "item" | "send" | "cancel" | "refresh" | "attachment" | null;
+type BusyAction = "contact" | "claim" | "item" | "send" | "cancel" | "refresh" | "attachment" | "invite" | "membership" | null;
 
 interface ReimbursementsContentProps {
   initialAccounts: Account[];
@@ -48,6 +56,8 @@ interface ReimbursementsContentProps {
   initialClaims: ReimbursementClaim[];
   initialContacts: ReimbursementContact[];
   initialEligibleTransactions: ReimbursementEligibleTransaction[];
+  initialInvitations: ReimbursementInvitation[];
+  initialMemberships: ReimbursementMembership[];
   initialOverview: ReimbursementOverview;
 }
 
@@ -129,6 +139,8 @@ export function ReimbursementsContent({
   initialClaims,
   initialContacts,
   initialEligibleTransactions,
+  initialInvitations,
+  initialMemberships,
   initialOverview
 }: ReimbursementsContentProps) {
   const toast = useToast();
@@ -138,6 +150,8 @@ export function ReimbursementsContent({
   const [categories] = useState(initialCategories);
   const [contacts, setContacts] = useState(initialContacts);
   const [claims, setClaims] = useState(initialClaims);
+  const [invitations, setInvitations] = useState(initialInvitations);
+  const [memberships, setMemberships] = useState(initialMemberships);
   const [overview, setOverview] = useState(initialOverview);
   const [eligibleTransactions, setEligibleTransactions] = useState(initialEligibleTransactions);
   const [selectedClaimId, setSelectedClaimId] = useState(initialClaims[0]?.id ?? null);
@@ -154,6 +168,7 @@ export function ReimbursementsContent({
   const [transactionQuery, setTransactionQuery] = useState("");
   const [itemAmounts, setItemAmounts] = useState<Record<string, string>>({});
   const [attachmentsByTransaction, setAttachmentsByTransaction] = useState<Record<string, TransactionAttachment[]>>({});
+  const [latestInviteLink, setLatestInviteLink] = useState<string | null>(null);
 
   const activeContacts = useMemo(() => contacts.filter(isActiveEntity), [contacts]);
   const selectedClaim = useMemo(() => claims.find((claim) => claim.id === selectedClaimId) ?? null, [claims, selectedClaimId]);
@@ -199,16 +214,20 @@ export function ReimbursementsContent({
   }, [busyAction, confirmDialog]);
 
   async function reloadAll() {
-    const [nextOverview, nextContacts, nextClaims, nextEligible] = await Promise.all([
+    const [nextOverview, nextContacts, nextClaims, nextEligible, nextInvitations, nextMemberships] = await Promise.all([
       getReimbursementOverview(),
       getReimbursementContacts(),
       getReimbursementClaims(),
-      getReimbursementEligibleTransactions({ q: transactionQuery, limit: 50 })
+      getReimbursementEligibleTransactions({ q: transactionQuery, limit: 50 }),
+      getReimbursementInvitations(),
+      getReimbursementMemberships()
     ]);
     setOverview(nextOverview);
     setContacts(nextContacts);
     setClaims(nextClaims);
     setEligibleTransactions(nextEligible);
+    setInvitations(nextInvitations);
+    setMemberships(nextMemberships);
     if (selectedClaimId && !nextClaims.some((claim) => claim.id === selectedClaimId)) {
       setSelectedClaimId(nextClaims[0]?.id ?? null);
     }
@@ -414,6 +433,65 @@ export function ReimbursementsContent({
     });
   }
 
+  async function createInviteForClaim() {
+    if (!selectedClaim || selectedClaim.status === "draft") return;
+    await run("invite", async () => {
+      const invite = await createReimbursementInvitation({
+        contact_id: selectedClaim.contact_id,
+        claim_id: selectedClaim.id,
+        email: selectedClaim.contact?.email ?? null,
+        expires_in_days: 14
+      });
+      const link = `${window.location.origin}${invite.accept_path}`;
+      setLatestInviteLink(link);
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(link).catch(() => undefined);
+      }
+      toast.success("Link de convite criado.");
+      await reloadAll();
+    });
+  }
+
+  async function revokeInvite(invitation: ReimbursementInvitation) {
+    setConfirmDialog({
+      title: "Revogar convite",
+      description: "O link deixara de poder ser aceito. Acessos ja aceitos devem ser revogados separadamente.",
+      confirmLabel: "Revogar convite",
+      variant: "danger",
+      details: [
+        { label: "Pessoa", value: invitation.contact?.display_name ?? "Contato" },
+        { label: "E-mail", value: invitation.email }
+      ],
+      onConfirm: async () => {
+        await run("invite", async () => {
+          await revokeReimbursementInvitation(invitation.id);
+          toast.danger("Convite revogado.");
+          await reloadAll();
+        });
+      }
+    });
+  }
+
+  async function revokeMembership(membership: ReimbursementMembership) {
+    setConfirmDialog({
+      title: "Revogar acesso",
+      description: "A pessoa deixara de acessar as cobrancas compartilhadas deste contato.",
+      confirmLabel: "Revogar acesso",
+      variant: "danger",
+      details: [
+        { label: "Pessoa", value: membership.contact?.display_name ?? "Contato" },
+        { label: "E-mail", value: membership.email ?? "Sem e-mail" }
+      ],
+      onConfirm: async () => {
+        await run("membership", async () => {
+          await revokeReimbursementMembership(membership.id);
+          toast.danger("Acesso revogado.");
+          await reloadAll();
+        });
+      }
+    });
+  }
+
   async function openTransactionAttachments(transactionId: string) {
     await run("attachment", async () => {
       const cached = attachmentsByTransaction[transactionId] ?? await getTransactionAttachments(transactionId);
@@ -424,6 +502,20 @@ export function ReimbursementsContent({
       }
       const signed = await getFileSignedUrl(cached[0].file_id);
       window.open(signed.url, "_blank", "noopener,noreferrer");
+    });
+  }
+
+  async function shareFirstTransactionAttachment(transactionId: string) {
+    if (!selectedClaim) return;
+    await run("attachment", async () => {
+      const attachments = attachmentsByTransaction[transactionId] ?? await getTransactionAttachments(transactionId);
+      setAttachmentsByTransaction((current) => ({ ...current, [transactionId]: attachments }));
+      if (attachments.length === 0) {
+        toast.info("Essa transação não possui comprovantes anexados.");
+        return;
+      }
+      await addReimbursementClaimAttachment(selectedClaim.id, attachments[0].file_id);
+      toast.success("Comprovante compartilhado com a cobrança.");
     });
   }
 
@@ -547,8 +639,28 @@ export function ReimbursementsContent({
                   <div className="min-w-0">
                     <h3 className="truncate text-base font-semibold text-ink">{contact.display_name}</h3>
                     <p className="mt-1 text-sm text-stone-500">{contact.email || "Sem e-mail"} · {contact.phone || "Sem telefone"}</p>
-                    <p className="mt-2 text-xs text-stone-500">Acesso compartilhado ainda não configurado.</p>
+                    <p className="mt-2 text-xs text-stone-500">
+                      {memberships.some((membership) => membership.contact_id === contact.id && membership.status === "active")
+                        ? "Acesso compartilhado ativo"
+                        : invitations.some((invitation) => invitation.contact_id === contact.id && invitation.status === "pending")
+                          ? "Convite pendente"
+                          : "Acesso compartilhado ainda não configurado."}
+                    </p>
                     <p className="mt-1 text-xs font-medium text-stone-600">{contactClaimCount.get(contact.id) ?? 0} cobranças associadas</p>
+                    <div className="mt-3 grid gap-2">
+                      {invitations.filter((invitation) => invitation.contact_id === contact.id && invitation.status === "pending").map((invitation) => (
+                        <div key={invitation.id} className="flex items-center justify-between gap-2 rounded-md bg-stone-50 px-2 py-1.5 text-xs text-stone-600">
+                          <span className="truncate">Convite para {invitation.email}</span>
+                          <button className="font-semibold text-red-700 hover:text-red-800" onClick={() => { void revokeInvite(invitation); }} type="button">Revogar</button>
+                        </div>
+                      ))}
+                      {memberships.filter((membership) => membership.contact_id === contact.id && membership.status === "active").map((membership) => (
+                        <div key={membership.id} className="flex items-center justify-between gap-2 rounded-md bg-emerald-50 px-2 py-1.5 text-xs text-emerald-900">
+                          <span className="truncate">Acesso: {membership.email ?? "sem e-mail"}</span>
+                          <button className="font-semibold text-red-700 hover:text-red-800" onClick={() => { void revokeMembership(membership); }} type="button">Revogar</button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <UiButton aria-label="Editar pessoa" className="h-9 w-9 px-0" icon={<Pencil className="h-4 w-4" />} onClick={() => editContact(contact)} size="sm" />
@@ -647,10 +759,19 @@ export function ReimbursementsContent({
                       {selectedClaim.status !== "canceled" ? (
                         <UiButton icon={<Trash2 className="h-4 w-4" />} onClick={() => { void cancelClaim(); }} size="sm" variant="danger" disabled={busyAction === "cancel"}>Cancelar</UiButton>
                       ) : null}
+                      {selectedClaim.status !== "draft" && selectedClaim.status !== "canceled" ? (
+                        <UiButton icon={<UserPlus className="h-4 w-4" />} onClick={() => { void createInviteForClaim(); }} size="sm" variant="secondary" disabled={busyAction === "invite"}>Criar convite</UiButton>
+                      ) : null}
                     </div>
                   </div>
                   {selectedClaim.status === "sent" ? (
-                    <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-900">Dados congelados no envio. Esta etapa não compartilha acesso com a pessoa.</p>
+                    <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-900">Dados congelados no envio. Crie um convite para permitir acesso limitado somente a esta pessoa.</p>
+                  ) : null}
+                  {latestInviteLink ? (
+                    <div className="mt-3 rounded-md border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-900">
+                      <p className="font-semibold">Link criado e copiado, se o navegador permitiu.</p>
+                      <p className="mt-1 break-all">{latestInviteLink}</p>
+                    </div>
                   ) : null}
                 </div>
 
@@ -675,6 +796,9 @@ export function ReimbursementsContent({
                           </div>
                           <div className="flex shrink-0 flex-wrap gap-2">
                             <UiButton icon={<FileText className="h-4 w-4" />} onClick={() => { void openTransactionAttachments(item.transaction_id); }} size="sm">Comprovante</UiButton>
+                            {selectedClaim.status !== "draft" && selectedClaim.status !== "canceled" ? (
+                              <UiButton icon={<FileText className="h-4 w-4" />} onClick={() => { void shareFirstTransactionAttachment(item.transaction_id); }} size="sm" variant="secondary">Compartilhar</UiButton>
+                            ) : null}
                             {selectedClaim.status === "draft" ? (
                               <>
                                 <input aria-label="Valor solicitado" className="h-9 w-28 rounded-md border border-stone-200 px-2 text-sm outline-none focus:border-mint" defaultValue={amountToInput(item.amount_requested)} onBlur={(event) => { if (event.target.value !== amountToInput(item.amount_requested)) void updateItemAmount(item.id, event.target.value); }} />

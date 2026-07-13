@@ -16,12 +16,17 @@ import type {
   ClassificationRulePayload,
   ConfirmImportResponse,
   ImportPreviewResponse,
+  GuestReimbursementClaim,
   ReimbursementClaim,
+  ReimbursementClaimAttachment,
   ReimbursementClaimPayload,
   ReimbursementContact,
   ReimbursementContactPayload,
   ReimbursementEligibleTransaction,
   ReimbursementEvent,
+  ReimbursementInvitation,
+  ReimbursementInvitationCreated,
+  ReimbursementMembership,
   ReimbursementOverview,
   Transaction,
   TransactionAttachment,
@@ -248,6 +253,71 @@ export async function refreshReimbursementSnapshots(claimId: string): Promise<Re
 
 export async function getReimbursementEvents(claimId: string): Promise<ReimbursementEvent[]> {
   return request<ReimbursementEvent[]>(`/reimbursements/claims/${claimId}/events`);
+}
+
+export async function addReimbursementClaimAttachment(claimId: string, fileId: string): Promise<ReimbursementClaimAttachment> {
+  return request<ReimbursementClaimAttachment>(`/reimbursements/claims/${claimId}/attachments`, { method: "POST", body: JSON.stringify({ file_id: fileId }) });
+}
+
+export async function getReimbursementClaimAttachments(claimId: string): Promise<ReimbursementClaimAttachment[]> {
+  return request<ReimbursementClaimAttachment[]>(`/reimbursements/claims/${claimId}/attachments`);
+}
+
+export async function deleteReimbursementClaimAttachment(claimId: string, attachmentId: string): Promise<{ status: string }> {
+  return request<{ status: string }>(`/reimbursements/claims/${claimId}/attachments/${attachmentId}`, { method: "DELETE" });
+}
+
+export async function getReimbursementInvitations(): Promise<ReimbursementInvitation[]> {
+  return request<ReimbursementInvitation[]>("/reimbursements/invitations");
+}
+
+export async function createReimbursementInvitation(payload: {
+  contact_id: string;
+  claim_id?: string | null;
+  email?: string | null;
+  expires_in_days?: number;
+}): Promise<ReimbursementInvitationCreated> {
+  return request<ReimbursementInvitationCreated>("/reimbursements/invitations", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function revokeReimbursementInvitation(invitationId: string): Promise<ReimbursementInvitation> {
+  return request<ReimbursementInvitation>(`/reimbursements/invitations/${invitationId}/revoke`, { method: "POST" });
+}
+
+export async function getReimbursementMemberships(): Promise<ReimbursementMembership[]> {
+  return request<ReimbursementMembership[]>("/reimbursements/memberships");
+}
+
+export async function revokeReimbursementMembership(membershipId: string): Promise<ReimbursementMembership> {
+  return request<ReimbursementMembership>(`/reimbursements/memberships/${membershipId}/revoke`, { method: "POST" });
+}
+
+export async function acceptReimbursementInvitation(token: string): Promise<ReimbursementMembership> {
+  return request<ReimbursementMembership>("/reimbursements/guest/invitations/accept", { method: "POST", body: JSON.stringify({ token }) });
+}
+
+export async function getGuestReimbursementClaims(): Promise<GuestReimbursementClaim[]> {
+  return request<GuestReimbursementClaim[]>("/reimbursements/guest/claims");
+}
+
+export async function getGuestReimbursementClaim(claimId: string): Promise<GuestReimbursementClaim> {
+  return request<GuestReimbursementClaim>(`/reimbursements/guest/claims/${claimId}`);
+}
+
+export async function acknowledgeGuestReimbursementClaim(claimId: string): Promise<GuestReimbursementClaim> {
+  return request<GuestReimbursementClaim>(`/reimbursements/guest/claims/${claimId}/acknowledge`, { method: "POST" });
+}
+
+export async function disputeGuestReimbursementClaim(claimId: string, note?: string): Promise<GuestReimbursementClaim> {
+  return request<GuestReimbursementClaim>(`/reimbursements/guest/claims/${claimId}/dispute`, { method: "POST", body: JSON.stringify({ note: note ?? null }) });
+}
+
+export async function getGuestReimbursementClaimAttachments(claimId: string): Promise<ReimbursementClaimAttachment[]> {
+  return request<ReimbursementClaimAttachment[]>(`/reimbursements/guest/claims/${claimId}/attachments`);
+}
+
+export async function getGuestReimbursementClaimAttachmentSignedUrl(claimId: string, attachmentId: string): Promise<FileSignedUrl> {
+  return request<FileSignedUrl>(`/reimbursements/guest/claims/${claimId}/attachments/${attachmentId}/signed-url`);
 }
 
 export async function getReimbursementEligibleTransactions(params?: { q?: string; limit?: number }): Promise<ReimbursementEligibleTransaction[]> {
