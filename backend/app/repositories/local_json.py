@@ -108,6 +108,8 @@ class LocalJsonRepository:
                     "reimbursement_invitations": [],
                     "reimbursement_memberships": [],
                     "reimbursement_claim_attachments": [],
+                    "reimbursement_comments": [],
+                    "reimbursement_invitation_accept_attempts": [],
                 }
             )
 
@@ -793,6 +795,8 @@ class LocalJsonRepository:
         data.setdefault("reimbursement_invitations", [])
         data.setdefault("reimbursement_memberships", [])
         data.setdefault("reimbursement_claim_attachments", [])
+        data.setdefault("reimbursement_comments", [])
+        data.setdefault("reimbursement_invitation_accept_attempts", [])
 
     def list_reimbursement_contacts(self, user_id: str) -> list[dict[str, Any]]:
         data = self._read()
@@ -1045,6 +1049,55 @@ class LocalJsonRepository:
             if item["owner_user_id"] == user_id and item.get("claim_id") == claim_id
         ]
 
+    def create_reimbursement_comment(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "owner_user_id": user_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": None,
+            "deleted_at": None,
+            "deleted_by_user_id": None,
+            "deleted_by_role": None,
+            **payload,
+        }
+        data["reimbursement_comments"].append(record)
+        self._write(data)
+        return record
+
+    def list_reimbursement_comments(self, user_id: str, claim_id: str, limit: int = 50, cursor: str | None = None) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        comments = [
+            item
+            for item in data["reimbursement_comments"]
+            if item["owner_user_id"] == user_id and item["claim_id"] == claim_id and not item.get("deleted_at")
+        ]
+        comments = sorted(comments, key=lambda item: (item.get("created_at", ""), item.get("id", "")))
+        if cursor:
+            comments = [item for item in comments if f"{item.get('created_at', '')}|{item.get('id', '')}" > cursor]
+        return comments[:limit]
+
+    def get_reimbursement_comment(self, user_id: str, comment_id: str) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        return next(
+            (item for item in data["reimbursement_comments"] if item["id"] == comment_id and item["owner_user_id"] == user_id),
+            None,
+        )
+
+    def update_reimbursement_comment(self, user_id: str, comment_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        for index, item in enumerate(data["reimbursement_comments"]):
+            if item["id"] == comment_id and item["owner_user_id"] == user_id:
+                updated = {**item, **payload}
+                data["reimbursement_comments"][index] = updated
+                self._write(data)
+                return updated
+        return None
+
     def list_reimbursement_invitations(self, user_id: str) -> list[dict[str, Any]]:
         data = self._read()
         self._ensure_reimbursement_collections(data)
@@ -1057,6 +1110,50 @@ class LocalJsonRepository:
         data = self._read()
         self._ensure_reimbursement_collections(data)
         return next((item for item in data["reimbursement_invitations"] if item["token_hash"] == token_hash), None)
+
+    def begin_invitation_accept_attempt(
+        self,
+        *,
+        token_hash: str,
+        ip_hash: str,
+        auth_user_id: str,
+        max_attempts: int,
+        window_started_at: datetime,
+        attempted_at: datetime,
+    ) -> dict[str, Any]:
+        with self._lock:
+            data = self._read()
+            self._ensure_reimbursement_collections(data)
+            window_iso = window_started_at.isoformat()
+            recent = [
+                item
+                for item in data["reimbursement_invitation_accept_attempts"]
+                if item["token_hash"] == token_hash
+                and item["ip_hash"] == ip_hash
+                and item.get("attempted_at", "") >= window_iso
+            ]
+            allowed = len(recent) < max_attempts
+            record = {
+                "id": str(uuid4()),
+                "token_hash": token_hash,
+                "ip_hash": ip_hash,
+                "auth_user_id": auth_user_id,
+                "attempted_at": attempted_at.isoformat(),
+                "success": False,
+                "failure_code": None if allowed else "rate_limited",
+            }
+            data["reimbursement_invitation_accept_attempts"].append(record)
+            self._write(data)
+            return {"allowed": allowed, "attempt_id": record["id"]}
+
+    def complete_invitation_accept_attempt(self, attempt_id: str, *, success: bool, failure_code: str | None) -> None:
+        data = self._read()
+        self._ensure_reimbursement_collections(data)
+        for index, item in enumerate(data["reimbursement_invitation_accept_attempts"]):
+            if item["id"] == attempt_id:
+                data["reimbursement_invitation_accept_attempts"][index] = {**item, "success": success, "failure_code": failure_code}
+                self._write(data)
+                return
 
     def create_reimbursement_invitation(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         data = self._read()

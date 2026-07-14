@@ -1229,3 +1229,285 @@ Fora de escopo preservado:
 
 - Fundacao 3 nao foi iniciada.
 - Portal guest, invitations, memberships, comentarios, pagamentos, Telegram, OCR, audio, inbox e filas nao foram implementados.
+
+## Fundacao 3.5 - Etapa B backend
+
+Data: 2026-07-13.
+
+Escopo executado:
+
+- Migrations backend/PostgreSQL para comentarios e rate limit de convites.
+- Backend de comentarios em ressarcimentos.
+- Rate limiting persistente no aceite de convites.
+- Testes unitarios e PostgreSQL reais.
+- Documentacao operacional de variaveis e checklist.
+
+Arquivos criados:
+
+- `docs/foundation-3.5-plan.md`;
+- `docs/environments.md`;
+- `docs/deploy-checklist.md`;
+- `docs/supabase/migrations/009_reimbursement_comments.sql`;
+- `docs/supabase/migrations/010_invitation_accept_rate_limits.sql`.
+
+Arquivos alterados:
+
+- `backend/.env.example`;
+- `backend/.env.production.example`;
+- `backend/app/api/reimbursements.py`;
+- `backend/app/core/config.py`;
+- `backend/app/models/enums.py`;
+- `backend/app/repositories/local_json.py`;
+- `backend/app/repositories/postgres.py`;
+- `backend/app/schemas/reimbursements.py`;
+- `backend/app/services/reimbursement_service.py`;
+- `backend/tests/test_reimbursements_api.py`;
+- `backend/tests_postgres/test_reimbursements_postgres.py`;
+- `output.md`;
+- `plan.md`;
+- `task.md`.
+
+Modelo final:
+
+- `reimbursement_comments` guarda comentarios por claim com `owner_user_id`, `claim_id`, `author_user_id`, `author_role`, `body`, timestamps e soft delete.
+- Comentarios sao imutaveis nesta versao; exclusao e logica.
+- `reimbursement_invitation_accept_attempts` guarda somente `token_hash`, `ip_hash`, usuario autenticado opcional, timestamp e resultado.
+- Token bruto e IP bruto nao sao persistidos.
+
+Endpoints implementados:
+
+- `GET /reimbursements/claims/{claim_id}/comments`;
+- `POST /reimbursements/claims/{claim_id}/comments`;
+- `DELETE /reimbursements/claims/{claim_id}/comments/{comment_id}`.
+
+Regras de autorizacao:
+
+- Owner pode listar/comentar/moderar comentarios de claims proprios.
+- Guest precisa de membership ativa e claim compartilhada.
+- Guest pode excluir somente comentario proprio.
+- Guest revogado ou sem acesso recebe bloqueio sem acessar comentarios.
+- `author_user_id`, `author_role`, `deleted_at` e dados internos nao sao aceitos do cliente.
+
+Rate limiting:
+
+- Configurado por:
+  - `INVITATION_ACCEPT_RATE_LIMIT_ENABLED`;
+  - `INVITATION_ACCEPT_RATE_LIMIT_MAX_ATTEMPTS`;
+  - `INVITATION_ACCEPT_RATE_LIMIT_WINDOW_SECONDS`.
+- Implementacao principal usa PostgreSQL com lock transacional via advisory lock por `token_hash` + `ip_hash`.
+- Repository local simula a mesma regra com lock para testes deterministicos.
+- Excesso retorna `429` com `reimbursement_invitation_rate_limited`.
+
+RLS:
+
+- Nao foi criada migration `011`.
+- Decisao: RLS final permanece para a Etapa D, porque esta etapa nao aplica policies remotas e nao deve criar migration vazia.
+- Autorizacao backend foi reforcada e testada; service role permanece exclusiva do backend.
+
+Validacoes:
+
+- `cd backend; .venv\Scripts\python.exe -m pytest tests\test_reimbursements_api.py -q` -> `26 passed in 5.97s`.
+- `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup_dev_db.ps1 -ResetSchema` -> migrations `001` a `010` aplicadas no PostgreSQL local `localhost`.
+- `cd backend; $env:TEST_DATABASE_URL='postgresql://financy_dev:financy_dev_local@localhost:5432/financy_dev_test'; .venv\Scripts\python.exe -m pytest tests_postgres -m postgres -q` -> `14 passed in 18.33s`.
+- `cd backend; .venv\Scripts\python.exe -m pytest` -> `99 passed, 1 warning in 17.43s`.
+
+Warning restante:
+
+- Permanece o warning conhecido do ReportLab em `reportlab/lib/rl_safe_eval.py` sobre `ast.NameConstant` deprecado para Python 3.14.
+
+Pendencias:
+
+- Etapa C: frontend owner e portal guest para comentarios.
+- Etapa D: auditoria RLS final, hardening de fallback de API URL, documentacao final e validacoes completas.
+- Frontend nao foi implementado nesta etapa.
+- Pagamentos, Telegram, OCR, audio, inbox, filas e Fundacao 4 nao foram iniciados.
+
+## Fundacao 3.5 - Etapa C frontend
+
+Data: 2026-07-13.
+
+Escopo executado:
+
+- UI owner para comentarios no detalhe de cobranca de ressarcimento.
+- UI guest para comentarios no portal `/guest/reimbursements`.
+- Integracao frontend com endpoints de comentarios ja existentes.
+- Testes E2E para owner e guest.
+- Documentacao da etapa e pendencias para Etapa D.
+
+Arquivos criados:
+
+- `frontend/src/components/reimbursement-comments.tsx`.
+
+Arquivos alterados:
+
+- `frontend/src/components/reimbursements-content.tsx`;
+- `frontend/src/components/guest-reimbursements-content.tsx`;
+- `frontend/src/lib/api.ts`;
+- `frontend/src/lib/types.ts`;
+- `frontend/tests/e2e/reimbursements.spec.ts`;
+- `docs/foundation-3.5-plan.md`;
+- `docs/deploy-checklist.md`;
+- `output.md`;
+- `plan.md`;
+- `task.md`.
+
+Comportamento implementado:
+
+- Owner e guest autorizados listam comentarios em ordem cronologica.
+- Comentarios usam texto puro, trim obrigatorio e limite de 2000 caracteres.
+- O envio atualiza a lista sem reload completo.
+- Exclusao logica e acionada por dialog proprio, sem `window.confirm`.
+- Owner pode acionar moderacao quando o backend autoriza; guest ve apenas exclusao de comentarios proprios.
+- HTML digitado no comentario e exibido como texto, sem parser Markdown e sem `dangerouslySetInnerHTML`.
+- Erros `401`, `403`, `404`, `409`, `422` e `429` sao convertidos em mensagens amigaveis.
+
+Endpoints consumidos:
+
+- `GET /reimbursements/claims/{claim_id}/comments`;
+- `POST /reimbursements/claims/{claim_id}/comments`;
+- `DELETE /reimbursements/claims/{claim_id}/comments/{comment_id}`.
+
+Validacoes:
+
+- `cd frontend; npm.cmd run typecheck` -> passou.
+- `cd frontend; npm.cmd run lint` -> passou.
+- `cd frontend; npm.cmd run build` -> passou.
+- `cd frontend; npx.cmd playwright test -g comments --reporter=line` -> `2 passed`.
+- `cd frontend; npm.cmd run e2e` -> `29 passed (49.5s)`.
+- `cd backend; .venv\Scripts\python.exe -m pytest` -> `99 passed, 1 warning in 17.12s`.
+
+Warning restante:
+
+- Permanece o warning conhecido do ReportLab em `reportlab/lib/rl_safe_eval.py` sobre `ast.NameConstant` deprecado para Python 3.14.
+
+Pendencias:
+
+- Etapa D: auditoria RLS final, revisao de signed URLs/attachments, hardening do fallback de API URL e validacao final.
+- Testes unitarios dedicados de componente frontend nao foram adicionados porque o projeto segue cobrindo estes fluxos por Playwright E2E; a cobertura nova foi adicionada na suite E2E existente.
+- Pagamentos, Telegram, OCR, audio, inbox, filas e Fundacao 4 nao foram iniciados.
+
+## Fundacao 3.5 - Etapa D fechamento
+
+Data: 2026-07-13.
+
+Escopo executado:
+
+- Auditoria final de RLS/Data API.
+- Hardening de acesso direto a tabelas financeiras.
+- Revisao de signed URLs e anexos.
+- Protecao contra fallback remoto silencioso de API URL.
+- Observabilidade segura para eventos sensiveis.
+- Testes PostgreSQL, backend, frontend e E2E.
+
+Migration criada:
+
+- `docs/supabase/migrations/011_reimbursements_security_hardening.sql`.
+
+Decisao RLS:
+
+- O FastAPI permanece como unica camada funcional de acesso aos dados.
+- A migration `011` habilita RLS e revoga privilegios diretos de `PUBLIC`, `anon` e `authenticated` em tabelas financeiras, imports, arquivos privados e ressarcimentos.
+- Nao foram criadas policies permissivas para Data API nesta fundacao.
+- Service role continua exclusiva do backend/Storage e nao deve ser exposta ao frontend.
+
+Auditoria de signed URLs e anexos:
+
+- Anexos de transacao nao sao compartilhados automaticamente.
+- Guest acessa somente `reimbursement_claim_attachments` explicitamente compartilhados.
+- Membership revogada bloqueia novas signed URLs por meio da autorizacao em `_guest_claim`.
+- Arquivos `deleted`, em quarentena ou sem scan liberado nao geram novas URLs.
+- Respostas publicas nao expõem `storage_path`, bucket interno ou service role.
+- Uma URL ja emitida pode continuar valida ate expirar, mitigada por TTL curto.
+
+Protecao de API URL:
+
+- Criado helper `frontend/src/lib/api-url.ts`.
+- `frontend/src/lib/api.ts` e `frontend/src/lib/server-api.ts` usam resolucao centralizada.
+- Fallback local para `http://127.0.0.1:8000` fica restrito a desenvolvimento local.
+- Preview/Production falham explicitamente se `NEXT_PUBLIC_API_URL` estiver ausente, malformada, sem `https`, com credenciais ou apontando para localhost.
+- Criados scripts `check-api-url-config.mjs` e `test-api-url-config.mjs`.
+
+Observabilidade segura:
+
+- Logs adicionados para comentario criado/removido, convite bloqueado por rate limit, acesso negado a attachment e falha de signed URL.
+- Logs nao registram body do comentario, token, token hash, IP bruto, JWT, service role, senha, URL assinada completa ou conteudo financeiro.
+
+Validacoes:
+
+- `cd frontend; npm.cmd run test:api-url` -> passou.
+- `cd frontend; npm.cmd run typecheck` -> passou.
+- `cd backend; .venv\Scripts\python.exe -m pytest tests_postgres -m postgres -q` sem `TEST_DATABASE_URL` -> falhou como esperado com mensagem clara.
+- `cd backend; $env:TEST_DATABASE_URL='postgresql://financy_dev:financy_dev_local@localhost:5432/financy_dev_test'; .venv\Scripts\python.exe -m pytest tests_postgres -m postgres -q` -> `14 passed in 20.96s`.
+
+Pendencias residuais:
+
+- Aplicar migrations `009`, `010` e `011` em Supabase Dev/Production somente com autorizacao explicita por ambiente.
+- Validar smoke remoto apos deploy Dev/Preview.
+- Revisar upgrade do ReportLab em tarefa separada.
+- Pagamentos, Telegram, OCR, audio, inbox, filas e Fundacao 4 nao foram iniciados.
+
+## Fundacao 3.5 - Implantacao Dev
+
+Data: 2026-07-14.
+
+Estado inicial:
+
+- Branch `dev`.
+- Commit versionado em `dev`/`origin/dev`: `20d3c09 feat: fecha fundacao 3.5 com hardening de seguranca`.
+- Worktree limpo antes da implantacao remota.
+- Migrations versionadas: `001` a `011`.
+
+Validacoes locais executadas antes de qualquer operacao remota:
+
+- `git branch --show-current` -> `dev`.
+- `git status --short` -> limpo.
+- `git diff --stat` -> vazio.
+- `git diff --check` -> passou.
+- Backend: `.venv\Scripts\python.exe -m pytest` -> `99 passed, 1 warning`.
+- PostgreSQL real local: `TEST_DATABASE_URL` local + `pytest tests_postgres -m postgres -q` -> `14 passed`.
+- Frontend `npm.cmd run test:api-url` -> passou.
+- Frontend `npm.cmd run typecheck` -> passou.
+- Frontend `npm.cmd run lint` -> passou.
+- Frontend `npm.cmd run build` -> passou.
+- Frontend `npm.cmd run e2e` -> `29 passed`.
+
+Auditoria local:
+
+- Arquivos locais `.env` e `.uploads` existem apenas no workspace local e nao estavam staged.
+- Nenhum secret foi identificado como staged.
+- Nao houve chamada para Production durante as validacoes locais.
+
+Migrations Dev:
+
+- Aplicacao remota feita pelo operador no terminal local com `DATABASE_URL` do Supabase Dev e `--allow-remote`.
+- `--reset-schema` nao foi usado.
+- Migrations pendentes aplicadas: `009_reimbursement_comments.sql`, `010_invitation_accept_rate_limits.sql`, `011_reimbursements_security_hardening.sql`.
+- Idempotencia confirmada com nova execucao: `Migrations applied: - none`.
+
+Validacao Supabase Dev:
+
+- `schema_migrations` contem `001` a `011`.
+- `has_001_to_011=True`.
+- RLS habilitado para `reimbursement_claim_attachments`, `reimbursement_claims`, `reimbursement_comments`, `reimbursement_invitation_accept_attempts`, `reimbursement_memberships`, `stored_files`, `transaction_attachments` e `transactions`.
+- `public_grants_count=0` para as tabelas criticas validadas.
+- Indices confirmados: `reimbursement_claim_attachments_active_file_idx`, `reimbursement_comments_claim_active_idx`, `reimbursement_invitation_attempts_window_idx`.
+- Tabelas novas confirmadas: `reimbursement_comments`, `reimbursement_invitation_accept_attempts`.
+
+Smoke remoto Dev sem credenciais:
+
+- Backend Dev `https://financy-svme.onrender.com/health` -> `200`, body `{"status":"ok"}`.
+- Frontend Preview `https://financy-git-dev-gabriel-arnon1.vercel.app/` -> `200`.
+- Rotas publicas/estaticas `/login`, `/reimbursements` e `/guest/reimbursements` -> `200`.
+- Endpoint autenticado `/reimbursements/claims` sem token -> `401 unauthenticated`, comportamento esperado.
+- HTML inicial e 65 assets JS publicos verificados: sem `localhost`, `127.0.0.1`, backend production antigo ou frontend production.
+
+Nao validado automaticamente:
+
+- Fluxos autenticados reais de login/logout, comentarios owner/guest, exclusao, invitations, memberships, attachments, signed URLs, revogacao e rate limit em Dev dependem de sessao autenticada e smoke manual.
+- Render/Vercel env vars nao foram lidas por CLI nesta maquina porque `render` e `vercel` nao estavam disponiveis.
+
+Riscos residuais:
+
+- Executar smoke manual autenticado em Dev/Preview antes de preparar merge para `main`.
+- Aplicar migrations em Production somente em janela propria e com aprovacao explicita.
+- Manter o warning conhecido do ReportLab em backlog.

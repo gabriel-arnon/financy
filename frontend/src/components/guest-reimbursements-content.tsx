@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2, FileText } from "lucide-react";
 import { UiButton } from "@/components/ui-button";
+import { ReimbursementComments } from "@/components/reimbursement-comments";
 import { useToast } from "@/components/toast-provider";
 import {
   acknowledgeGuestReimbursementClaim,
@@ -113,6 +114,9 @@ export function GuestReimbursementsContent({ initialClaims }: { initialClaims: G
                   ))}
                 </div>
               ) : null}
+            </div>
+            <div className="mt-4">
+              <ReimbursementComments claimId={claim.id} context="guest" />
             </div>
             {claim.status === "sent" || claim.status === "acknowledged" || claim.status === "disputed" ? (
               <div className="mt-4 flex flex-wrap gap-2">

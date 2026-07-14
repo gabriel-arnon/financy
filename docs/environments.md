@@ -17,7 +17,7 @@ Este documento descreve a separacao operacional entre Production e Dev. Nunca re
 ### Estrategia de migrations
 
 - Migrations versionadas em `docs/supabase/migrations`.
-- Production US deve conter `001` a `008`.
+- Production US deve conter as migrations versionadas vigentes. A Fundacao 3.5 exige `001` a `011`.
 - Aplicacao remota exige acao explicita com `--allow-remote`.
 - Nao usar `--reset-schema` em remoto.
 - Nao aplicar migrations automaticamente em startup remoto sem revisao; o script atual faz skip seguro em banco remoto quando `--allow-remote` nao e informado.
@@ -38,6 +38,9 @@ Este documento descreve a separacao operacional entre Production e Dev. Nunca re
 - `SUPABASE_AUDIENCE`
 - `JWT_SECRET`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `INVITATION_ACCEPT_RATE_LIMIT_ENABLED`
+- `INVITATION_ACCEPT_RATE_LIMIT_MAX_ATTEMPTS`
+- `INVITATION_ACCEPT_RATE_LIMIT_WINDOW_SECONDS`
 - `PRIVATE_FILES_ENABLED`
 - `PRIVATE_FILES_BACKEND`
 - `PRIVATE_FILES_BUCKET`
@@ -86,6 +89,9 @@ Este documento descreve a separacao operacional entre Production e Dev. Nunca re
 - `SUPABASE_AUDIENCE`
 - `JWT_SECRET`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `INVITATION_ACCEPT_RATE_LIMIT_ENABLED`
+- `INVITATION_ACCEPT_RATE_LIMIT_MAX_ATTEMPTS`
+- `INVITATION_ACCEPT_RATE_LIMIT_WINDOW_SECONDS`
 - `PRIVATE_FILES_ENABLED`
 - `PRIVATE_FILES_BACKEND`
 - `PRIVATE_FILES_BUCKET`
@@ -118,6 +124,16 @@ Este documento descreve a separacao operacional entre Production e Dev. Nunca re
 | JWT issuer/JWKS devem pertencer ao mesmo Supabase usado pelo frontend. | Evita 401 por tokens emitidos por projeto diferente. |
 | CORS do backend deve conter somente frontend do ambiente correspondente. | Evita acesso cruzado e falhas de browser. |
 | Backend persistente nao deve depender de Transaction Pooler `6543` se houver incompatibilidade com conexoes longas/prepared statements. | Render FastAPI e `psycopg_pool` funcionam melhor com direct/session pooler conforme estrategia definida. |
+
+## Ressarcimentos, RLS e Data API
+
+- Comentarios de ressarcimentos usam autorizacao no backend.
+- Guest precisa de membership ativa para acessar claims compartilhadas.
+- Convites usam `token_hash` e rate limiting persistente por token hash e origem derivada.
+- Operacoes funcionais de dados financeiros passam pelo FastAPI.
+- A migration `011_reimbursements_security_hardening.sql` habilita RLS e revoga privilegios diretos de `PUBLIC`, `anon` e `authenticated` nas tabelas financeiras, arquivos privados, imports e ressarcimentos.
+- Nao ha policy permissiva para acesso direto pela Data API nesta fundacao.
+- Service role nunca deve ser exposta no frontend.
 
 ## Auditoria rapida antes de deploy
 

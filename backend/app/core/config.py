@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     private_files_allowed_mime_types: str = "image/jpeg,image/png,image/webp,application/pdf"
     private_files_scan_provider: str = Field(default="mock", validation_alias=AliasChoices("PRIVATE_FILES_SCAN_PROVIDER", "FILE_SCAN_PROVIDER"))
     private_files_orphan_retention_hours: int = 24
+    invitation_accept_rate_limit_enabled: bool = True
+    invitation_accept_rate_limit_max_attempts: int = 5
+    invitation_accept_rate_limit_window_seconds: int = 900
     database_url: str | None = None
     test_database_url: str | None = None
     storage_backend: str = "json"
@@ -65,6 +68,10 @@ class Settings(BaseSettings):
             raise RuntimeError("PRIVATE_FILES_SIGNED_URL_TTL_SECONDS must be greater than zero.")
         if self.private_files_orphan_retention_hours < 0:
             raise RuntimeError("PRIVATE_FILES_ORPHAN_RETENTION_HOURS cannot be negative.")
+        if self.invitation_accept_rate_limit_max_attempts <= 0:
+            raise RuntimeError("INVITATION_ACCEPT_RATE_LIMIT_MAX_ATTEMPTS must be greater than zero.")
+        if self.invitation_accept_rate_limit_window_seconds <= 0:
+            raise RuntimeError("INVITATION_ACCEPT_RATE_LIMIT_WINDOW_SECONDS must be greater than zero.")
 
 
 settings = Settings()

@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/check-api-url-config.mjs",
     "build": "next build",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test:api-url": "node scripts/test-api-url-config.mjs",
     "e2e": "playwright test"
   },
   "dependencies": {

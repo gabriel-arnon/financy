@@ -12,6 +12,7 @@ Use este checklist para Production e Dev. Nao registrar secrets no repositorio, 
 - [ ] `git status` sem alteracoes inesperadas.
 - [ ] Merge esperado concluido.
 - [ ] Migrations esperadas presentes em `docs/supabase/migrations`.
+- [ ] Migrations de ressarcimentos atuais presentes quando aplicavel: `009_reimbursement_comments.sql`, `010_invitation_accept_rate_limits.sql` e `011_reimbursements_security_hardening.sql`.
 - [ ] Nenhuma migration aplicada em producao foi editada retroativamente.
 
 ### Validacoes locais
@@ -37,6 +38,7 @@ Use este checklist para Production e Dev. Nao registrar secrets no repositorio, 
 - [ ] `DATABASE_URL` nao usa host antigo do Supabase Brasil quando alvo e Production US.
 - [ ] `DATABASE_URL` nao usa Transaction Pooler `6543` no backend persistente sem decisao tecnica explicita.
 - [ ] `NEXT_PUBLIC_API_URL` nao aponta para `localhost` ou `127.0.0.1` em build remoto.
+- [ ] `NEXT_PUBLIC_API_URL` usa `https` em Vercel Preview/Production.
 - [ ] `NEXT_PUBLIC_API_URL` do Frontend Production aponta para Backend Production.
 - [ ] `NEXT_PUBLIC_API_URL` do Frontend Preview aponta para Backend Dev.
 - [ ] `NEXT_PUBLIC_SUPABASE_URL` corresponde ao Supabase do ambiente.
@@ -49,6 +51,10 @@ Use este checklist para Production e Dev. Nao registrar secrets no repositorio, 
 - [ ] `CORS_ORIGINS` contem somente frontend do ambiente correto.
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` existe somente no backend/admin, nunca no frontend.
 - [ ] Nenhuma credencial real esta versionada.
+- [ ] Variaveis de rate limit de convites configuradas:
+  - `INVITATION_ACCEPT_RATE_LIMIT_ENABLED`
+  - `INVITATION_ACCEPT_RATE_LIMIT_MAX_ATTEMPTS`
+  - `INVITATION_ACCEPT_RATE_LIMIT_WINDOW_SECONDS`
 
 ### Storage
 
@@ -87,6 +93,12 @@ Use este checklist para Production e Dev. Nao registrar secrets no repositorio, 
 - [ ] Claim attachments.
 - [ ] Signed URLs de arquivos privados.
 - [ ] Upload e visualizacao de comprovante, quando seguro.
+- [ ] Comentarios de ressarcimento funcionam para owner e guest autorizado.
+- [ ] Exclusao de comentarios usa dialogo, respeita permissoes e nao usa confirmacao nativa do navegador.
+- [ ] Comentarios sao exibidos como texto puro e nao renderizam HTML arbitrario.
+- [ ] Aceite de convite retorna `429` apos excesso de tentativas configurado.
+- [ ] Data API nao permite leitura/escrita direta das tabelas financeiras com roles `anon` ou `authenticated`.
+- [ ] Bundles publicos do frontend nao contem `localhost`, `127.0.0.1` ou URLs de ambiente incorreto.
 
 ### Smoke de isolamento
 

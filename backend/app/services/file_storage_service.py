@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import time
 import urllib.error
 import urllib.parse
@@ -26,6 +27,9 @@ ALLOWED_EXTENSIONS_BY_MIME = {
     "image/webp": {".webp"},
     "application/pdf": {".pdf"},
 }
+
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -96,6 +100,7 @@ class PrivateFileStorage:
             with urllib.request.urlopen(request, timeout=10) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
+            logger.warning("storage_signed_url_failed", extra={"bucket": self.bucket})
             raise AppError("Falha ao gerar URL assinada.", status_code=502, code="storage_signed_url_failed") from exc
         signed_url = payload.get("signedURL") or payload.get("signedUrl")
         if not signed_url:

@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
+from app.core.config import settings
 from app.core.errors import AppError
 from app.models.enums import (
+    ReimbursementCommentAuthorRole,
     ReimbursementClaimStatus,
     ReimbursementInvitationStatus,
     ReimbursementItemStatus,
@@ -21,6 +25,8 @@ from app.schemas.reimbursements import (
     ReimbursementClaimCreate,
     ReimbursementClaimRead,
     ReimbursementClaimUpdate,
+    ReimbursementCommentCreate,
+    ReimbursementCommentRead,
     ReimbursementContactCreate,
     ReimbursementContactRead,
     ReimbursementContactUpdate,
@@ -43,6 +49,19 @@ from app.schemas.reimbursements import (
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+logger = logging.getLogger(__name__)
+
+
+GUEST_SHARED_CLAIM_STATUSES = {
+    ReimbursementClaimStatus.sent.value,
+    ReimbursementClaimStatus.acknowledged.value,
+    ReimbursementClaimStatus.disputed.value,
+    ReimbursementClaimStatus.partially_paid.value,
+    ReimbursementClaimStatus.paid.value,
+    ReimbursementClaimStatus.canceled.value,
+}
 
 
 class ReimbursementService:
@@ -245,6 +264,98 @@ class ReimbursementService:
             return []
         return [ReimbursementEventRead(**item) for item in list_events(user_id, claim_id)]
 
+    def list_comments(self, viewer_user_id: str, claim_id: str, limit: int = 50, cursor: str | None = None) -> list[ReimbursementCommentRead]:
+        access = self._comment_access(viewer_user_id, claim_id)
+        list_comments = getattr(self.repository, "list_reimbursement_comments", None)
+        if not list_comments:
+            return []
+        limit = max(1, min(limit, 100))
+        comments = list_comments(access["owner_user_id"], claim_id, limit=limit, cursor=cursor)
+        return [self._comment_read(viewer_user_id, access, item) for item in comments]
+
+    def create_comment(self, user: Any, claim_id: str, payload: ReimbursementCommentCreate) -> ReimbursementCommentRead:
+        access = self._comment_access(user.id, claim_id)
+        create_comment = getattr(self.repository, "create_reimbursement_comment", None)
+        if not create_comment:
+            raise AppError("Repositorio nao suporta comentarios.", code="reimbursement_comments_unavailable")
+        body = payload.body.strip()
+        if not body:
+            raise AppError("Comentario nao pode ficar vazio.", code="reimbursement_comment_empty")
+        comment = create_comment(
+            access["owner_user_id"],
+            {
+                "claim_id": claim_id,
+                "author_user_id": user.id,
+                "author_role": access["role"],
+                "body": body,
+                "created_at": _utcnow(),
+            },
+        )
+        self._event(
+            access["owner_user_id"],
+            "comment_created",
+            claim_id=claim_id,
+            contact_id=access["claim"].get("contact_id"),
+            metadata={"comment_id": comment["id"], "author_role": access["role"]},
+            actor_type=access["role"],
+            actor_user_id=user.id,
+        )
+        logger.info(
+            "reimbursement_comment_created",
+            extra={
+                "owner_user_id": access["owner_user_id"],
+                "claim_id": claim_id,
+                "comment_id": comment["id"],
+                "actor_role": access["role"],
+            },
+        )
+        return self._comment_read(user.id, access, comment)
+
+    def delete_comment(self, user: Any, claim_id: str, comment_id: str) -> dict[str, str]:
+        access = self._comment_access(user.id, claim_id)
+        get_comment = getattr(self.repository, "get_reimbursement_comment", None)
+        update_comment = getattr(self.repository, "update_reimbursement_comment", None)
+        if not get_comment or not update_comment:
+            raise AppError("Repositorio nao suporta comentarios.", code="reimbursement_comments_unavailable")
+        comment = get_comment(access["owner_user_id"], comment_id)
+        if not comment or comment.get("claim_id") != claim_id:
+            raise AppError("Comentario nao encontrado.", status_code=404, code="reimbursement_comment_not_found")
+        if comment.get("deleted_at"):
+            raise AppError("Comentario ja foi excluido.", status_code=409, code="reimbursement_comment_already_deleted")
+        can_delete = comment.get("author_user_id") == user.id or access["role"] == ReimbursementCommentAuthorRole.owner.value
+        if not can_delete:
+            raise AppError("Voce nao tem permissao para excluir este comentario.", status_code=403, code="reimbursement_comment_delete_forbidden")
+        updated = update_comment(
+            access["owner_user_id"],
+            comment_id,
+            {
+                "deleted_at": _utcnow(),
+                "deleted_by_user_id": user.id,
+                "deleted_by_role": access["role"],
+            },
+        )
+        self._event(
+            access["owner_user_id"],
+            "comment_deleted",
+            claim_id=claim_id,
+            contact_id=access["claim"].get("contact_id"),
+            metadata={"comment_id": comment_id, "author_role": comment.get("author_role"), "deleted_by_role": access["role"]},
+            actor_type=access["role"],
+            actor_user_id=user.id,
+        )
+        logger.info(
+            "reimbursement_comment_deleted",
+            extra={
+                "owner_user_id": access["owner_user_id"],
+                "claim_id": claim_id,
+                "comment_id": comment_id,
+                "actor_role": access["role"],
+            },
+        )
+        if not updated:
+            raise AppError("Comentario nao encontrado.", status_code=404, code="reimbursement_comment_not_found")
+        return {"status": "deleted"}
+
     def list_invitations(self, user_id: str) -> list[ReimbursementInvitationRead]:
         list_invitations = getattr(self.repository, "list_reimbursement_invitations", None)
         if not list_invitations:
@@ -318,7 +429,7 @@ class ReimbursementService:
         self._event(user_id, "membership_revoked", contact_id=membership["contact_id"])
         return self._membership_read(user_id, record or membership)
 
-    def accept_invitation(self, user: Any, payload: ReimbursementInvitationAccept) -> ReimbursementMembershipRead:
+    def accept_invitation(self, user: Any, payload: ReimbursementInvitationAccept, client_ip: str | None = None) -> ReimbursementMembershipRead:
         user_email = (getattr(user, "email", None) or "").strip().casefold()
         if not user_email:
             raise AppError("Entre com o e-mail convidado para aceitar.", code="reimbursement_guest_email_required")
@@ -326,6 +437,21 @@ class ReimbursementService:
         if ensure_profile:
             ensure_profile(user.id, email=user_email, full_name=getattr(user, "full_name", None))
         token_hash = self._token_hash(payload.token)
+        attempt_id = self._begin_invitation_accept_attempt(token_hash=token_hash, user_id=user.id, client_ip=client_ip)
+        failure_code = "reimbursement_invitation_invalid"
+        success = False
+        try:
+            membership = self._accept_invitation_after_rate_limit(user, user_email, token_hash)
+            success = True
+            failure_code = None
+            return membership
+        except AppError as exc:
+            failure_code = exc.code
+            raise
+        finally:
+            self._complete_invitation_accept_attempt(attempt_id, success=success, failure_code=failure_code)
+
+    def _accept_invitation_after_rate_limit(self, user: Any, user_email: str, token_hash: str) -> ReimbursementMembershipRead:
         accept_atomically = getattr(self.repository, "accept_reimbursement_invitation_atomic", None)
         if accept_atomically:
             result = accept_atomically(token_hash, user.id, user_email, _utcnow())
@@ -476,6 +602,10 @@ class ReimbursementService:
         claim = self._guest_claim(guest_user_id, claim_id)
         attachment = self.repository.get_reimbursement_claim_attachment(claim["owner_user_id"], attachment_id)
         if not attachment or attachment.get("claim_id") != claim["id"] or attachment.get("status") != "active":
+            logger.warning(
+                "reimbursement_claim_attachment_access_denied",
+                extra={"claim_id": claim_id, "attachment_id": attachment_id, "guest_user_id": guest_user_id},
+            )
             raise AppError("Comprovante nao encontrado.", status_code=404, code="reimbursement_claim_attachment_not_found")
         return claim["owner_user_id"], attachment["file_id"]
 
@@ -558,8 +688,74 @@ class ReimbursementService:
             raise AppError("Cobranca nao encontrada.", status_code=404, code="reimbursement_claim_not_found")
         return claim
 
+    def _comment_access(self, viewer_user_id: str, claim_id: str) -> dict[str, Any]:
+        owner_claim = self.repository.get_reimbursement_claim(viewer_user_id, claim_id)
+        if owner_claim:
+            return {"role": ReimbursementCommentAuthorRole.owner.value, "owner_user_id": viewer_user_id, "claim": owner_claim}
+        claim = self._guest_claim(viewer_user_id, claim_id)
+        if claim.get("status") not in GUEST_SHARED_CLAIM_STATUSES:
+            raise AppError("Cobranca nao encontrada.", status_code=404, code="reimbursement_claim_not_found")
+        return {"role": ReimbursementCommentAuthorRole.guest.value, "owner_user_id": claim["owner_user_id"], "claim": claim}
+
+    def _comment_read(self, viewer_user_id: str, access: dict[str, Any], comment: dict[str, Any]) -> ReimbursementCommentRead:
+        is_mine = comment["author_user_id"] == viewer_user_id
+        if is_mine:
+            label = "Voce"
+        elif access["role"] == ReimbursementCommentAuthorRole.owner.value and comment.get("author_role") == ReimbursementCommentAuthorRole.guest.value:
+            label = "Responsavel"
+        elif comment.get("author_role") == ReimbursementCommentAuthorRole.owner.value:
+            label = "Titular"
+        else:
+            label = "Responsavel"
+        return ReimbursementCommentRead(
+            id=comment["id"],
+            claim_id=comment["claim_id"],
+            author_role=comment["author_role"],
+            author_label=label,
+            is_mine=is_mine,
+            body=comment["body"],
+            created_at=comment["created_at"],
+            updated_at=comment.get("updated_at"),
+        )
+
     def _token_hash(self, token: str) -> str:
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def _ip_hash(self, client_ip: str | None) -> str:
+        source = (client_ip or "unknown").strip() or "unknown"
+        secret = settings.jwt_secret or "change-me-local-only"
+        return hmac.new(secret.encode("utf-8"), source.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    def _begin_invitation_accept_attempt(self, token_hash: str, user_id: str, client_ip: str | None) -> str | None:
+        if not settings.invitation_accept_rate_limit_enabled:
+            return None
+        begin_attempt = getattr(self.repository, "begin_invitation_accept_attempt", None)
+        if not begin_attempt:
+            return None
+        now = _utcnow()
+        window_started_at = now - timedelta(seconds=settings.invitation_accept_rate_limit_window_seconds)
+        result = begin_attempt(
+            token_hash=token_hash,
+            ip_hash=self._ip_hash(client_ip),
+            auth_user_id=user_id,
+            max_attempts=settings.invitation_accept_rate_limit_max_attempts,
+            window_started_at=window_started_at,
+            attempted_at=now,
+        )
+        if not result.get("allowed"):
+            logger.warning(
+                "reimbursement_invitation_accept_rate_limited",
+                extra={"auth_user_id": user_id, "attempt_id": result.get("attempt_id")},
+            )
+            raise AppError("Muitas tentativas. Tente novamente mais tarde.", status_code=429, code="reimbursement_invitation_rate_limited")
+        return result.get("attempt_id")
+
+    def _complete_invitation_accept_attempt(self, attempt_id: str | None, *, success: bool, failure_code: str | None) -> None:
+        if not attempt_id:
+            return
+        complete_attempt = getattr(self.repository, "complete_invitation_accept_attempt", None)
+        if complete_attempt:
+            complete_attempt(attempt_id, success=success, failure_code=failure_code)
 
     def _as_datetime(self, value: Any) -> datetime:
         if isinstance(value, datetime):

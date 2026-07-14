@@ -11,6 +11,8 @@ from app.schemas.reimbursements import (
     ReimbursementClaimAttachmentRead,
     ReimbursementClaimRead,
     ReimbursementClaimUpdate,
+    ReimbursementCommentCreate,
+    ReimbursementCommentRead,
     ReimbursementContactCreate,
     ReimbursementContactRead,
     ReimbursementContactUpdate,
@@ -158,6 +160,37 @@ def list_claim_events(
     return service.list_events(user_id=user_id, claim_id=claim_id)
 
 
+@router.get("/claims/{claim_id}/comments", response_model=list[ReimbursementCommentRead])
+def list_claim_comments(
+    claim_id: str,
+    limit: int = 50,
+    cursor: str | None = None,
+    user: CurrentUser = Depends(get_request_user),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> list[ReimbursementCommentRead]:
+    return service.list_comments(viewer_user_id=user.id, claim_id=claim_id, limit=limit, cursor=cursor)
+
+
+@router.post("/claims/{claim_id}/comments", response_model=ReimbursementCommentRead)
+def create_claim_comment(
+    claim_id: str,
+    payload: ReimbursementCommentCreate,
+    user: CurrentUser = Depends(get_request_user),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> ReimbursementCommentRead:
+    return service.create_comment(user=user, claim_id=claim_id, payload=payload)
+
+
+@router.delete("/claims/{claim_id}/comments/{comment_id}", response_model=dict[str, str])
+def delete_claim_comment(
+    claim_id: str,
+    comment_id: str,
+    user: CurrentUser = Depends(get_request_user),
+    service: ReimbursementService = Depends(get_reimbursement_service),
+) -> dict[str, str]:
+    return service.delete_comment(user=user, claim_id=claim_id, comment_id=comment_id)
+
+
 @router.post("/claims/{claim_id}/items", response_model=ReimbursementClaimRead)
 def add_item(
     claim_id: str,
@@ -235,10 +268,11 @@ def revoke_membership(
 @router.post("/guest/invitations/accept", response_model=ReimbursementMembershipRead)
 def accept_guest_invitation(
     payload: ReimbursementInvitationAccept,
+    request: Request,
     user: CurrentUser = Depends(get_request_user),
     service: ReimbursementService = Depends(get_reimbursement_service),
 ) -> ReimbursementMembershipRead:
-    return service.accept_invitation(user=user, payload=payload)
+    return service.accept_invitation(user=user, payload=payload, client_ip=request.client.host if request.client else None)
 
 
 @router.get("/guest/claims", response_model=list[GuestReimbursementClaimRead])

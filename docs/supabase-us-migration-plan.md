@@ -10,8 +10,8 @@ Nenhuma credencial deve ser registrada neste documento. Listar apenas nomes de v
 
 - A branch `main` recebeu merge da `dev`.
 - A Fundacao 3 de Ressarcimentos esta integrada.
-- As migrations `001` a `008` estao versionadas no `HEAD`.
-- As migrations `001` a `008` foram aplicadas no Supabase Production US.
+- As migrations `001` a `011` estao versionadas no `HEAD`.
+- As migrations `001` a `011` foram aplicadas no Supabase Production US.
 - O Supabase Production foi recriado nos EUA, proximo ao Render Production em Virginia.
 - O Supabase Dev permanece separado e funcional.
 - Render Production aponta para Supabase Production US.
@@ -41,7 +41,7 @@ Producao:
 - Backend: Render Production em Virginia.
 - Banco/Auth/Storage: Supabase Production US, em North Virginia.
 - Storage privado: bucket `private-files`.
-- Migrations: `001` a `008` aplicadas no projeto Production US.
+- Migrations: `001` a `011` aplicadas no projeto Production US.
 
 Desenvolvimento:
 
@@ -70,7 +70,7 @@ Problemas:
 - Supabase Production antigo em regiao distante do backend.
 - Uso anterior de URL remota no deploy exigia protecao para migrations automaticas.
 - Necessidade de separar claramente Production e Dev em Vercel, Render, Supabase, Auth, JWT e Storage.
-- Necessidade de confirmar migrations 001-008 versionadas apos merge da `dev`.
+- Necessidade de confirmar migrations 001-011 versionadas apos merge da `dev`.
 
 Correcoes:
 
@@ -80,7 +80,8 @@ Correcoes:
 - Vercel Production configurada para Supabase Production US e backend Production.
 - Vercel Preview/dev configurada para Supabase Dev e backend Dev.
 - Bucket privado `private-files` criado no Supabase Production US.
-- Migrations 001-008 versionadas e aplicadas.
+- Migrations 001-011 versionadas e aplicadas.
+- Fundacao 3.5 promovida com comentarios owner/guest, rate limiting persistente de aceite de convites e hardening RLS/Data API.
 - `backend/scripts/apply_migrations.py` mantem skip seguro em banco remoto quando `--allow-remote` nao e informado.
 - `backend/.env.production.example` documenta bucket `private-files`.
 
@@ -94,6 +95,9 @@ Correcoes:
 6. `006_reimbursements_domain.sql`
 7. `007_reimbursement_guest_access.sql`
 8. `008_reimbursement_claim_attachments.sql`
+9. `009_reimbursement_comments.sql`
+10. `010_invitation_accept_rate_limits.sql`
+11. `011_reimbursements_security_hardening.sql`
 
 Essas migrations cobrem:
 
@@ -105,6 +109,9 @@ Essas migrations cobrem:
 - contatos, cobrancas, itens, snapshots e eventos de ressarcimento;
 - convites, memberships e portal guest;
 - compartilhamento explicito de comprovantes em cobrancas.
+- comentarios owner/guest em ressarcimentos.
+- rate limiting persistente para aceite de convites.
+- hardening de RLS/grants para impedir acesso direto pela Data API publica.
 
 ## 7. Variaveis substituidas por ambiente
 
@@ -140,6 +147,9 @@ Backend Render Production e Dev:
 - `AI_IMPORT_API_KEY`
 - `AI_IMPORT_MODEL`
 - `AI_IMPORT_TIMEOUT_SECONDS`
+- `INVITATION_ACCEPT_RATE_LIMIT_ENABLED`
+- `INVITATION_ACCEPT_RATE_LIMIT_MAX_ATTEMPTS`
+- `INVITATION_ACCEPT_RATE_LIMIT_WINDOW_SECONDS`
 
 Frontend Vercel Production e Preview/dev:
 
@@ -228,7 +238,7 @@ Condicao para exclusao definitiva do Supabase Brasil:
 - nenhuma necessidade de rollback aberta;
 - decisao humana explicita de exclusao.
 
-## 11. Comando historico para aplicar schema 001-008
+## 11. Comando historico para aplicar schema 001-011
 
 Nao executar novamente sem necessidade. Exemplo seguro para novo ambiente US vazio:
 

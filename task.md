@@ -610,3 +610,43 @@ Backend, quando houver alteração de API, serviços, parser ou persistência:
 cd backend
 .\.venv\Scripts\python.exe -m pytest
 ```
+
+### [x] P9.4 - Fundacao 3.5 de Ressarcimentos
+
+Objetivo:
+
+- Implementar comunicacao segura owner/guest em claims e reforcar protecao de convites antes de pagamentos e automacoes.
+
+Feito na Etapa A:
+
+- Plano registrado em `docs/foundation-3.5-plan.md`.
+
+Feito na Etapa B:
+
+- Criadas migrations `009_reimbursement_comments.sql` e `010_invitation_accept_rate_limits.sql`.
+- Backend de comentarios implementado com autorizacao owner/guest, texto puro, paginacao e soft delete.
+- Rate limiting persistente do aceite de convites implementado com token hash e origem derivada.
+- Testes unitarios e PostgreSQL reais adicionados.
+
+Feito na Etapa C:
+
+- UI owner de comentarios adicionada ao detalhe de cobranca.
+- UI guest de comentarios adicionada ao portal compartilhado.
+- Componente reutilizavel de comentarios criado com listagem, envio, exclusao, estados de loading/erro/vazio e dialogo de confirmacao.
+- Client API tipado integrado aos endpoints de comentarios.
+- E2E owner/guest adicionados para envio, ordem cronologica, exclusao, ausencia de HTML renderizado e feedback de rate limit.
+
+Feito na Etapa D:
+
+- Migration `011_reimbursements_security_hardening.sql` criada para habilitar RLS e revogar acesso direto a tabelas financeiras por roles publicas.
+- Data API mantida fechada para `PUBLIC`, `anon` e `authenticated`; acesso funcional segue pelo FastAPI.
+- Signed URLs e claim attachments revisados sem compartilhamento automatico de anexos de transacao.
+- Protecao contra fallback remoto de `NEXT_PUBLIC_API_URL` implementada e testada.
+- Logs seguros adicionados para comentarios, rate limit, acesso negado a attachment e falha de signed URL.
+- Testes PostgreSQL reais, backend, frontend e E2E executados localmente.
+
+Pendente operacional:
+
+- Aplicar migrations `009`, `010` e `011` em Production somente com autorizacao explicita.
+- Validar smoke manual autenticado em Dev/Preview antes de preparar merge para `main`.
+- Nao iniciar pagamentos, Telegram, OCR, audio, inbox, filas ou Fundacao 4 antes da validacao remota autorizada.

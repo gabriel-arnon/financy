@@ -488,6 +488,17 @@ export interface ReimbursementEvent {
   created_at: string;
 }
 
+export interface ReimbursementComment {
+  id: string;
+  claim_id: string;
+  author_role: "owner" | "guest";
+  author_label: string;
+  is_mine: boolean;
+  body: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
 export interface ReimbursementInvitation {
   id: string;
   owner_user_id: string;

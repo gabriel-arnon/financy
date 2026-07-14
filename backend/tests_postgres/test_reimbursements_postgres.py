@@ -13,6 +13,7 @@ from app.core.errors import AppError
 from app.repositories.postgres import PostgresRepository
 from app.schemas.reimbursements import (
     ReimbursementClaimCreate,
+    ReimbursementCommentCreate,
     ReimbursementInvitationAccept,
     ReimbursementInvitationCreate,
     ReimbursementClaimUpdate,
@@ -355,3 +356,192 @@ def test_same_guest_can_accept_different_owners(repo: PostgresRepository) -> Non
     second = other_service.accept_invitation(_guest(), ReimbursementInvitationAccept(token=second_invitation.accept_token))
 
     assert first.owner_user_id != second.owner_user_id
+
+
+def test_comments_use_real_postgres_constraints_and_soft_delete(repo: PostgresRepository) -> None:
+    service, _contact, claim_id = _sent_claim_with_contact(repo)
+    invitation = service.create_invitation(USER_ID, ReimbursementInvitationCreate(contact_id=_contact["id"], claim_id=claim_id))
+    service.accept_invitation(_guest(), ReimbursementInvitationAccept(token=invitation.accept_token))
+
+    owner_comment = service.create_comment(_guest(USER_ID, "owner@example.com"), claim_id, ReimbursementCommentCreate(body=" Primeiro "))
+    guest_comment = service.create_comment(_guest(GUEST_ID, "mae@example.com"), claim_id, ReimbursementCommentCreate(body="Segundo"))
+    comments = service.list_comments(USER_ID, claim_id)
+    assert [item.body for item in comments] == ["Primeiro", "Segundo"]
+    assert comments[0].author_role.value == "owner"
+    assert comments[1].author_role.value == "guest"
+
+    with pytest.raises(AppError) as other_guest_error:
+        service.list_comments(OTHER_GUEST_ID, claim_id)
+    assert other_guest_error.value.code == "reimbursement_claim_not_found"
+
+    with pytest.raises(AppError) as forbidden_delete:
+        service.delete_comment(_guest(OTHER_GUEST_ID, "other@example.com"), claim_id, guest_comment.id)
+    assert forbidden_delete.value.code == "reimbursement_claim_not_found"
+
+    service.delete_comment(_guest(USER_ID, "owner@example.com"), claim_id, guest_comment.id)
+    assert [item.id for item in service.list_comments(USER_ID, claim_id)] == [owner_comment.id]
+    stored = repo.get_reimbursement_comment(USER_ID, guest_comment.id)
+    assert stored is not None
+    assert stored["deleted_at"] is not None
+
+    with repo._connect() as conn, conn.cursor() as cur:
+        with pytest.raises(Exception):
+            cur.execute(
+                """
+                insert into reimbursement_comments
+                  (owner_user_id, claim_id, author_user_id, author_role, body)
+                values (%s, %s, %s, 'owner', '   ')
+                """,
+                (USER_ID, claim_id, USER_ID),
+            )
+
+
+def test_comment_pagination_uses_created_at_cursor(repo: PostgresRepository) -> None:
+    service, _contact, claim_id = _sent_claim_with_contact(repo)
+    first = service.create_comment(_guest(USER_ID, "owner@example.com"), claim_id, ReimbursementCommentCreate(body="A"))
+    second = service.create_comment(_guest(USER_ID, "owner@example.com"), claim_id, ReimbursementCommentCreate(body="B"))
+
+    page_one = service.list_comments(USER_ID, claim_id, limit=1)
+    assert [item.id for item in page_one] == [first.id]
+    cursor = f"{first.created_at.isoformat()}|{first.id}"
+    page_two = service.list_comments(USER_ID, claim_id, limit=1, cursor=cursor)
+    assert [item.id for item in page_two] == [second.id]
+
+
+def test_invitation_accept_rate_limit_uses_real_postgres_lock(database_url: str, repo: PostgresRepository, monkeypatch) -> None:
+    monkeypatch.setattr("app.services.reimbursement_service.settings.invitation_accept_rate_limit_enabled", True)
+    monkeypatch.setattr("app.services.reimbursement_service.settings.invitation_accept_rate_limit_max_attempts", 1)
+    monkeypatch.setattr("app.services.reimbursement_service.settings.invitation_accept_rate_limit_window_seconds", 60)
+
+    def accept_invalid():
+        isolated_repo = PostgresRepository(database_url, dev_user_id=USER_ID)
+        try:
+            return _service(isolated_repo).accept_invitation(_guest(), ReimbursementInvitationAccept(token="invalid-token-postgres-123"), client_ip="10.0.0.1")
+        finally:
+            isolated_repo.pool.close()
+
+    results = _run_concurrently([accept_invalid, accept_invalid])
+    assert sorted(result[1] for result in results if result[0] == "error") == [
+        "reimbursement_invitation_invalid",
+        "reimbursement_invitation_rate_limited",
+    ]
+    with repo._connect() as conn, conn.cursor() as cur:
+        cur.execute("select count(*) as attempt_count from reimbursement_invitation_accept_attempts")
+        assert cur.fetchone()["attempt_count"] == 2
+        cur.execute("select token_hash, ip_hash from reimbursement_invitation_accept_attempts limit 1")
+        attempt = cur.fetchone()
+        assert len(attempt["token_hash"]) == 64
+        assert len(attempt["ip_hash"]) == 64
+        assert "invalid-token-postgres-123" not in str(attempt)
+
+
+def test_rate_limit_window_and_distinct_tokens_in_postgres(repo: PostgresRepository, monkeypatch) -> None:
+    monkeypatch.setattr("app.services.reimbursement_service.settings.invitation_accept_rate_limit_enabled", True)
+    monkeypatch.setattr("app.services.reimbursement_service.settings.invitation_accept_rate_limit_max_attempts", 1)
+    monkeypatch.setattr("app.services.reimbursement_service.settings.invitation_accept_rate_limit_window_seconds", 60)
+    service = _service(repo)
+
+    with pytest.raises(AppError) as first:
+        service.accept_invitation(_guest(), ReimbursementInvitationAccept(token="invalid-token-window-a"), client_ip="10.0.0.2")
+    assert first.value.code == "reimbursement_invitation_invalid"
+    with pytest.raises(AppError) as blocked:
+        service.accept_invitation(_guest(), ReimbursementInvitationAccept(token="invalid-token-window-a"), client_ip="10.0.0.2")
+    assert blocked.value.code == "reimbursement_invitation_rate_limited"
+
+    with repo._connect() as conn, conn.cursor() as cur:
+        cur.execute("update reimbursement_invitation_accept_attempts set attempted_at = now() - interval '2 minutes'")
+
+    with pytest.raises(AppError) as after_window:
+        service.accept_invitation(_guest(), ReimbursementInvitationAccept(token="invalid-token-window-a"), client_ip="10.0.0.2")
+    assert after_window.value.code == "reimbursement_invitation_invalid"
+
+    with pytest.raises(AppError) as distinct_token:
+        service.accept_invitation(_guest(), ReimbursementInvitationAccept(token="invalid-token-window-b"), client_ip="10.0.0.2")
+    assert distinct_token.value.code == "reimbursement_invitation_invalid"
+
+
+def test_migrations_apply_009_010_011_and_are_skipped_on_second_run(database_url: str) -> None:
+    applied_again = apply_migrations(database_url, reset=False)
+    assert applied_again == []
+    repository = PostgresRepository(database_url, dev_user_id=USER_ID)
+    try:
+        with repository._connect() as conn, conn.cursor() as cur:
+            cur.execute("select version from schema_migrations order by version")
+            versions = [row["version"] for row in cur.fetchall()]
+            assert "009_reimbursement_comments.sql" in versions
+            assert "010_invitation_accept_rate_limits.sql" in versions
+            assert "011_reimbursements_security_hardening.sql" in versions
+            cur.execute(
+                """
+                select table_name
+                from information_schema.tables
+                where table_schema = 'public'
+                  and table_name in ('reimbursement_comments', 'reimbursement_invitation_accept_attempts')
+                order by table_name
+                """
+            )
+            assert [row["table_name"] for row in cur.fetchall()] == [
+                "reimbursement_comments",
+                "reimbursement_invitation_accept_attempts",
+            ]
+            cur.execute(
+                """
+                select indexname
+                from pg_indexes
+                where schemaname = 'public'
+                  and indexname in (
+                    'reimbursement_comments_claim_active_idx',
+                    'reimbursement_invitation_attempts_window_idx'
+                  )
+                order by indexname
+                """
+            )
+            assert [row["indexname"] for row in cur.fetchall()] == [
+                "reimbursement_comments_claim_active_idx",
+                "reimbursement_invitation_attempts_window_idx",
+            ]
+            cur.execute(
+                """
+                select relname, relrowsecurity
+                from pg_class
+                where relnamespace = 'public'::regnamespace
+                  and relname in (
+                    'transactions',
+                    'stored_files',
+                    'transaction_attachments',
+                    'reimbursement_claims',
+                    'reimbursement_items',
+                    'reimbursement_invitations',
+                    'reimbursement_memberships',
+                    'reimbursement_claim_attachments',
+                    'reimbursement_comments',
+                    'reimbursement_invitation_accept_attempts'
+                  )
+                order by relname
+                """
+            )
+            rls = {row["relname"]: row["relrowsecurity"] for row in cur.fetchall()}
+            assert all(rls.values())
+            cur.execute(
+                """
+                select grantee, table_name, privilege_type
+                from information_schema.role_table_grants
+                where table_schema = 'public'
+                  and grantee in ('PUBLIC', 'anon', 'authenticated')
+                  and table_name in (
+                    'transactions',
+                    'stored_files',
+                    'transaction_attachments',
+                    'reimbursement_claims',
+                    'reimbursement_items',
+                    'reimbursement_invitations',
+                    'reimbursement_memberships',
+                    'reimbursement_claim_attachments',
+                    'reimbursement_comments',
+                    'reimbursement_invitation_accept_attempts'
+                  )
+                """
+            )
+            assert cur.fetchall() == []
+    finally:
+        repository.pool.close()

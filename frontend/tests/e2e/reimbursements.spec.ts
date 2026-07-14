@@ -99,7 +99,11 @@ async function mockReimbursementsApi(page: Page, options: { seeded?: boolean } =
   let events = [] as any[];
   let invitations = [] as any[];
   let memberships = [] as any[];
+  let commentsByClaim: Record<string, any[]> = {};
+  let failNextCommentListStatus: number | null = null;
+  let failNextCommentPostStatus: number | null = null;
   let guestAccessActive = true;
+  let currentViewer: "owner" | "guest" = "owner";
   let eligible = [
     {
       id: "tx-1",
@@ -120,6 +124,11 @@ async function mockReimbursementsApi(page: Page, options: { seeded?: boolean } =
   ];
 
   const claimWithContact = (claim: any) => ({ ...claim, contact: contacts.find((contact) => contact.id === claim.contact_id) ?? null });
+  const commentsForViewer = (claimId: string, viewer: "owner" | "guest") => (commentsByClaim[claimId] ?? []).map((comment) => ({
+    ...comment,
+    is_mine: viewer === comment.author_role,
+    author_label: viewer === comment.author_role ? "Voce" : comment.author_role === "owner" ? "Responsavel" : "Convidado"
+  }));
   const overview = () => ({
     total_sent: claims.filter((claim) => claim.status === "sent").reduce((sum, claim) => sum + Number(claim.total_amount), 0).toFixed(2),
     draft_count: claims.filter((claim) => claim.status === "draft").length,
@@ -153,6 +162,7 @@ async function mockReimbursementsApi(page: Page, options: { seeded?: boolean } =
       items: []
     };
     claims.push(claim);
+    commentsByClaim[claim.id] = commentsByClaim[claim.id] ?? [];
     events.push({ id: `event-${events.length + 1}`, owner_user_id: "dev-user", claim_id: claim.id, contact_id: claim.contact_id, item_id: null, actor_type: "owner", actor_user_id: "dev-user", event_type: "claim_created", metadata: {}, created_at: "2026-07-12T12:00:00Z" });
     return claimWithContact(claim);
   }
@@ -182,9 +192,11 @@ async function mockReimbursementsApi(page: Page, options: { seeded?: boolean } =
     const method = request.method();
 
     if (path === "/reimbursements/overview") {
+      currentViewer = "owner";
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(overview()) });
     }
     if (path === "/reimbursements/contacts" && method === "GET") {
+      currentViewer = "owner";
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(contacts) });
     }
     if (path === "/reimbursements/contacts" && method === "POST") {
@@ -205,15 +217,77 @@ async function mockReimbursementsApi(page: Page, options: { seeded?: boolean } =
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(contacts.find((contact) => contact.id === id)) });
     }
     if (path === "/reimbursements/claims" && method === "GET") {
+      currentViewer = "owner";
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(claims.map(claimWithContact)) });
     }
     if (path === "/reimbursements/claims" && method === "POST") {
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(createClaim(request.postDataJSON())) });
     }
+    const commentsMatch = path.match(/^\/reimbursements\/claims\/([^/]+)\/comments$/);
+    if (commentsMatch && method === "GET") {
+      if (currentViewer === "guest" && !guestAccessActive) {
+        return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "not found" } }) });
+      }
+      if (failNextCommentListStatus) {
+        const status = failNextCommentListStatus;
+        failNextCommentListStatus = null;
+        return route.fulfill({ status, contentType: "application/json", body: JSON.stringify({ error: { message: status === 429 ? "rate limited" : "comment error" } }) });
+      }
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(commentsForViewer(commentsMatch[1], currentViewer)) });
+    }
+    if (commentsMatch && method === "POST") {
+      if (currentViewer === "guest" && !guestAccessActive) {
+        return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "not found" } }) });
+      }
+      if (failNextCommentPostStatus) {
+        const status = failNextCommentPostStatus;
+        failNextCommentPostStatus = null;
+        return route.fulfill({ status, contentType: "application/json", body: JSON.stringify({ error: { message: status === 429 ? "rate limited" : "comment error" } }) });
+      }
+      const payload = request.postDataJSON();
+      if (String(payload.body ?? "").includes("RATE_LIMIT")) {
+        return route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: { message: "rate limited" } }) });
+      }
+      const comment = {
+        id: `comment-${Object.values(commentsByClaim).flat().length + 1}`,
+        claim_id: commentsMatch[1],
+        author_role: currentViewer,
+        author_label: "Voce",
+        is_mine: true,
+        body: String(payload.body ?? "").trim(),
+        created_at: `2026-07-12T13:0${Object.values(commentsByClaim).flat().length}:00Z`,
+        updated_at: null
+      };
+      commentsByClaim[commentsMatch[1]] = [...(commentsByClaim[commentsMatch[1]] ?? []), comment];
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(comment) });
+    }
+    const deleteCommentMatch = path.match(/^\/reimbursements\/claims\/([^/]+)\/comments\/([^/]+)$/);
+    if (deleteCommentMatch && method === "DELETE") {
+      const claimComments = commentsByClaim[deleteCommentMatch[1]] ?? [];
+      const comment = claimComments.find((item) => item.id === deleteCommentMatch[2]);
+      if (currentViewer === "guest" && !guestAccessActive) {
+        return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "not found" } }) });
+      }
+      if (comment?.author_role === "owner" && currentViewer === "guest") {
+        return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { message: "forbidden" } }) });
+      }
+      commentsByClaim[deleteCommentMatch[1]] = claimComments.filter((item) => item.id !== deleteCommentMatch[2]);
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "deleted" }) });
+    }
+    if (path === "/reimbursements/debug/fail-next-comment-list-429") {
+      failNextCommentListStatus = 429;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    }
+    if (path === "/reimbursements/debug/fail-next-comment-post-429") {
+      failNextCommentPostStatus = 429;
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    }
     if (path === "/reimbursements/eligible-transactions") {
+      currentViewer = "owner";
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(eligible) });
     }
     if (path === "/reimbursements/invitations" && method === "GET") {
+      currentViewer = "owner";
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(invitations) });
     }
     if (path === "/reimbursements/invitations" && method === "POST") {
@@ -244,6 +318,7 @@ async function mockReimbursementsApi(page: Page, options: { seeded?: boolean } =
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(invitations.find((invitation) => invitation.id === revokeInvitationMatch[1])) });
     }
     if (path === "/reimbursements/memberships" && method === "GET") {
+      currentViewer = "owner";
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(memberships) });
     }
     const revokeMembershipMatch = path.match(/^\/reimbursements\/memberships\/([^/]+)\/revoke$/);
@@ -268,9 +343,11 @@ async function mockReimbursementsApi(page: Page, options: { seeded?: boolean } =
       memberships = [membership];
       invitations = invitations.map((invitation) => ({ ...invitation, status: "accepted", accepted_at: "2026-07-12T13:00:00Z", accepted_by_user_id: "guest-user" }));
       guestAccessActive = true;
+      currentViewer = "guest";
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(membership) });
     }
     if (path === "/reimbursements/guest/claims" && method === "GET") {
+      currentViewer = "guest";
       const visible = guestAccessActive ? claims.filter((claim) => claim.status !== "draft").map((claim) => ({
         id: claim.id,
         title: claim.title,
@@ -293,8 +370,44 @@ async function mockReimbursementsApi(page: Page, options: { seeded?: boolean } =
       })) : [];
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(visible) });
     }
+    const guestCommentsMatch = path.match(/^\/reimbursements\/guest\/claims\/([^/]+)\/comments$/);
+    if (guestCommentsMatch && method === "GET") {
+      if (!guestAccessActive) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "not found" } }) });
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(commentsForViewer(guestCommentsMatch[1], "guest")) });
+    }
+    if (guestCommentsMatch && method === "POST") {
+      if (!guestAccessActive) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "not found" } }) });
+      const payload = request.postDataJSON();
+      if (String(payload.body ?? "").includes("RATE_LIMIT")) {
+        return route.fulfill({ status: 429, contentType: "application/json", body: JSON.stringify({ error: { message: "rate limited" } }) });
+      }
+      const comment = {
+        id: `comment-${Object.values(commentsByClaim).flat().length + 1}`,
+        claim_id: guestCommentsMatch[1],
+        author_role: "guest",
+        author_label: "Voce",
+        is_mine: true,
+        body: String(payload.body ?? "").trim(),
+        created_at: `2026-07-12T13:1${Object.values(commentsByClaim).flat().length}:00Z`,
+        updated_at: null
+      };
+      commentsByClaim[guestCommentsMatch[1]] = [...(commentsByClaim[guestCommentsMatch[1]] ?? []), comment];
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(comment) });
+    }
+    const deleteGuestCommentMatch = path.match(/^\/reimbursements\/guest\/claims\/([^/]+)\/comments\/([^/]+)$/);
+    if (deleteGuestCommentMatch && method === "DELETE") {
+      if (!guestAccessActive) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "not found" } }) });
+      const claimComments = commentsByClaim[deleteGuestCommentMatch[1]] ?? [];
+      const comment = claimComments.find((item) => item.id === deleteGuestCommentMatch[2]);
+      if (comment?.author_role === "owner") {
+        return route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ error: { message: "forbidden" } }) });
+      }
+      commentsByClaim[deleteGuestCommentMatch[1]] = claimComments.filter((item) => item.id !== deleteGuestCommentMatch[2]);
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "deleted" }) });
+    }
     const guestActionMatch = path.match(/^\/reimbursements\/guest\/claims\/([^/]+)\/(acknowledge|dispute)$/);
     if (guestActionMatch && method === "POST") {
+      currentViewer = "guest";
       const claim = claims.find((item) => item.id === guestActionMatch[1]);
       claim.status = guestActionMatch[2] === "acknowledge" ? "acknowledged" : "disputed";
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
@@ -320,11 +433,13 @@ async function mockReimbursementsApi(page: Page, options: { seeded?: boolean } =
     }
     const guestAttachmentsMatch = path.match(/^\/reimbursements\/guest\/claims\/([^/]+)\/attachments$/);
     if (guestAttachmentsMatch && method === "GET") {
+      currentViewer = "guest";
       if (!guestAccessActive) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "not found" } }) });
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([{ id: "claim-attachment-1", claim_id: guestAttachmentsMatch[1], status: "active", created_at: "2026-07-12T13:00:00Z", deleted_at: null, file: { original_filename: "recibo.pdf", detected_mime_type: "application/pdf", size_bytes: 20 } }]) });
     }
     const guestSignedUrlMatch = path.match(/^\/reimbursements\/guest\/claims\/([^/]+)\/attachments\/([^/]+)\/signed-url$/);
     if (guestSignedUrlMatch && method === "GET") {
+      currentViewer = "guest";
       if (!guestAccessActive) return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: { message: "not found" } }) });
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ file_id: "hidden", url: "http://127.0.0.1:3100/mock-recibo.pdf", expires_at: "2026-07-12T13:10:00Z" }) });
     }
@@ -483,6 +598,74 @@ test("creates claim adds item finalizes cancels and shows timeline", async ({ pa
   await page.getByRole("dialog", { name: "Cancelar cobranca" }).getByRole("button", { name: "Cancelar cobranca" }).click();
   await expect(page.getByRole("row", { name: /Julho.*Cancelada/ })).toBeVisible();
   await expect(page.getByText("Cobrança cancelada")).toBeVisible();
+});
+
+test("owner comments on a reimbursement and deletes with confirmation", async ({ page }) => {
+  await mockReimbursementsApi(page, { seeded: true });
+  await page.goto("/reimbursements");
+  await page.getByRole("button", { name: /Cobran/ }).click();
+
+  await expect(page.getByText("Ainda nao ha comentarios neste ressarcimento.")).toBeVisible();
+  const textarea = page.getByLabel("Novo comentario");
+  await expect(page.getByText("0/2000")).toBeVisible();
+  await textarea.fill("   ");
+  await expect(page.getByRole("button", { name: "Enviar comentario" })).toBeDisabled();
+  await textarea.fill("<strong>sem html</strong>");
+  await page.getByRole("button", { name: "Enviar comentario" }).click();
+  await expect(page.getByText("<strong>sem html</strong>")).toBeVisible();
+  await expect(page.locator("strong", { hasText: "sem html" })).toHaveCount(0);
+
+  await textarea.fill("Segundo comentario");
+  await page.getByRole("button", { name: "Enviar comentario" }).click();
+  await expect(page.getByText("Segundo comentario")).toBeVisible();
+  await expect(page.getByText("Voce").first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Excluir comentario de Voce" }).first().click();
+  await expect(page.getByRole("dialog", { name: "Excluir comentario" })).toBeVisible();
+  await page.getByRole("dialog", { name: "Excluir comentario" }).getByRole("button", { name: "Voltar" }).click();
+  await expect(page.getByText("<strong>sem html</strong>")).toBeVisible();
+
+  await page.getByRole("button", { name: "Excluir comentario de Voce" }).first().click();
+  await page.getByRole("dialog", { name: "Excluir comentario" }).getByRole("button", { name: "Excluir comentario" }).click();
+  await expect(page.getByText("<strong>sem html</strong>")).toBeHidden();
+
+  await textarea.fill("RATE_LIMIT");
+  await page.getByRole("button", { name: "Enviar comentario" }).click();
+  await expect(page.getByRole("main").getByText("Muitas tentativas. Aguarde alguns instantes e tente novamente.")).toBeVisible();
+});
+
+test("guest comments on shared claim and cannot delete owner comment", async ({ page }) => {
+  await mockReimbursementsApi(page, { seeded: true });
+  await page.goto("/reimbursements");
+  await page.getByRole("button", { name: /Cobran/ }).click();
+  await page.getByLabel("Valor para FARMACIA").fill("50.00");
+  await page.getByRole("button", { name: "Adicionar" }).click();
+  await page.getByLabel("Novo comentario").fill("Comentario do titular");
+  await page.getByRole("button", { name: "Enviar comentario" }).click();
+  await page.getByRole("button", { name: /Finalizar cobran/ }).click();
+  await page.getByRole("dialog", { name: "Finalizar cobranca" }).getByRole("button", { name: "Finalizar cobranca" }).click();
+  await page.getByRole("button", { name: "Criar convite" }).click();
+
+  await page.goto("/guest/reimbursements/accept?token=mock-token");
+  await page.getByRole("link", { name: "Abrir portal" }).click();
+  await expect(page.getByText("Comentario do titular")).toBeVisible();
+  await expect(page.getByText("Responsavel")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Excluir comentario de Responsavel" })).toHaveCount(0);
+
+  await page.getByLabel("Novo comentario").fill("Comentario do convidado");
+  await page.getByRole("button", { name: "Enviar comentario" }).click();
+  await expect(page.getByText("Comentario do convidado")).toBeVisible();
+  await page.getByRole("button", { name: "Excluir comentario de Voce" }).click();
+  await page.getByRole("dialog", { name: "Excluir comentario" }).getByRole("button", { name: "Excluir comentario" }).click();
+  await expect(page.getByText("Comentario do convidado")).toBeHidden();
+
+  await page.goto("/reimbursements");
+  await page.getByRole("button", { name: "Pessoas" }).click();
+  await page.getByRole("button", { name: "Revogar" }).click();
+  await page.getByRole("dialog", { name: "Revogar acesso" }).getByRole("button", { name: "Revogar acesso" }).click();
+  await page.goto("/guest/reimbursements");
+  await expect(page.getByText(/Nenhuma cobran/)).toBeVisible();
+  await expect(page.getByText("Comentario do titular")).toHaveCount(0);
 });
 
 test("starts reimbursement flow from transactions with mixed selection", async ({ page }) => {

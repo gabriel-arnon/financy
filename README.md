@@ -55,16 +55,19 @@ npm install
 Copy-Item .env.example .env.local
 npm run dev
 ```
-teste
+
 O app sobe em `http://localhost:3000`.
 
 ### Variaveis de ambiente
 
 Veja `frontend/.env.example`.
 
-- `NEXT_PUBLIC_API_URL`: URL da API FastAPI.
+- `NEXT_PUBLIC_API_URL`: URL da API FastAPI. Localmente pode apontar para `http://127.0.0.1:8000`; em Preview/Production deve ser uma URL `https` real e nao pode ficar ausente.
 - `NEXT_PUBLIC_SUPABASE_URL`: preparado para Supabase Auth futuro.
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: preparado para Supabase Auth futuro.
+
+O build remoto valida `NEXT_PUBLIC_API_URL` antes do Next.js compilar. Isso
+impede que Preview/Production caiam silenciosamente no fallback local.
 
 ## Docker Compose local
 

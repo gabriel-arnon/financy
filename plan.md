@@ -72,7 +72,7 @@ Foco:
 6. Implementar P6.3 depois que agregações e filtros do dashboard estiverem sólidos.
 7. Implementar P6.4/P6.5 quando houver escopo claro de intents e limites de segurança.
 8. Implementar P6.6/P6.7 como refinamentos contínuos.
-9. Para Ressarcimentos, proxima fase recomendada: Fundacao 3.5 com comentarios owner/guest e hardening de RLS/auditoria, sem pagamentos integrados.
+9. Para Ressarcimentos, Fundacao 3.5 esta aplicada no Supabase Dev; proximo passo e smoke autenticado Dev/Preview antes de preparar merge para `main`.
 
 ## Critérios de Pronto
 

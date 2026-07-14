@@ -19,6 +19,7 @@ import type {
   GuestReimbursementClaim,
   ReimbursementClaim,
   ReimbursementClaimAttachment,
+  ReimbursementComment,
   ReimbursementClaimPayload,
   ReimbursementContact,
   ReimbursementContactPayload,
@@ -35,9 +36,10 @@ import type {
   StoredFile,
   UploadImportResponse
 } from "@/lib/types";
+import { resolveApiBaseUrl } from "@/lib/api-url";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+const API_URL = resolveApiBaseUrl("Financy client API");
 const RETRY_DELAYS_MS = [600, 1500, 3000];
 const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
@@ -47,6 +49,18 @@ function sleep(ms: number) {
 
 function requestMethod(init?: RequestInit) {
   return (init?.method ?? "GET").toUpperCase();
+}
+
+export class ApiError extends Error {
+  status: number;
+  code: string | null;
+
+  constructor(message: string, status: number, code: string | null = null) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
 }
 
 function canRetry(init?: RequestInit) {
@@ -112,7 +126,7 @@ async function requestWithResponse<T>(path: string, init?: RequestInit): Promise
       document.cookie = "financy_access_token=; Path=/; Max-Age=0; SameSite=Lax";
       window.location.assign("/login");
     }
-    throw new Error(body?.error?.message ?? `Erro na API (${response.status})`);
+    throw new ApiError(body?.error?.message ?? `Erro na API (${response.status})`, response.status, body?.error?.code ?? null);
   }
 
   throw new Error("Falha inesperada ao chamar a API.");
@@ -253,6 +267,25 @@ export async function refreshReimbursementSnapshots(claimId: string): Promise<Re
 
 export async function getReimbursementEvents(claimId: string): Promise<ReimbursementEvent[]> {
   return request<ReimbursementEvent[]>(`/reimbursements/claims/${claimId}/events`);
+}
+
+export async function getReimbursementComments(claimId: string, params?: { limit?: number; cursor?: string | null }): Promise<ReimbursementComment[]> {
+  const search = new URLSearchParams();
+  if (params?.limit) search.set("limit", String(params.limit));
+  if (params?.cursor) search.set("cursor", params.cursor);
+  const query = search.toString();
+  return request<ReimbursementComment[]>(`/reimbursements/claims/${claimId}/comments${query ? `?${query}` : ""}`);
+}
+
+export async function createReimbursementComment(claimId: string, body: string): Promise<ReimbursementComment> {
+  return request<ReimbursementComment>(`/reimbursements/claims/${claimId}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ body })
+  });
+}
+
+export async function deleteReimbursementComment(claimId: string, commentId: string): Promise<{ status: string }> {
+  return request<{ status: string }>(`/reimbursements/claims/${claimId}/comments/${commentId}`, { method: "DELETE" });
 }
 
 export async function addReimbursementClaimAttachment(claimId: string, fileId: string): Promise<ReimbursementClaimAttachment> {
