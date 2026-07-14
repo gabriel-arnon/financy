@@ -42,6 +42,7 @@ secrets nos logs, documentos ou screenshots.
 - Comentarios sao exibidos como texto puro e nao renderizam HTML arbitrario.
 - Aceite de convite retorna `429` apos excesso de tentativas configurado.
 - Data API nao permite leitura/escrita direta das tabelas financeiras com roles `anon` ou `authenticated`.
+- Bundles publicos do frontend nao contem `localhost`, `127.0.0.1` ou URLs de Production quando o ambiente e Preview/Dev.
 - Logs revisados para `401`, `403`, `429` e `500`.
 - DevTools nao mostra chamadas para ambiente incorreto.
 - TTFB medido e registrado quando relevante.

@@ -1445,3 +1445,69 @@ Pendencias residuais:
 - Validar smoke remoto apos deploy Dev/Preview.
 - Revisar upgrade do ReportLab em tarefa separada.
 - Pagamentos, Telegram, OCR, audio, inbox, filas e Fundacao 4 nao foram iniciados.
+
+## Fundacao 3.5 - Implantacao Dev
+
+Data: 2026-07-14.
+
+Estado inicial:
+
+- Branch `dev`.
+- Commit versionado em `dev`/`origin/dev`: `20d3c09 feat: fecha fundacao 3.5 com hardening de seguranca`.
+- Worktree limpo antes da implantacao remota.
+- Migrations versionadas: `001` a `011`.
+
+Validacoes locais executadas antes de qualquer operacao remota:
+
+- `git branch --show-current` -> `dev`.
+- `git status --short` -> limpo.
+- `git diff --stat` -> vazio.
+- `git diff --check` -> passou.
+- Backend: `.venv\Scripts\python.exe -m pytest` -> `99 passed, 1 warning`.
+- PostgreSQL real local: `TEST_DATABASE_URL` local + `pytest tests_postgres -m postgres -q` -> `14 passed`.
+- Frontend `npm.cmd run test:api-url` -> passou.
+- Frontend `npm.cmd run typecheck` -> passou.
+- Frontend `npm.cmd run lint` -> passou.
+- Frontend `npm.cmd run build` -> passou.
+- Frontend `npm.cmd run e2e` -> `29 passed`.
+
+Auditoria local:
+
+- Arquivos locais `.env` e `.uploads` existem apenas no workspace local e nao estavam staged.
+- Nenhum secret foi identificado como staged.
+- Nao houve chamada para Production durante as validacoes locais.
+
+Migrations Dev:
+
+- Aplicacao remota feita pelo operador no terminal local com `DATABASE_URL` do Supabase Dev e `--allow-remote`.
+- `--reset-schema` nao foi usado.
+- Migrations pendentes aplicadas: `009_reimbursement_comments.sql`, `010_invitation_accept_rate_limits.sql`, `011_reimbursements_security_hardening.sql`.
+- Idempotencia confirmada com nova execucao: `Migrations applied: - none`.
+
+Validacao Supabase Dev:
+
+- `schema_migrations` contem `001` a `011`.
+- `has_001_to_011=True`.
+- RLS habilitado para `reimbursement_claim_attachments`, `reimbursement_claims`, `reimbursement_comments`, `reimbursement_invitation_accept_attempts`, `reimbursement_memberships`, `stored_files`, `transaction_attachments` e `transactions`.
+- `public_grants_count=0` para as tabelas criticas validadas.
+- Indices confirmados: `reimbursement_claim_attachments_active_file_idx`, `reimbursement_comments_claim_active_idx`, `reimbursement_invitation_attempts_window_idx`.
+- Tabelas novas confirmadas: `reimbursement_comments`, `reimbursement_invitation_accept_attempts`.
+
+Smoke remoto Dev sem credenciais:
+
+- Backend Dev `https://financy-svme.onrender.com/health` -> `200`, body `{"status":"ok"}`.
+- Frontend Preview `https://financy-git-dev-gabriel-arnon1.vercel.app/` -> `200`.
+- Rotas publicas/estaticas `/login`, `/reimbursements` e `/guest/reimbursements` -> `200`.
+- Endpoint autenticado `/reimbursements/claims` sem token -> `401 unauthenticated`, comportamento esperado.
+- HTML inicial e 65 assets JS publicos verificados: sem `localhost`, `127.0.0.1`, backend production antigo ou frontend production.
+
+Nao validado automaticamente:
+
+- Fluxos autenticados reais de login/logout, comentarios owner/guest, exclusao, invitations, memberships, attachments, signed URLs, revogacao e rate limit em Dev dependem de sessao autenticada e smoke manual.
+- Render/Vercel env vars nao foram lidas por CLI nesta maquina porque `render` e `vercel` nao estavam disponiveis.
+
+Riscos residuais:
+
+- Executar smoke manual autenticado em Dev/Preview antes de preparar merge para `main`.
+- Aplicar migrations em Production somente em janela propria e com aprovacao explicita.
+- Manter o warning conhecido do ReportLab em backlog.

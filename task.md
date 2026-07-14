@@ -647,6 +647,6 @@ Feito na Etapa D:
 
 Pendente operacional:
 
-- Aplicar migrations `009`, `010` e `011` em Supabase Dev/Production somente com autorizacao explicita.
-- Validar smoke remoto apos deploy Dev/Preview.
+- Aplicar migrations `009`, `010` e `011` em Production somente com autorizacao explicita.
+- Validar smoke manual autenticado em Dev/Preview antes de preparar merge para `main`.
 - Nao iniciar pagamentos, Telegram, OCR, audio, inbox, filas ou Fundacao 4 antes da validacao remota autorizada.

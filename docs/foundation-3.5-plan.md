@@ -681,3 +681,12 @@ Status em 2026-07-13:
 - logs seguros adicionados para comentario criado/removido, rate limit de convite e falha de signed URL, sem body de comentario, token, IP bruto, JWT, service role ou URL assinada;
 - testes PostgreSQL validam registro da migration `011`, RLS habilitado e ausencia de grants diretos para roles publicas nas tabelas sensiveis;
 - Fundacao 3.5 considerada fechada apos validacoes finais locais; aplicacao remota das migrations continua dependente de aprovacao explicita por ambiente.
+
+Atualizacao Dev em 2026-07-14:
+
+- migrations `009`, `010` e `011` foram aplicadas no Supabase Dev pelo operador, com `--allow-remote` e sem `--reset-schema`;
+- idempotencia confirmada por segunda execucao do runner com `Migrations applied: - none`;
+- banco Dev confirmou `schema_migrations` de `001` a `011`, RLS habilitado nas tabelas criticas e zero grants diretos para roles publicas nas tabelas validadas;
+- smoke publico Dev confirmou backend `/health` 200, frontend Preview 200 e endpoint autenticado retornando 401 sem token;
+- bundles publicos do Preview foram verificados sem `localhost`, `127.0.0.1` ou URLs antigas de Production;
+- smoke autenticado completo permanece como criterio antes de preparar merge para `main`.
