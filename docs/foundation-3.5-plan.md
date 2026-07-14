@@ -690,3 +690,15 @@ Atualizacao Dev em 2026-07-14:
 - smoke publico Dev confirmou backend `/health` 200, frontend Preview 200 e endpoint autenticado retornando 401 sem token;
 - bundles publicos do Preview foram verificados sem `localhost`, `127.0.0.1` ou URLs antigas de Production;
 - smoke autenticado completo permanece como criterio antes de preparar merge para `main`.
+
+Atualizacao Production em 2026-07-14:
+
+- migrations `009`, `010` e `011` foram aplicadas no Supabase Production US com aprovacao explicita, sem `--reset-schema`;
+- idempotencia confirmada por segunda execucao do runner com `Migrations applied: - none`;
+- validacao Production confirmou `schema_migrations` de `001` a `011`, tabelas `reimbursement_comments` e `reimbursement_invitation_accept_attempts`, RLS habilitado nas tabelas criticas, zero grants diretos para `anon`/`authenticated` e indices criticos presentes;
+- `dev` foi mergeada em `main` no commit `a8c89d0`, com conflitos apenas em documentacao operacional resolvidos preservando o registro Production US e os controles da Fundacao 3.5;
+- validacoes locais em `main` apos merge: backend `99 passed`, PostgreSQL real `14 passed`, frontend `test:api-url`, typecheck, lint e build aprovados, E2E `29 passed`;
+- push para `origin/main` concluido e smoke Production aprovado;
+- smoke publico confirmou backend `/health` 200, paginas frontend principais 200, rota de comentarios protegida retornando 401 sem token, bundle apontando para backend Production e sem URLs de Dev como alvo ativo;
+- rollback de codigo permanece disponivel pelo commit anterior `e1267a3`; migrations `009` a `011` sao aditivas/restritivas e nao devem ser removidas automaticamente;
+- Fundacao 3.5 esta em Production; pagamentos, Telegram, OCR, audio, inbox, filas e Fundacao 4 nao foram iniciados.

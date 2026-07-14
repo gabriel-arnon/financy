@@ -59,7 +59,7 @@ Foco:
 - manter Fundacoes 0, 1 e 2 estabilizadas;
 - manter Fundacao 3 estabilizada com convites, memberships e portal guest limitado;
 - manter migrations validadas em PostgreSQL local e aplicar em Supabase remoto apenas com autorizacao explicita;
-- preparar Fundacao 3.5 de comentarios antes de pagamentos, junto do hardening de RLS;
+- manter Fundacao 3.5 em producao com comentarios owner/guest, rate limit de convites e hardening de RLS/Data API;
 - nao iniciar Telegram, OCR, audio, pagamentos ou inbox antes das fundacoes owner/guest estarem seguras.
 
 ## Sequência Recomendada
@@ -72,7 +72,7 @@ Foco:
 6. Implementar P6.3 depois que agregações e filtros do dashboard estiverem sólidos.
 7. Implementar P6.4/P6.5 quando houver escopo claro de intents e limites de segurança.
 8. Implementar P6.6/P6.7 como refinamentos contínuos.
-9. Para Ressarcimentos, Fundacao 3.5 esta aplicada no Supabase Dev; proximo passo e smoke autenticado Dev/Preview antes de preparar merge para `main`.
+9. Para Ressarcimentos, Fundacao 3.5 esta em Production. Proximo passo e definir escopo da Fundacao 4 somente apos nova aprovacao explicita.
 
 ## Critérios de Pronto
 

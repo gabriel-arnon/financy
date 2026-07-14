@@ -1511,3 +1511,84 @@ Riscos residuais:
 - Executar smoke manual autenticado em Dev/Preview antes de preparar merge para `main`.
 - Aplicar migrations em Production somente em janela propria e com aprovacao explicita.
 - Manter o warning conhecido do ReportLab em backlog.
+
+## Fundacao 3.5 - Promocao para Production
+
+Data: 2026-07-14.
+
+Estado inicial:
+
+- Fundacao 3.5 validada em `dev`.
+- `origin/dev` continha comentarios owner/guest, rate limiting persistente, hardening RLS/Data API, protecao de API URL e documentacao.
+- `main` ainda nao continha a Fundacao 3.5.
+- Migrations `009`, `010` e `011` ainda nao estavam aplicadas em Production.
+
+Auditoria e validacoes antes da promocao:
+
+- `dev` limpa e alinhada com `origin/dev`.
+- Diff `main..dev` continha apenas Fundacao 3.5, migrations, testes e documentacao relacionada.
+- Migrations `009_reimbursement_comments.sql`, `010_invitation_accept_rate_limits.sql` e `011_reimbursements_security_hardening.sql` revisadas sem operacoes destrutivas.
+- Backend: `.venv\Scripts\python.exe -m pytest` -> `99 passed, 1 warning`.
+- PostgreSQL real local: `pytest tests_postgres -m postgres -q` -> `14 passed`.
+- Frontend `npm.cmd run test:api-url` -> passou.
+- Frontend `npm.cmd run typecheck` -> passou.
+- Frontend `npm.cmd run lint` -> passou.
+- Frontend `npm.cmd run build` -> passou.
+- Frontend `npm.cmd run e2e` -> `29 passed`.
+
+Migrations Production:
+
+- Aplicacao remota feita pelo operador com aprovacao explicita, `--allow-remote` e sem `--reset-schema`.
+- Migrations aplicadas no Supabase Production US:
+  - `009_reimbursement_comments.sql`
+  - `010_invitation_accept_rate_limits.sql`
+  - `011_reimbursements_security_hardening.sql`
+- Idempotencia confirmada com segunda execucao: `Migrations applied: - none`.
+- Validacao Production confirmou `schema_migrations` de `001` a `011`.
+- Tabelas novas confirmadas: `reimbursement_comments`, `reimbursement_invitation_accept_attempts`.
+- RLS habilitado nas tabelas criticas de ressarcimentos, arquivos privados e transacoes.
+- Grants diretos de `anon`/`authenticated` nas tabelas validadas: `0`.
+- Indices criticos confirmados: `reimbursement_claim_attachments_active_file_idx`, `reimbursement_comments_claim_active_idx`, `reimbursement_invitation_attempts_window_idx`.
+
+Merge e push:
+
+- Merge local `dev -> main` aprovado e executado com `git merge --no-ff dev`.
+- Conflitos ocorreram apenas em documentacao operacional e foram resolvidos preservando Production US e Fundacao 3.5.
+- Merge commit: `a8c89d0 Merge branch 'dev'`.
+- Push para `origin/main` aprovado e executado.
+- Commit anterior de `main` para rollback de codigo: `e1267a3`.
+
+Validacoes apos merge em `main`:
+
+- Backend: `99 passed, 1 warning`.
+- PostgreSQL real local: `14 passed`.
+- Frontend `test:api-url`, typecheck, lint e build aprovados.
+- E2E: `29 passed`.
+- `git diff --check HEAD` passou.
+
+Smoke Production:
+
+- Backend Production `/health` -> `200`, body `{"status":"ok"}`.
+- Frontend Production `/`, `/login`, `/reimbursements` e `/guest/reimbursements` -> `200`.
+- Rota protegida de comentarios sem token retornou `401 unauthenticated`, comportamento esperado.
+- Bundle Production aponta para backend Production.
+- Bundle Production nao contem backend Dev ou frontend Dev como alvo ativo.
+- Strings `localhost`/`127.0.0.1` encontradas apenas em codigo de validacao/dependencia, nao como URL ativa.
+- Smoke autenticado Production foi aprovado pelo operador.
+
+Rollback:
+
+- Rollback de codigo: voltar `main` para `e1267a3` se necessario.
+- Migrations `009` a `011` sao aditivas/restritivas e nao devem ser removidas automaticamente.
+- Em caso de problema funcional, preferir hotfix/migration corretiva em vez de apagar tabelas ou policies.
+
+Riscos residuais:
+
+- Warning conhecido do ReportLab (`ast.NameConstant`) permanece em backlog.
+- Monitorar logs Production por `401`, `403`, `429` e `500` apos uso real.
+- Monitorar falsos positivos do rate limit de convites.
+- Fundacao 4, pagamentos, Telegram, OCR, audio, inbox e filas nao foram iniciados.
+
+Resultado:
+
+- Fundacao 3.5 esta em Production.

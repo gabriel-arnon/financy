@@ -6,6 +6,15 @@ Escopo deste documento: registrar o estado final da migracao de infraestrutura d
 
 Nenhuma credencial deve ser registrada neste documento. Listar apenas nomes de variaveis e identificadores logicos de ambiente.
 
+## Atualizacao 2026-07-14 - Fundacao 3.5 em Production
+
+- Migrations `009_reimbursement_comments.sql`, `010_invitation_accept_rate_limits.sql` e `011_reimbursements_security_hardening.sql` foram aplicadas no Supabase Production US com aprovacao explicita.
+- Segunda execucao do migration runner retornou `Migrations applied: - none`.
+- Production confirmou `schema_migrations` de `001` a `011`, RLS habilitado nas tabelas criticas, zero grants diretos para `anon`/`authenticated` nas tabelas validadas e indices criticos presentes.
+- `dev` foi mergeada em `main` no commit `a8c89d0` e enviada para `origin/main`.
+- Smoke Production foi aprovado para backend, frontend, ressarcimentos e comentarios owner/guest.
+- Rollback de codigo permanece disponivel pelo commit anterior `e1267a3`; migrations 009-011 nao devem ser removidas automaticamente.
+
 ## 1. Estado confirmado
 
 - A branch `main` recebeu merge da `dev`.
