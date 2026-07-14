@@ -1,6 +1,6 @@
 # Plano Seguro de Migração Supabase US - Financy
 
-Data da auditoria: 2026-07-13  
+Data da auditoria: 2026-07-13
 Escopo: análise estática do repositório local. Nenhuma migration foi executada, nenhum ambiente remoto foi acessado e nenhuma credencial foi lida ou registrada.
 
 ## Atualizacao 2026-07-13 - Fundacao 3.5
