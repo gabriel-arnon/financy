@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, CreditCard, Crown, FileUp, HandCoins, Landmark, LayoutDashboard, LogOut, Menu, Settings, WalletCards, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { FinanceAssistantLauncher } from "@/components/finance-assistant-launcher";
+import { getOpenFinanceStatus } from "@/lib/api";
 import { cn } from "@/lib/classnames";
 
 const navItems = [
@@ -151,7 +152,7 @@ function SidebarFooter({ collapsed, pathname, onNavigate }: { collapsed?: boolea
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { session } = useAuth();
+  const { configured, session } = useAuth();
   const isAuthPage = pathname === "/login";
   const isGuestPortal = pathname.startsWith("/guest/reimbursements");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -159,6 +160,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return window.localStorage.getItem(sidebarPreferenceKey) === "true";
   });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [openFinanceVisible, setOpenFinanceVisible] = useState(false);
 
   function toggleSidebar() {
     setSidebarCollapsed((current) => {
@@ -168,9 +170,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     });
   }
 
-  const openFinanceEnabled = process.env.NEXT_PUBLIC_OPEN_FINANCE_ENABLED === "true";
-  const openFinanceOwnerId = process.env.NEXT_PUBLIC_OPEN_FINANCE_OWNER_USER_ID;
-  const openFinanceVisible = openFinanceEnabled && openFinanceOwnerId && (!session || session.user.id === openFinanceOwnerId);
+  useEffect(() => {
+    let active = true;
+    if (isAuthPage || isGuestPortal || (configured && !session)) {
+      const hideTimer = window.setTimeout(() => {
+        if (active) setOpenFinanceVisible(false);
+      }, 0);
+      return () => {
+        active = false;
+        window.clearTimeout(hideTimer);
+      };
+    }
+    const timer = window.setTimeout(() => {
+      getOpenFinanceStatus()
+        .then((status) => {
+          if (active) setOpenFinanceVisible(status.enabled);
+        })
+        .catch(() => {
+          if (active) setOpenFinanceVisible(false);
+        });
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [configured, isAuthPage, isGuestPortal, session]);
+
   const visibleNavItems = openFinanceVisible
     ? [...navItems, openFinanceNavItem]
     : navItems;

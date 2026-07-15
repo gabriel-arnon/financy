@@ -173,6 +173,27 @@ const previewResponse = {
 };
 
 async function mockApi(page: Page) {
+  await page.route("**/open-finance/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ enabled: false, owner_only: true, configured: false, provider: "pluggy" })
+    });
+  });
+  await page.route("**/ai-finance/overview", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        summary: "",
+        insights: [],
+        suggested_rules: [],
+        category_suggestions: [],
+        recurrence_suggestions: [],
+        rename_suggestions: []
+      })
+    });
+  });
   await page.route("**/categories", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(categories) });
   });

@@ -67,7 +67,8 @@ export class ApiError extends Error {
   }
 }
 
-function canRetry(init?: RequestInit) {
+function canRetry(path: string, init?: RequestInit) {
+  if (path === "/open-finance/status") return false;
   const method = requestMethod(init);
   return method === "GET" || method === "HEAD";
 }
@@ -95,7 +96,7 @@ async function requestWithResponse<T>(path: string, init?: RequestInit): Promise
     ...(init?.body instanceof FormData ? init.headers : { "Content-Type": "application/json", ...init?.headers }),
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
-  const retryable = canRetry(init);
+  const retryable = canRetry(path, init);
   const attempts = retryable ? RETRY_DELAYS_MS.length + 1 : 1;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
