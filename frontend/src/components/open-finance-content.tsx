@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Activity, AlertCircle, CheckCircle2, Landmark, Plus, RefreshCw, ShieldCheck } from "lucide-react";
+import type { ProductType } from "pluggy-js";
 import { UiButton } from "@/components/ui-button";
 import { useToast } from "@/components/toast-provider";
 import {
@@ -18,6 +19,7 @@ import { cn } from "@/lib/classnames";
 import type { OpenFinanceItem, OpenFinanceStatus, OpenFinanceSyncRun } from "@/lib/types";
 
 const PluggyConnect = dynamic(() => import("react-pluggy-connect").then((mod) => mod.PluggyConnect), { ssr: false });
+const OPEN_FINANCE_PRODUCTS: ProductType[] = ["ACCOUNTS", "CREDIT_CARDS", "TRANSACTIONS"];
 
 function formatDateTime(value: string | null) {
   if (!value) return "Nunca";
@@ -55,6 +57,7 @@ export function OpenFinanceContent() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [connectToken, setConnectToken] = useState<string | null>(null);
+  const [connectUpdateItemId, setConnectUpdateItemId] = useState<string | null>(null);
 
   const lastRun = runs[0] ?? null;
   const totals = useMemo(() => {
@@ -117,6 +120,7 @@ export function OpenFinanceContent() {
     try {
       setSyncing("connect");
       const token = await createOpenFinanceConnectToken();
+      setConnectUpdateItemId(null);
       setConnectToken(token.connect_token);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Falha ao iniciar conexao Open Finance.");
@@ -125,8 +129,21 @@ export function OpenFinanceContent() {
     }
   }
 
+  async function handleReconnect(item: OpenFinanceItem) {
+    try {
+      setSyncing(`reconnect-${item.external_item_id}`);
+      const token = await createOpenFinanceConnectToken();
+      setConnectUpdateItemId(item.external_item_id);
+      setConnectToken(token.connect_token);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao iniciar reconexao Open Finance.");
+    } finally {
+      setSyncing(null);
+    }
+  }
+
   async function handleConnectSuccess(data: { item?: { id?: string | number } }) {
-    const itemId = data.item?.id ? String(data.item.id) : "";
+    const itemId = data.item?.id ? String(data.item.id) : connectUpdateItemId ?? "";
     if (!itemId) {
       toast.error("Conexao criada, mas a Pluggy nao retornou o item.");
       return;
@@ -141,6 +158,7 @@ export function OpenFinanceContent() {
       toast.error(err instanceof Error ? err.message : "Falha ao salvar conexao Open Finance.");
     } finally {
       setConnectToken(null);
+      setConnectUpdateItemId(null);
       setSyncing(null);
     }
   }
@@ -259,15 +277,23 @@ export function OpenFinanceContent() {
         <PluggyConnect
           connectToken={connectToken}
           language="pt"
-          onClose={() => setConnectToken(null)}
+          onClose={() => {
+            setConnectToken(null);
+            setConnectUpdateItemId(null);
+          }}
           onError={(error) => {
             setConnectToken(null);
+            setConnectUpdateItemId(null);
             toast.error(error.message || "Falha na conexao Pluggy.");
           }}
           onLoadError={(error) => {
             setConnectToken(null);
+            setConnectUpdateItemId(null);
             toast.error(error.message || "Falha ao carregar Pluggy Connect.");
           }}
+          products={OPEN_FINANCE_PRODUCTS}
+          updateItem={connectUpdateItemId ?? undefined}
+          forceAskForCredentials={Boolean(connectUpdateItemId)}
           onSuccess={handleConnectSuccess}
         />
       ) : null}
@@ -301,10 +327,16 @@ export function OpenFinanceContent() {
                     </td>
                     <td className="px-4 py-3 text-stone-500">{formatDateTime(item.last_successful_sync_at || item.last_sync_at)}</td>
                     <td className="px-4 py-3 text-right">
-                      <UiButton disabled={Boolean(syncing) || !status.configured} onClick={() => handleSyncItem(item)} size="sm" type="button" variant="secondary">
-                        <RefreshCw className={cn("h-4 w-4", syncing === item.external_item_id && "animate-spin")} />
-                        Sincronizar
-                      </UiButton>
+                      <div className="flex justify-end gap-2">
+                        <UiButton disabled={Boolean(syncing) || Boolean(connectToken) || !status.configured} onClick={() => handleReconnect(item)} size="sm" type="button" variant="secondary">
+                          <ShieldCheck className="h-4 w-4" />
+                          Reconectar
+                        </UiButton>
+                        <UiButton disabled={Boolean(syncing) || !status.configured} onClick={() => handleSyncItem(item)} size="sm" type="button" variant="secondary">
+                          <RefreshCw className={cn("h-4 w-4", syncing === item.external_item_id && "animate-spin")} />
+                          Sincronizar
+                        </UiButton>
+                      </div>
                     </td>
                   </tr>
                 ))}

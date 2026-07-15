@@ -94,7 +94,7 @@ class PluggyClient:
         return self._paginated_get("/items")
 
     def create_connect_token(self, client_user_id: str) -> str:
-        payload = {"clientUserId": client_user_id}
+        payload = {"clientUserId": client_user_id, "avoidDuplicates": True}
         try:
             response = self._request("POST", "/connect_token", headers=self._headers(), json=payload)
         except PluggyClientError as exc:

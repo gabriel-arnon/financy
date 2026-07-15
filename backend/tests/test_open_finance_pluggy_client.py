@@ -71,7 +71,7 @@ def test_create_connect_token_uses_authenticated_request(monkeypatch: pytest.Mon
         (
             "POST",
             "/connect_token",
-            {"headers": {"X-API-KEY": "pluggy-key"}, "json": {"clientUserId": "owner-user"}},
+            {"headers": {"X-API-KEY": "pluggy-key"}, "json": {"clientUserId": "owner-user", "avoidDuplicates": True}},
         )
     ]
 
