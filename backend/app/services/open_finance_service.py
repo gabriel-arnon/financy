@@ -74,6 +74,11 @@ class OpenFinanceService:
         self.ensure_owner(user_id)
         return self.repository.list_open_finance_sync_runs(user_id, limit=limit)
 
+    def create_connect_token(self, user_id: str) -> dict[str, Any]:
+        self.ensure_owner(user_id)
+        self.ensure_configured()
+        return {"connect_token": self.pluggy_client.create_connect_token(user_id)}
+
     def register_item(self, user_id: str, external_item_id: str) -> dict[str, Any]:
         self.ensure_owner(user_id)
         self.ensure_configured()

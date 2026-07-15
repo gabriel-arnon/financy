@@ -17,6 +17,7 @@ import type {
   ConfirmImportResponse,
   ImportPreviewResponse,
   GuestReimbursementClaim,
+  OpenFinanceConnectToken,
   OpenFinanceItem,
   OpenFinanceStatus,
   OpenFinanceSyncResponse,
@@ -197,6 +198,10 @@ export async function createOpenFinanceItem(externalItemId: string): Promise<Ope
     method: "POST",
     body: JSON.stringify({ external_item_id: externalItemId })
   });
+}
+
+export async function createOpenFinanceConnectToken(): Promise<OpenFinanceConnectToken> {
+  return request<OpenFinanceConnectToken>("/open-finance/connect-token", { method: "POST" });
 }
 
 export async function syncOpenFinance(): Promise<OpenFinanceSyncResponse> {

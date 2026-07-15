@@ -1,10 +1,12 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Activity, AlertCircle, CheckCircle2, Landmark, Plus, RefreshCw } from "lucide-react";
+import dynamic from "next/dynamic";
+import { Activity, AlertCircle, CheckCircle2, Landmark, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import { UiButton } from "@/components/ui-button";
 import { useToast } from "@/components/toast-provider";
 import {
+  createOpenFinanceConnectToken,
   createOpenFinanceItem,
   getOpenFinanceItems,
   getOpenFinanceStatus,
@@ -14,6 +16,8 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/classnames";
 import type { OpenFinanceItem, OpenFinanceStatus, OpenFinanceSyncRun } from "@/lib/types";
+
+const PluggyConnect = dynamic(() => import("react-pluggy-connect").then((mod) => mod.PluggyConnect), { ssr: false });
 
 function formatDateTime(value: string | null) {
   if (!value) return "Nunca";
@@ -38,6 +42,7 @@ export function OpenFinanceContent() {
   const [externalItemId, setExternalItemId] = useState("");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [connectToken, setConnectToken] = useState<string | null>(null);
 
   const lastRun = runs[0] ?? null;
   const totals = useMemo(() => {
@@ -96,6 +101,38 @@ export function OpenFinanceContent() {
     }
   }
 
+  async function handleConnect() {
+    try {
+      setSyncing("connect");
+      const token = await createOpenFinanceConnectToken();
+      setConnectToken(token.connect_token);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao iniciar conexao Open Finance.");
+    } finally {
+      setSyncing(null);
+    }
+  }
+
+  async function handleConnectSuccess(data: { item?: { id?: string | number } }) {
+    const itemId = data.item?.id ? String(data.item.id) : "";
+    if (!itemId) {
+      toast.error("Conexao criada, mas a Pluggy nao retornou o item.");
+      return;
+    }
+    try {
+      setSyncing(itemId);
+      await createOpenFinanceItem(itemId);
+      await syncOpenFinanceItem(itemId);
+      await loadData();
+      toast.success("Conexao Open Finance criada e sincronizada.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao salvar conexao Open Finance.");
+    } finally {
+      setConnectToken(null);
+      setSyncing(null);
+    }
+  }
+
   async function handleSyncAll() {
     try {
       setSyncing("all");
@@ -148,10 +185,16 @@ export function OpenFinanceContent() {
           <h1 className="text-2xl font-semibold text-ink">Open Finance</h1>
           <p className="mt-1 text-sm text-stone-500">Pluggy owner-only</p>
         </div>
-        <UiButton disabled={Boolean(syncing) || !status.configured} onClick={handleSyncAll} type="button">
-          <RefreshCw className={cn("h-4 w-4", syncing === "all" && "animate-spin")} />
-          Sincronizar tudo
-        </UiButton>
+        <div className="flex flex-wrap gap-2">
+          <UiButton disabled={Boolean(syncing) || Boolean(connectToken) || !status.configured} onClick={handleConnect} type="button">
+            <ShieldCheck className="h-4 w-4" />
+            Conectar banco
+          </UiButton>
+          <UiButton disabled={Boolean(syncing) || !status.configured} onClick={handleSyncAll} type="button" variant="secondary">
+            <RefreshCw className={cn("h-4 w-4", syncing === "all" && "animate-spin")} />
+            Sincronizar tudo
+          </UiButton>
+        </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-4">
@@ -180,22 +223,42 @@ export function OpenFinanceContent() {
         </div>
       ) : null}
 
-      <form className="grid gap-3 rounded-lg border border-stone-200 bg-white p-4 shadow-sm md:grid-cols-[1fr_auto]" onSubmit={handleCreateItem}>
-        <label className="grid gap-1 text-sm">
-          <span className="font-medium text-stone-700">Item ID Pluggy</span>
-          <input
-            className="h-10 rounded-md border border-stone-200 px-3 text-sm outline-none transition focus:border-mint focus:ring-2 focus:ring-mint/20"
-            disabled={Boolean(syncing) || !status.configured}
-            onChange={(event) => setExternalItemId(event.target.value)}
-            placeholder="item_xxxxx"
-            value={externalItemId}
-          />
-        </label>
-        <UiButton className="self-end" disabled={Boolean(syncing) || !status.configured || !externalItemId.trim()} type="submit">
-          <Plus className="h-4 w-4" />
-          Adicionar
-        </UiButton>
-      </form>
+      <details className="rounded-lg border border-stone-200 bg-white p-4 text-sm shadow-sm">
+        <summary className="cursor-pointer font-medium text-stone-700">Adicionar item manualmente</summary>
+        <form className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]" onSubmit={handleCreateItem}>
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium text-stone-700">Item ID Pluggy</span>
+            <input
+              className="h-10 rounded-md border border-stone-200 px-3 text-sm outline-none transition focus:border-mint focus:ring-2 focus:ring-mint/20"
+              disabled={Boolean(syncing) || !status.configured}
+              onChange={(event) => setExternalItemId(event.target.value)}
+              placeholder="item_xxxxx"
+              value={externalItemId}
+            />
+          </label>
+          <UiButton className="self-end" disabled={Boolean(syncing) || !status.configured || !externalItemId.trim()} type="submit" variant="secondary">
+            <Plus className="h-4 w-4" />
+            Adicionar
+          </UiButton>
+        </form>
+      </details>
+
+      {connectToken ? (
+        <PluggyConnect
+          connectToken={connectToken}
+          language="pt"
+          onClose={() => setConnectToken(null)}
+          onError={(error) => {
+            setConnectToken(null);
+            toast.error(error.message || "Falha na conexao Pluggy.");
+          }}
+          onLoadError={(error) => {
+            setConnectToken(null);
+            toast.error(error.message || "Falha ao carregar Pluggy Connect.");
+          }}
+          onSuccess={handleConnectSuccess}
+        />
+      ) : null}
 
       <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
         <div className="flex items-center gap-2 border-b border-stone-100 px-4 py-3">

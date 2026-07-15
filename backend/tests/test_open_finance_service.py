@@ -12,6 +12,9 @@ OWNER_ID = "00000000-0000-4000-8000-000000000777"
 
 
 class FakePluggyClient:
+    def create_connect_token(self, client_user_id: str):
+        return f"connect-{client_user_id}"
+
     def get_item(self, item_id: str):
         return {
             "id": item_id,
@@ -74,6 +77,13 @@ def test_sync_item_imports_accounts_and_transactions_idempotently(tmp_path) -> N
     assert transactions[0]["type"] == "expense"
     assert transactions[0]["external_source"] == "open_finance"
     assert accounts[0]["external_source"] == "open_finance"
+
+
+def test_create_connect_token_uses_owner_user_id(tmp_path) -> None:
+    repository = LocalJsonRepository(tmp_path)
+    service = OpenFinanceService(repository=repository, settings=settings(), pluggy_client=FakePluggyClient())
+
+    assert service.create_connect_token(OWNER_ID) == {"connect_token": f"connect-{OWNER_ID}"}
 
 
 def test_sync_all_registers_remote_items_when_none_exist(tmp_path) -> None:

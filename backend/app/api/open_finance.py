@@ -7,6 +7,7 @@ from app.core.auth import CurrentUser
 from app.core.config import settings
 from app.core.errors import AppError
 from app.schemas.open_finance import (
+    OpenFinanceConnectTokenRead,
     OpenFinanceItemCreate,
     OpenFinanceItemRead,
     OpenFinanceStatus,
@@ -77,6 +78,14 @@ def list_open_finance_sync_runs(
     service: OpenFinanceService = Depends(get_open_finance_service),
 ) -> list[OpenFinanceSyncRunRead]:
     return [OpenFinanceSyncRunRead(**item) for item in service.list_sync_runs(user_id, limit=limit)]
+
+
+@router.post("/connect-token", response_model=OpenFinanceConnectTokenRead)
+def create_open_finance_connect_token(
+    user_id: str = Depends(require_open_finance_owner),
+    service: OpenFinanceService = Depends(get_open_finance_service),
+) -> OpenFinanceConnectTokenRead:
+    return OpenFinanceConnectTokenRead(**service.create_connect_token(user_id))
 
 
 @router.post("/webhook/pluggy", response_model=OpenFinanceWebhookResponse)

@@ -15,6 +15,10 @@ class OpenFinanceItemCreate(BaseModel):
     external_item_id: str = Field(min_length=1)
 
 
+class OpenFinanceConnectTokenRead(BaseModel):
+    connect_token: str
+
+
 class OpenFinanceItemRead(BaseModel):
     id: str
     user_id: str

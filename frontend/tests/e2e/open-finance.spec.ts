@@ -71,10 +71,12 @@ test("open finance page renders owner operations", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Open Finance" })).toBeVisible();
   await expect(page.getByText("Banco Teste")).toBeVisible();
   await expect(page.getByText("3 novas, 1 atualizadas, 0 ignoradas")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Conectar banco" })).toBeVisible();
 
   await page.getByRole("button", { name: "Sincronizar tudo" }).click();
   await expect(page.getByText("Sincronizacao Open Finance concluida.")).toBeVisible();
 
+  await page.getByText("Adicionar item manualmente").click();
   await page.getByLabel("Item ID Pluggy").fill("new-item");
   await page.getByRole("button", { name: "Adicionar" }).click();
   await expect(page.getByText("Conexao Open Finance adicionada.")).toBeVisible();

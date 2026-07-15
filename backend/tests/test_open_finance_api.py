@@ -46,6 +46,25 @@ def test_open_finance_items_lists_for_owner(monkeypatch) -> None:
     assert "api-item" in {item["external_item_id"] for item in response.json()}
 
 
+def test_open_finance_connect_token_requires_owner_and_returns_token(monkeypatch) -> None:
+    class FakeOpenFinanceService:
+        def create_connect_token(self, user_id: str):
+            return {"connect_token": f"token-{user_id}"}
+
+    monkeypatch.setattr(settings, "open_finance_enabled", True)
+    monkeypatch.setattr(settings, "open_finance_owner_user_id", settings.dev_user_id)
+    monkeypatch.setattr(settings, "pluggy_client_id", "client")
+    monkeypatch.setattr(settings, "pluggy_client_secret", "secret")
+    app.dependency_overrides[get_open_finance_service] = lambda: FakeOpenFinanceService()
+    try:
+        response = TestClient(app).post("/open-finance/connect-token")
+    finally:
+        app.dependency_overrides.pop(get_open_finance_service, None)
+
+    assert response.status_code == 200
+    assert response.json() == {"connect_token": f"token-{settings.dev_user_id}"}
+
+
 def test_open_finance_webhook_rejects_invalid_secret(monkeypatch) -> None:
     monkeypatch.setattr(settings, "open_finance_enabled", True)
     monkeypatch.setattr(settings, "pluggy_webhook_secret", "expected-secret")

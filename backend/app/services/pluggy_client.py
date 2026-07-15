@@ -93,6 +93,19 @@ class PluggyClient:
     def list_items(self) -> list[dict[str, Any]]:
         return self._paginated_get("/items")
 
+    def create_connect_token(self, client_user_id: str) -> str:
+        payload = {"clientUserId": client_user_id}
+        try:
+            response = self._request("POST", "/connect_token", headers=self._headers(), json=payload)
+        except PluggyClientError as exc:
+            if exc.status_code != 404:
+                raise
+            response = self._request("POST", "/connect-token", headers=self._headers(), json=payload)
+        token = response.get("accessToken") or response.get("connectToken")
+        if not token:
+            raise PluggyClientError("Resposta Pluggy sem connect token.")
+        return str(token)
+
     def list_accounts(self, item_id: str) -> list[dict[str, Any]]:
         return self._paginated_get("/accounts", {"itemId": item_id})
 

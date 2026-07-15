@@ -595,6 +595,10 @@ export interface OpenFinanceItem {
   updated_at: string | null;
 }
 
+export interface OpenFinanceConnectToken {
+  connect_token: string;
+}
+
 export interface OpenFinanceSyncRun {
   id: string;
   user_id: string;
