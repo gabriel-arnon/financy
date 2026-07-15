@@ -219,3 +219,30 @@ def test_sync_item_maps_credit_data_into_card_and_metadata(tmp_path) -> None:
     assert link["metadata"]["currency_code"] == "BRL"
     assert link["metadata"]["owner"] == "Owner Teste"
     assert link["metadata"]["credit_data"]["availableCreditLimit"] == 4880
+
+
+def test_sync_item_infers_institution_from_account_name(tmp_path) -> None:
+    class AccountNamePluggyClient(FakePluggyClient):
+        def list_accounts(self, item_id: str):
+            return [
+                {
+                    "id": "account-bank",
+                    "name": "BANCO DO BRASIL S/A - Conta Corrente",
+                    "type": "BANK",
+                    "subtype": "CHECKINGS_ACCOUNT",
+                    "number": "12345",
+                    "balance": "161.53",
+                }
+            ]
+
+        def list_transactions(self, account_id: str, **kwargs):
+            return []
+
+    repository = LocalJsonRepository(tmp_path)
+    service = OpenFinanceService(repository=repository, settings=settings(), pluggy_client=AccountNamePluggyClient())
+
+    service.sync_item(OWNER_ID, "item-1")
+
+    account = repository.list_accounts(OWNER_ID)[0]
+    assert account["institution"] == "BANCO DO BRASIL S/A"
+    assert account["name"] == "Conta Corrente"

@@ -616,7 +616,14 @@ export interface OpenFinanceSyncRun {
   transactions_updated: number;
   transactions_ignored: number;
   error_message: string | null;
-  metadata: Record<string, unknown>;
+  metadata: {
+    accounts_found?: number;
+    transactions_found?: number;
+    item_status?: string | null;
+    item_execution_status?: string | null;
+    transactions_ignored_reasons?: Record<string, number>;
+    [key: string]: unknown;
+  };
 }
 
 export interface OpenFinanceSyncResponse {

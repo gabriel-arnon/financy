@@ -34,7 +34,12 @@ const run = {
   transactions_updated: 1,
   transactions_ignored: 0,
   error_message: null,
-  metadata: {}
+  metadata: {
+    accounts_found: 2,
+    transactions_found: 4,
+    item_execution_status: "SUCCESS",
+    transactions_ignored_reasons: {}
+  }
 };
 
 async function mockOpenFinanceApi(page: Page) {
@@ -71,6 +76,7 @@ test("open finance page renders owner operations", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Open Finance" })).toBeVisible();
   await expect(page.getByText("Banco Teste")).toBeVisible();
   await expect(page.getByText("3 novas, 1 atualizadas, 0 ignoradas")).toBeVisible();
+  await expect(page.getByText("Pluggy: 2 contas, 4 transacoes, execucao SUCCESS")).toBeVisible();
   await expect(page.getByRole("button", { name: "Conectar banco" })).toBeVisible();
 
   await page.getByRole("button", { name: "Sincronizar tudo" }).click();

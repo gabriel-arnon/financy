@@ -34,6 +34,18 @@ function statusClass(status: string) {
   return "bg-stone-100 text-stone-700 ring-stone-200";
 }
 
+function formatIgnoredReasons(reasons: Record<string, number> | undefined) {
+  if (!reasons || Object.keys(reasons).length === 0) return null;
+  const labels: Record<string, string> = {
+    duplicate_signature: "duplicadas",
+    missing_transaction_identifier: "sem identificador",
+    transactions_unavailable: "indisponiveis"
+  };
+  return Object.entries(reasons)
+    .map(([reason, count]) => `${count} ${labels[reason] ?? reason}`)
+    .join(", ");
+}
+
 export function OpenFinanceContent() {
   const toast = useToast();
   const [status, setStatus] = useState<OpenFinanceStatus | null>(null);
@@ -325,7 +337,16 @@ export function OpenFinanceContent() {
                   {run.error_message ? <p className="mt-1 text-sm text-red-600">{run.error_message}</p> : null}
                 </div>
                 <div className="text-sm text-stone-600">
-                  {run.transactions_created} novas, {run.transactions_updated} atualizadas, {run.transactions_ignored} ignoradas
+                  <div>
+                    {run.transactions_created} novas, {run.transactions_updated} atualizadas, {run.transactions_ignored} ignoradas
+                  </div>
+                  <div className="mt-1 text-xs text-stone-500">
+                    Pluggy: {run.metadata.accounts_found ?? 0} contas, {run.metadata.transactions_found ?? 0} transacoes
+                    {run.metadata.item_execution_status ? `, execucao ${run.metadata.item_execution_status}` : ""}
+                  </div>
+                  {formatIgnoredReasons(run.metadata.transactions_ignored_reasons) ? (
+                    <div className="mt-1 text-xs text-stone-500">Ignoradas: {formatIgnoredReasons(run.metadata.transactions_ignored_reasons)}</div>
+                  ) : null}
                 </div>
               </div>
             ))}

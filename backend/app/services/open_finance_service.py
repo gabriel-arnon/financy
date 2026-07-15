@@ -57,6 +57,18 @@ def _nested(data: dict[str, Any], *keys: str) -> Any:
     return current
 
 
+def _split_institution_from_name(name: str) -> tuple[str | None, str]:
+    parts = [part.strip() for part in name.split(" - ", 1)]
+    if len(parts) != 2:
+        return None, name
+    candidate, label = parts
+    upper = candidate.upper()
+    institution_hints = ("BANCO", "BCO", "S/A", "S.A", "PAGAMENTO", "MERCADO PAGO", "PICPAY", "CAIXA", "COOPERATIVA")
+    if any(hint in upper for hint in institution_hints):
+        return candidate, label or name
+    return None, name
+
+
 class OpenFinanceService:
     _sync_locks_guard = Lock()
     _sync_locks: dict[tuple[str, str], Lock] = {}
@@ -165,6 +177,8 @@ class OpenFinanceService:
         }
         try:
             item = self.repository.upsert_open_finance_item(user_id, self._fetch_item_metadata(external_item_id))
+            stats["item_status"] = item.get("status")
+            stats["item_execution_status"] = item.get("metadata", {}).get("execution_status") if isinstance(item.get("metadata"), dict) else None
             from_date = None
             if self.settings.pluggy_sync_lookback_days > 0:
                 from_date = (datetime.now(timezone.utc).date() - timedelta(days=self.settings.pluggy_sync_lookback_days)).isoformat()
@@ -254,8 +268,10 @@ class OpenFinanceService:
     def _sync_account(self, user_id: str, item: dict[str, Any], account: dict[str, Any], counters: dict[str, int]) -> dict[str, Any]:
         external_account_id = str(account.get("id"))
         account_type = str(account.get("type") or account.get("subtype") or "").upper()
-        name = str(account.get("name") or account.get("marketingName") or account.get("number") or "Open Finance")
-        institution_name = item.get("institution_name") or account.get("institutionName")
+        raw_name = str(account.get("name") or account.get("marketingName") or account.get("number") or "Open Finance")
+        inferred_institution, clean_name = _split_institution_from_name(raw_name)
+        name = str(account.get("marketingName") or clean_name or raw_name)
+        institution_name = account.get("institutionName") or inferred_institution or item.get("institution_name")
         bank_data = account.get("bankData") if isinstance(account.get("bankData"), dict) else {}
         credit_data = account.get("creditData") if isinstance(account.get("creditData"), dict) else {}
         existing = self.repository.get_open_finance_account_link(user_id, PROVIDER, external_account_id)
