@@ -70,6 +70,8 @@ def test_sync_item_imports_accounts_and_transactions_idempotently(tmp_path) -> N
 
     assert first["run"]["transactions_created"] == 1
     assert second["run"]["transactions_updated"] == 1
+    assert first["run"]["metadata"]["accounts_found"] == 1
+    assert first["run"]["metadata"]["transactions_found"] == 1
     assert len(transactions) == 1
     assert len(accounts) == 1
     assert transactions[0]["description"] == "IFOOD TESTE"
@@ -136,5 +138,84 @@ def test_sync_item_skips_account_transactions_when_pluggy_returns_410(tmp_path) 
 
     assert result["run"]["status"] == "success"
     assert result["run"]["transactions_ignored"] == 1
+    assert result["run"]["metadata"]["transactions_ignored_reasons"] == {"transactions_unavailable": 1}
     assert repository.list_accounts(OWNER_ID)[0]["name"] == "Conta Pluggy"
     assert repository.list_transactions(OWNER_ID) == []
+
+
+def test_sync_item_imports_transaction_without_provider_id_using_stable_fallback(tmp_path) -> None:
+    class TransactionWithoutIdPluggyClient(FakePluggyClient):
+        def list_transactions(self, account_id: str, **kwargs):
+            return [
+                {
+                    "accountId": account_id,
+                    "date": "2026-07-03",
+                    "description": "PIX TESTE",
+                    "amount": "-12.34",
+                    "providerCode": "PIX",
+                    "currencyCode": "BRL",
+                    "balance": "987.66",
+                }
+            ]
+
+    repository = LocalJsonRepository(tmp_path)
+    service = OpenFinanceService(repository=repository, settings=settings(), pluggy_client=TransactionWithoutIdPluggyClient())
+
+    first = service.sync_item(OWNER_ID, "item-1")
+    second = service.sync_item(OWNER_ID, "item-1")
+
+    transactions = repository.list_transactions(OWNER_ID)
+    links = repository._read()["open_finance_transaction_links"]
+    assert first["run"]["transactions_created"] == 1
+    assert second["run"]["transactions_updated"] == 1
+    assert first["run"]["metadata"]["transactions_found"] == 1
+    assert len(transactions) == 1
+    assert transactions[0]["description"] == "PIX TESTE"
+    assert links[0]["metadata"]["provider_code"] == "PIX"
+    assert links[0]["metadata"]["currency_code"] == "BRL"
+    assert links[0]["metadata"]["balance_after_transaction"] == "987.66"
+
+
+def test_sync_item_maps_credit_data_into_card_and_metadata(tmp_path) -> None:
+    class CreditCardPluggyClient(FakePluggyClient):
+        def list_accounts(self, item_id: str):
+            return [
+                {
+                    "id": "credit-1",
+                    "itemId": item_id,
+                    "name": "Cartao Black",
+                    "type": "CREDIT",
+                    "subtype": "CREDIT_CARD",
+                    "number": "9999888877776666",
+                    "balance": "-120.00",
+                    "currencyCode": "BRL",
+                    "owner": "Owner Teste",
+                    "taxNumber": "12345678900",
+                    "creditData": {
+                        "brand": "Visa",
+                        "creditLimit": 5000,
+                        "availableCreditLimit": 4880,
+                        "balanceCloseDate": "2026-07-20",
+                        "balanceDueDate": "2026-07-28",
+                    },
+                }
+            ]
+
+        def list_transactions(self, account_id: str, **kwargs):
+            return []
+
+    repository = LocalJsonRepository(tmp_path)
+    service = OpenFinanceService(repository=repository, settings=settings(), pluggy_client=CreditCardPluggyClient())
+
+    result = service.sync_item(OWNER_ID, "item-1")
+
+    card = repository.list_cards(OWNER_ID)[0]
+    link = repository._read()["open_finance_account_links"][0]
+    assert result["run"]["cards_created"] == 1
+    assert card["brand"] == "Visa"
+    assert card["limit_amount"] == "5000.00"
+    assert card["closing_day"] == 20
+    assert card["due_day"] == 28
+    assert link["metadata"]["currency_code"] == "BRL"
+    assert link["metadata"]["owner"] == "Owner Teste"
+    assert link["metadata"]["credit_data"]["availableCreditLimit"] == 4880

@@ -76,7 +76,7 @@ class PluggyClient:
         page = 1
         results: list[dict[str, Any]] = []
         while True:
-            query = {**(params or {}), "page": page}
+            query = {"pageSize": 500, **(params or {}), "page": page}
             payload = self._request("GET", path, headers=self._headers(), params=query)
             batch = payload.get("results") if isinstance(payload, dict) else payload
             if not isinstance(batch, list):
