@@ -38,7 +38,8 @@ const run = {
     accounts_found: 2,
     transactions_found: 4,
     item_execution_status: "SUCCESS",
-    transactions_ignored_reasons: {}
+    transactions_ignored_reasons: {},
+    transaction_account_errors: []
   }
 };
 

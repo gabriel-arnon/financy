@@ -174,6 +174,7 @@ class OpenFinanceService:
             "accounts_found": 0,
             "transactions_found": 0,
             "transactions_ignored_reasons": {},
+            "transaction_account_errors": [],
         }
         try:
             item = self.repository.upsert_open_finance_item(user_id, self._fetch_item_metadata(external_item_id))
@@ -192,6 +193,7 @@ class OpenFinanceService:
                     if exc.status_code == 410:
                         counters["transactions_ignored"] += 1
                         self._count_ignored(stats, "transactions_unavailable")
+                        self._record_account_error(stats, account, exc)
                         continue
                     raise
                 stats["transactions_found"] += len(transactions)
@@ -430,6 +432,21 @@ class OpenFinanceService:
     def _count_ignored(self, stats: dict[str, Any], reason: str) -> None:
         reasons = stats.setdefault("transactions_ignored_reasons", {})
         reasons[reason] = int(reasons.get(reason) or 0) + 1
+
+    def _record_account_error(self, stats: dict[str, Any], account: dict[str, Any], exc: PluggyClientError) -> None:
+        errors = stats.setdefault("transaction_account_errors", [])
+        if not isinstance(errors, list):
+            return
+        errors.append(
+            {
+                "account_id": account.get("id"),
+                "account_name": account.get("name") or account.get("marketingName"),
+                "account_type": account.get("type"),
+                "account_subtype": account.get("subtype"),
+                "status_code": exc.status_code,
+                "message": _safe_error(exc),
+            }
+        )
 
     def _transaction_metadata(self, transaction: dict[str, Any]) -> dict[str, Any]:
         return {

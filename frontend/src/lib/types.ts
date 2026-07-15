@@ -622,6 +622,14 @@ export interface OpenFinanceSyncRun {
     item_status?: string | null;
     item_execution_status?: string | null;
     transactions_ignored_reasons?: Record<string, number>;
+    transaction_account_errors?: Array<{
+      account_id?: string | null;
+      account_name?: string | null;
+      account_type?: string | null;
+      account_subtype?: string | null;
+      status_code?: number | null;
+      message?: string | null;
+    }>;
     [key: string]: unknown;
   };
 }

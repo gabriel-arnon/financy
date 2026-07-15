@@ -139,6 +139,8 @@ def test_sync_item_skips_account_transactions_when_pluggy_returns_410(tmp_path) 
     assert result["run"]["status"] == "success"
     assert result["run"]["transactions_ignored"] == 1
     assert result["run"]["metadata"]["transactions_ignored_reasons"] == {"transactions_unavailable": 1}
+    assert result["run"]["metadata"]["transaction_account_errors"][0]["account_id"] == "account-1"
+    assert result["run"]["metadata"]["transaction_account_errors"][0]["status_code"] == 410
     assert repository.list_accounts(OWNER_ID)[0]["name"] == "Conta Pluggy"
     assert repository.list_transactions(OWNER_ID) == []
 

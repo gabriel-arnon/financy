@@ -48,6 +48,18 @@ function formatIgnoredReasons(reasons: Record<string, number> | undefined) {
     .join(", ");
 }
 
+function formatAccountErrors(errors: OpenFinanceSyncRun["metadata"]["transaction_account_errors"]) {
+  if (!errors || errors.length === 0) return null;
+  return errors
+    .slice(0, 2)
+    .map((error) => {
+      const account = error.account_name || error.account_id || "conta";
+      const code = error.status_code ? `HTTP ${error.status_code}` : "erro";
+      return `${account}: ${code}`;
+    })
+    .join("; ");
+}
+
 export function OpenFinanceContent() {
   const toast = useToast();
   const [status, setStatus] = useState<OpenFinanceStatus | null>(null);
@@ -378,6 +390,11 @@ export function OpenFinanceContent() {
                   </div>
                   {formatIgnoredReasons(run.metadata.transactions_ignored_reasons) ? (
                     <div className="mt-1 text-xs text-stone-500">Ignoradas: {formatIgnoredReasons(run.metadata.transactions_ignored_reasons)}</div>
+                  ) : null}
+                  {formatAccountErrors(run.metadata.transaction_account_errors) ? (
+                    <div className="mt-1 max-w-xl truncate text-xs text-red-600" title={run.metadata.transaction_account_errors?.map((error) => error.message).join("\n")}>
+                      Erros: {formatAccountErrors(run.metadata.transaction_account_errors)}
+                    </div>
                   ) : null}
                 </div>
               </div>
