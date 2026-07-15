@@ -629,6 +629,7 @@ export interface OpenFinanceSyncRun {
       account_subtype?: string | null;
       status_code?: number | null;
       message?: string | null;
+      detail?: unknown;
     }>;
     [key: string]: unknown;
   };

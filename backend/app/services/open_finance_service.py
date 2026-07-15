@@ -445,6 +445,7 @@ class OpenFinanceService:
                 "account_subtype": account.get("subtype"),
                 "status_code": exc.status_code,
                 "message": _safe_error(exc),
+                "detail": exc.detail,
             }
         )
 

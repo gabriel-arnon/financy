@@ -7,10 +7,11 @@ import httpx
 
 
 class PluggyClientError(RuntimeError):
-    def __init__(self, message: str, *, status_code: int | None = None, path: str | None = None) -> None:
+    def __init__(self, message: str, *, status_code: int | None = None, path: str | None = None, detail: Any = None) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.path = path
+        self.detail = detail
 
 
 class PluggyClient:
@@ -38,7 +39,13 @@ class PluggyClient:
             raise PluggyClientError("Falha de conexao com a Pluggy.") from exc
         if response.status_code >= 400:
             detail = ""
-            body = response.json() if response.headers.get("content-type", "").startswith("application/json") else None
+            response_detail: Any = None
+            body = None
+            if response.headers.get("content-type", "").startswith("application/json"):
+                body = response.json()
+                response_detail = body
+            else:
+                response_detail = response.text[:500]
             if isinstance(body, dict):
                 error = body.get("error") if isinstance(body.get("error"), dict) else body
                 code = error.get("code") if isinstance(error, dict) else None
@@ -48,6 +55,7 @@ class PluggyClient:
                 f"Pluggy retornou HTTP {response.status_code} em {method.upper()} {path}{detail}.",
                 status_code=response.status_code,
                 path=path,
+                detail=response_detail,
             )
         return response.json()
 

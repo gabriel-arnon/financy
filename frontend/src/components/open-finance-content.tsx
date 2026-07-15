@@ -60,6 +60,16 @@ function formatAccountErrors(errors: OpenFinanceSyncRun["metadata"]["transaction
     .join("; ");
 }
 
+function formatAccountErrorDetails(errors: OpenFinanceSyncRun["metadata"]["transaction_account_errors"]) {
+  if (!errors || errors.length === 0) return "";
+  return errors
+    .map((error) => {
+      const detail = typeof error.detail === "string" ? error.detail : JSON.stringify(error.detail ?? {});
+      return `${error.account_name || error.account_id || "conta"}: ${error.message || ""}${detail && detail !== "{}" ? ` | ${detail}` : ""}`;
+    })
+    .join("\n");
+}
+
 export function OpenFinanceContent() {
   const toast = useToast();
   const [status, setStatus] = useState<OpenFinanceStatus | null>(null);
@@ -392,7 +402,7 @@ export function OpenFinanceContent() {
                     <div className="mt-1 text-xs text-stone-500">Ignoradas: {formatIgnoredReasons(run.metadata.transactions_ignored_reasons)}</div>
                   ) : null}
                   {formatAccountErrors(run.metadata.transaction_account_errors) ? (
-                    <div className="mt-1 max-w-xl truncate text-xs text-red-600" title={run.metadata.transaction_account_errors?.map((error) => error.message).join("\n")}>
+                    <div className="mt-1 max-w-xl truncate text-xs text-red-600" title={formatAccountErrorDetails(run.metadata.transaction_account_errors)}>
                       Erros: {formatAccountErrors(run.metadata.transaction_account_errors)}
                     </div>
                   ) : null}

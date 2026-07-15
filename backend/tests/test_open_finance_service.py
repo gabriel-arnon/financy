@@ -129,7 +129,12 @@ def test_sync_item_blocks_concurrent_sync_for_same_item(tmp_path) -> None:
 def test_sync_item_skips_account_transactions_when_pluggy_returns_410(tmp_path) -> None:
     class GoneTransactionsPluggyClient(FakePluggyClient):
         def list_transactions(self, account_id: str, **kwargs):
-            raise PluggyClientError("Pluggy retornou HTTP 410 em GET /transactions.", status_code=410, path="/transactions")
+            raise PluggyClientError(
+                "Pluggy retornou HTTP 410 em GET /transactions.",
+                status_code=410,
+                path="/transactions",
+                detail={"code": "PRODUCT_UNAVAILABLE", "message": "Transactions are unavailable for this account."},
+            )
 
     repository = LocalJsonRepository(tmp_path)
     service = OpenFinanceService(repository=repository, settings=settings(), pluggy_client=GoneTransactionsPluggyClient())
@@ -141,6 +146,7 @@ def test_sync_item_skips_account_transactions_when_pluggy_returns_410(tmp_path) 
     assert result["run"]["metadata"]["transactions_ignored_reasons"] == {"transactions_unavailable": 1}
     assert result["run"]["metadata"]["transaction_account_errors"][0]["account_id"] == "account-1"
     assert result["run"]["metadata"]["transaction_account_errors"][0]["status_code"] == 410
+    assert result["run"]["metadata"]["transaction_account_errors"][0]["detail"]["code"] == "PRODUCT_UNAVAILABLE"
     assert repository.list_accounts(OWNER_ID)[0]["name"] == "Conta Pluggy"
     assert repository.list_transactions(OWNER_ID) == []
 
