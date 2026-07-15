@@ -107,6 +107,7 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodKey>("current_month");
   const [accountFilter, setAccountFilter] = useState("all");
   const [cardFilter, setCardFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [aiOverview, setAiOverview] = useState<AiFinanceOverview | null>(null);
@@ -155,10 +156,11 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
         transaction.account_id === accountFilter ||
         (transaction.card_id ? cardAccountById.get(transaction.card_id) === accountFilter : false);
       const matchesCard = cardFilter === "all" || transaction.card_id === cardFilter;
+      const matchesSource = sourceFilter === "all" || transaction.external_source === sourceFilter;
       const transactionDate = startOfDay(new Date(`${transaction.transaction_date}T00:00:00`));
-      return matchesAccount && matchesCard && (!start || transactionDate >= start) && (!end || transactionDate <= end);
+      return matchesAccount && matchesCard && matchesSource && (!start || transactionDate >= start) && (!end || transactionDate <= end);
     });
-  }, [accountFilter, cardAccountById, cardFilter, customEndDate, customStartDate, effectivePeriod, now, transactions]);
+  }, [accountFilter, cardAccountById, cardFilter, customEndDate, customStartDate, effectivePeriod, now, sourceFilter, transactions]);
 
   const income = filteredTransactions
     .filter((transaction) => incomeTypes.has(transaction.type))
@@ -259,6 +261,10 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
               {cards.filter(isActiveEntity).map((card) => <option key={card.id} value={card.id}>{formatCardWithAccount(card, accounts)}</option>)}
             </select>
           ) : null}
+          <select className="h-10 rounded-md border border-stone-200 bg-white px-3 text-sm outline-none focus:border-mint" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value)}>
+            <option value="all">Todas as origens</option>
+            <option value="open_finance">Open Finance</option>
+          </select>
           <select
             className="h-10 rounded-md border border-stone-200 bg-white px-3 text-sm outline-none focus:border-mint"
             value={selectedPeriod}
@@ -435,7 +441,14 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
             {latestTransactions.map((transaction) => (
               <div key={transaction.id} className="grid gap-2 px-5 py-4 sm:grid-cols-[1fr_auto]">
                 <div>
-                  <p className="font-medium text-ink">{transaction.description}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium text-ink">{transaction.description}</p>
+                    {transaction.external_source === "open_finance" ? (
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+                        Open Finance
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="mt-1 text-xs text-stone-500">
                     {formatDate(transaction.transaction_date)} · {translateTransactionType(transaction.type)} · {getCategoryName(transaction.category_id, categories)}
                     {transaction.card_id ? ` · Cartão: ${getCardNameWithAccount(transaction.card_id, cards, accounts)}` : ""}

@@ -9,6 +9,7 @@ interface TransactionsPageProps {
     create?: string;
     end_date?: string;
     q?: string;
+    source?: string;
     start_date?: string;
     status?: string;
     transaction_ids?: string;
@@ -28,6 +29,7 @@ export default async function TransactionsPage({ searchParams }: TransactionsPag
         cleanup: resolvedSearchParams?.cleanup ?? null,
         endDate: resolvedSearchParams?.end_date ?? null,
         query: resolvedSearchParams?.q ?? null,
+        source: resolvedSearchParams?.source ?? null,
         startDate: resolvedSearchParams?.start_date ?? null,
         status: resolvedSearchParams?.status ?? null,
         transactionIds: resolvedSearchParams?.transaction_ids ?? null,

@@ -1511,3 +1511,93 @@ Riscos residuais:
 - Executar smoke manual autenticado em Dev/Preview antes de preparar merge para `main`.
 - Aplicar migrations em Production somente em janela propria e com aprovacao explicita.
 - Manter o warning conhecido do ReportLab em backlog.
+
+## Open Finance - MVP owner-only via Meu Pluggy/Pluggy
+
+Data: 2026-07-15.
+
+Escopo executado:
+
+- Criado backlog dedicado em `taskof.md`.
+- Criada migration `012_open_finance_integration.sql`.
+- Adicionadas tabelas `open_finance_items`, `open_finance_account_links`, `open_finance_transaction_links` e `open_finance_sync_runs`.
+- Adicionadas colunas `external_source` em `accounts`, `cards` e `transactions`.
+- Repositories JSON local e PostgreSQL ganharam upserts idempotentes para items, links e runs.
+- Criado `PluggyClient` backend com autenticacao, cache de API key, paginacao e erros sanitizados.
+- Criado `OpenFinanceService` owner-only para sincronizar items, contas, cartoes e transacoes.
+- Transacoes Pluggy sao inseridas nas tabelas atuais, com dedupe por external id e assinatura local secundaria.
+- Regras deterministicas de classificacao continuam sendo aplicadas nas transacoes sincronizadas.
+- Criados endpoints `/open-finance/status`, `/open-finance/items`, `/open-finance/sync`, `/open-finance/items/{external_item_id}/sync`, `/open-finance/sync-runs` e webhook Pluggy defensivo.
+- Frontend ganhou aba `Open Finance` visivel apenas quando a feature esta habilitada e o usuario e o owner configurado.
+- Tela Open Finance mostra conexoes, ultima sync, contadores, formulario de item ID, sync manual e historico.
+- Documentacao criada em `docs/open-finance.md`.
+
+Arquivos principais:
+
+- `docs/supabase/migrations/012_open_finance_integration.sql`;
+- `backend/app/services/pluggy_client.py`;
+- `backend/app/services/open_finance_service.py`;
+- `backend/app/api/open_finance.py`;
+- `backend/app/schemas/open_finance.py`;
+- `frontend/src/components/open-finance-content.tsx`;
+- `frontend/src/app/open-finance/page.tsx`;
+- `docs/open-finance.md`;
+- `taskof.md`.
+
+Testes adicionados:
+
+- `backend/tests/test_open_finance_pluggy_client.py`;
+- `backend/tests/test_open_finance_service.py`;
+- `backend/tests/test_open_finance_api.py`;
+- `frontend/tests/e2e/open-finance.spec.ts`.
+
+Validacoes executadas:
+
+- Backend: `.venv\Scripts\python.exe -m pytest` -> `107 passed, 1 warning`.
+- PostgreSQL local: `scripts/setup_dev_db.ps1 -ResetSchema` com bypass de execution policy -> migrations `001` a `012` aplicadas.
+- PostgreSQL real local: `pytest tests_postgres -m postgres -q` -> `14 passed`.
+- Frontend typecheck: passou.
+- Frontend lint: passou.
+- Frontend build: passou.
+- E2E Open Finance: `2 passed`.
+
+Pendencias:
+
+- Smoke real contra `meu.pluggy.ai` depende de `PLUGGY_CLIENT_ID`, `PLUGGY_CLIENT_SECRET`, item IDs e UUID owner reais.
+- Sync de faturas/cartao detalhada fica pendente ate validar o payload real retornado pela Pluggy para bills/statements.
+- Lock contra sync concorrente do mesmo item ainda deve ser reforcado antes de automacao/webhook em producao.
+- Webhook Pluggy esta defensivo por secret simples; confirmar assinatura/formato real da Pluggy antes de ativar em ambiente publico.
+- Filtro/indicador visual de origem `Open Finance` no dashboard/transacoes ainda pode ser refinado.
+
+## Open Finance - Refinos de seguranca, origem e cobertura
+
+Data: 2026-07-15.
+
+Escopo executado:
+
+- Sync manual agora bloqueia execucao concorrente do mesmo item dentro do processo FastAPI.
+- Webhook Pluggy defensivo passou a aceitar payload e disparar sync por item quando recebe `itemId`/`item_id`/`item.id`.
+- API ganhou testes para webhook invalido, aceito e despacho de sync.
+- Dashboard ganhou filtro `Todas as origens`/`Open Finance`.
+- Tela de transacoes ganhou filtro por origem via UI e query param `source=open_finance`.
+- Dashboard e Transacoes exibem selo discreto `Open Finance` em transacoes sincronizadas.
+- Tipo frontend `Transaction` passou a aceitar `external_source`.
+- IA financeira foi validada com transacoes Open Finance no overview sem caminho paralelo.
+
+Validacoes executadas:
+
+- Backend focal: `12 passed`.
+- Backend completo: `112 passed, 1 warning`.
+- PostgreSQL real local: `14 passed`.
+- Frontend typecheck: passou.
+- Frontend lint: passou.
+- Frontend build: passou.
+- E2E tocados: `21 passed`.
+- E2E completo: `33 passed`.
+
+Pendencias restantes:
+
+- Smoke real contra Meu Pluggy/Pluggy apos deploy deste codigo.
+- Confirmar formato oficial da assinatura dos webhooks Pluggy antes de ativar webhooks em producao ampla.
+- Implementar sync de faturas/cartao detalhada apos observar payload real de bills/statements.
+- Criar scheduler/cron protegido para sync diaria, se o webhook nao for suficiente.

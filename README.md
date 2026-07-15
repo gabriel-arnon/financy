@@ -44,6 +44,7 @@ Veja `backend/.env.example`.
 - `JWT_SECRET`: segredo reservado para autenticacao futura. Nao use o valor de exemplo em producao.
 - `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`: reservadas para integracao Supabase.
 - `DATABASE_URL`: conexao PostgreSQL/Supabase para evolucao do repositorio persistente.
+- `OPEN_FINANCE_*` e `PLUGGY_*`: integracao owner-only via Meu Pluggy/Pluggy. Veja `docs/open-finance.md`.
 
 Por padrao, sem Supabase configurado, o backend usa persistencia local em JSON dentro de `UPLOAD_STORAGE_PATH`, apenas para desenvolvimento. O backend ainda aceita `ENVIRONMENT` e `UPLOAD_DIR` como aliases legados durante a transicao.
 
@@ -65,6 +66,7 @@ Veja `frontend/.env.example`.
 - `NEXT_PUBLIC_API_URL`: URL da API FastAPI. Localmente pode apontar para `http://127.0.0.1:8000`; em Preview/Production deve ser uma URL `https` real e nao pode ficar ausente.
 - `NEXT_PUBLIC_SUPABASE_URL`: preparado para Supabase Auth futuro.
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: preparado para Supabase Auth futuro.
+- `NEXT_PUBLIC_OPEN_FINANCE_ENABLED` e `NEXT_PUBLIC_OPEN_FINANCE_OWNER_USER_ID`: exibem a aba owner-only de Open Finance; a autorizacao real continua no backend.
 
 O build remoto valida `NEXT_PUBLIC_API_URL` antes do Next.js compilar. Isso
 impede que Preview/Production caiam silenciosamente no fallback local.

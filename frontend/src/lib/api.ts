@@ -17,6 +17,10 @@ import type {
   ConfirmImportResponse,
   ImportPreviewResponse,
   GuestReimbursementClaim,
+  OpenFinanceItem,
+  OpenFinanceStatus,
+  OpenFinanceSyncResponse,
+  OpenFinanceSyncRun,
   ReimbursementClaim,
   ReimbursementClaimAttachment,
   ReimbursementComment,
@@ -177,6 +181,33 @@ export async function analyzeImportWithAi(importId: string): Promise<AiImportAna
 
 export async function getAiFinanceOverview(): Promise<AiFinanceOverview> {
   return request<AiFinanceOverview>("/ai-finance/overview");
+}
+
+export async function getOpenFinanceStatus(): Promise<OpenFinanceStatus> {
+  return request<OpenFinanceStatus>("/open-finance/status");
+}
+
+export async function getOpenFinanceItems(): Promise<OpenFinanceItem[]> {
+  return request<OpenFinanceItem[]>("/open-finance/items");
+}
+
+export async function createOpenFinanceItem(externalItemId: string): Promise<OpenFinanceItem> {
+  return request<OpenFinanceItem>("/open-finance/items", {
+    method: "POST",
+    body: JSON.stringify({ external_item_id: externalItemId })
+  });
+}
+
+export async function syncOpenFinance(): Promise<OpenFinanceSyncResponse> {
+  return request<OpenFinanceSyncResponse>("/open-finance/sync", { method: "POST" });
+}
+
+export async function syncOpenFinanceItem(externalItemId: string): Promise<OpenFinanceSyncResponse> {
+  return request<OpenFinanceSyncResponse>(`/open-finance/items/${encodeURIComponent(externalItemId)}/sync`, { method: "POST" });
+}
+
+export async function getOpenFinanceSyncRuns(): Promise<OpenFinanceSyncRun[]> {
+  return request<OpenFinanceSyncRun[]>("/open-finance/sync-runs");
 }
 
 export async function askAiFinance(question: string): Promise<AiFinanceQuestionResponse> {

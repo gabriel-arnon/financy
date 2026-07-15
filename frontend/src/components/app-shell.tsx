@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, CreditCard, Crown, FileUp, HandCoins, LayoutDashboard, LogOut, Menu, Settings, WalletCards, X } from "lucide-react";
+import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, CreditCard, Crown, FileUp, HandCoins, Landmark, LayoutDashboard, LogOut, Menu, Settings, WalletCards, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { FinanceAssistantLauncher } from "@/components/finance-assistant-launcher";
 import { cn } from "@/lib/classnames";
@@ -17,6 +17,8 @@ const navItems = [
   { href: "/cards", label: "Cartões de Crédito", icon: CreditCard },
   { href: "/importacao", label: "Importação", icon: FileUp }
 ];
+
+const openFinanceNavItem = { href: "/open-finance", label: "Open Finance", icon: Landmark };
 
 const footerItems = [
   { href: "/settings", label: "Configurações", icon: Settings },
@@ -149,6 +151,7 @@ function SidebarFooter({ collapsed, pathname, onNavigate }: { collapsed?: boolea
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { session } = useAuth();
   const isAuthPage = pathname === "/login";
   const isGuestPortal = pathname.startsWith("/guest/reimbursements");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -164,6 +167,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return next;
     });
   }
+
+  const openFinanceEnabled = process.env.NEXT_PUBLIC_OPEN_FINANCE_ENABLED === "true";
+  const openFinanceOwnerId = process.env.NEXT_PUBLIC_OPEN_FINANCE_OWNER_USER_ID;
+  const openFinanceVisible = openFinanceEnabled && openFinanceOwnerId && (!session || session.user.id === openFinanceOwnerId);
+  const visibleNavItems = openFinanceVisible
+    ? [...navItems, openFinanceNavItem]
+    : navItems;
 
   if (isAuthPage) {
     return <>{children}</>;
@@ -235,7 +245,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ) : null}
 
         <nav className="mt-9 grid gap-1">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
               <Link
@@ -303,7 +313,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
             <nav className="mt-8 grid gap-1">
-              {navItems.map((item) => {
+              {visibleNavItems.map((item) => {
                 const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
                 return (
                   <Link

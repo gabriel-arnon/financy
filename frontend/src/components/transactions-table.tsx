@@ -23,6 +23,7 @@ interface TransactionsTableProps {
     cleanup?: string | null;
     endDate?: string | null;
     query?: string | null;
+    source?: string | null;
     startDate?: string | null;
     status?: string | null;
     transactionIds?: string | null;
@@ -181,6 +182,7 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   const [account, setAccount] = useState("all");
   const [card, setCard] = useState(initialCardId ?? "all");
   const [status, setStatus] = useState(initialFilters?.status ?? "all");
+  const [source, setSource] = useState(initialFilters?.source === "open_finance" ? "open_finance" : "all");
   const [startDate, setStartDate] = useState(initialFilters?.startDate ?? "");
   const [endDate, setEndDate] = useState(initialFilters?.endDate ?? "");
   const [cleanupFilter, setCleanupFilter] = useState(initialFilters?.cleanup ?? null);
@@ -270,13 +272,14 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
         (transaction.card_id ? cardAccountById.get(transaction.card_id) === account : false);
       const matchesCard = card === "all" || transaction.card_id === card;
       const matchesStatus = status === "all" || transaction.status === status;
+      const matchesSource = source === "all" || transaction.external_source === source;
       const matchesStart = !startDate || transaction.transaction_date >= startDate;
       const matchesEnd = !endDate || transaction.transaction_date <= endDate;
       const matchesStatement = !initialCardStatementId || transaction.card_statement_id === initialCardStatementId;
       const matchesFocusedIds = cleanupFilter !== "rename" || focusedTransactionIds.size === 0 || focusedTransactionIds.has(transaction.id);
-      return matchesQuery && matchesType && matchesCategory && matchesAccount && matchesCard && matchesStatus && matchesStart && matchesEnd && matchesStatement && matchesFocusedIds;
+      return matchesQuery && matchesType && matchesCategory && matchesAccount && matchesCard && matchesStatus && matchesSource && matchesStart && matchesEnd && matchesStatement && matchesFocusedIds;
     });
-  }, [account, card, cardAccountById, category, categoryIds, cleanupFilter, debouncedQuery, endDate, focusedTransactionIds, initialCardStatementId, rows, startDate, status, type]);
+  }, [account, card, cardAccountById, category, categoryIds, cleanupFilter, debouncedQuery, endDate, focusedTransactionIds, initialCardStatementId, rows, source, startDate, status, type]);
 
   const summary = useMemo(() => {
     const income = filtered
@@ -939,6 +942,13 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
               {statuses.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
+          <label className="grid gap-1.5 text-xs font-medium text-stone-500">
+            Origem dos dados
+            <select className="h-10 rounded-md border border-stone-200 px-3 text-sm font-normal text-ink outline-none focus:border-mint" value={source} onChange={(event) => { setSource(event.target.value); resetVisibleList(); }}>
+              <option value="all">Todas origens</option>
+              <option value="open_finance">Open Finance</option>
+            </select>
+          </label>
         </div>
       </div>
 
@@ -1033,7 +1043,14 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
                       <p>{formatDate(transaction.transaction_date)}</p>
                     </td>
                     <td className="min-w-[28rem] px-4 py-3">
-                      <p className="font-medium text-ink">{transaction.description}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-ink">{transaction.description}</p>
+                        {transaction.external_source === "open_finance" ? (
+                          <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
+                            Open Finance
+                          </span>
+                        ) : null}
+                      </div>
                       {transaction.original_description && transaction.original_description !== transaction.description ? (
                         <p className="mt-1 text-xs text-stone-400">{transaction.original_description}</p>
                       ) : null}

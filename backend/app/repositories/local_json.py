@@ -110,6 +110,10 @@ class LocalJsonRepository:
                     "reimbursement_claim_attachments": [],
                     "reimbursement_comments": [],
                     "reimbursement_invitation_accept_attempts": [],
+                    "open_finance_items": [],
+                    "open_finance_account_links": [],
+                    "open_finance_transaction_links": [],
+                    "open_finance_sync_runs": [],
                 }
             )
 
@@ -403,6 +407,162 @@ class LocalJsonRepository:
 
     def delete_card(self, user_id: str, card_id: str) -> dict[str, Any] | None:
         return self.update_card(user_id, card_id, {"status": "inactive"})
+
+    def _ensure_open_finance_collections(self, data: dict[str, Any]) -> None:
+        data.setdefault("open_finance_items", [])
+        data.setdefault("open_finance_account_links", [])
+        data.setdefault("open_finance_transaction_links", [])
+        data.setdefault("open_finance_sync_runs", [])
+
+    def list_open_finance_items(self, user_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_open_finance_collections(data)
+        return [item for item in data["open_finance_items"] if item["user_id"] == user_id]
+
+    def get_open_finance_item_by_external_id(self, user_id: str, provider: str, external_item_id: str) -> dict[str, Any] | None:
+        for item in self.list_open_finance_items(user_id):
+            if item["provider"] == provider and item["external_item_id"] == external_item_id:
+                return item
+        return None
+
+    def upsert_open_finance_item(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_open_finance_collections(data)
+        now = datetime.now(timezone.utc).isoformat()
+        provider = payload.get("provider", "pluggy")
+        external_item_id = payload["external_item_id"]
+        for index, item in enumerate(data["open_finance_items"]):
+            if item["user_id"] == user_id and item["provider"] == provider and item["external_item_id"] == external_item_id:
+                updated = {**item, **payload, "updated_at": now}
+                data["open_finance_items"][index] = updated
+                self._write(data)
+                return updated
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "user_id": user_id,
+            "provider": provider,
+            "status": "active",
+            "metadata": {},
+            "created_at": now,
+            "updated_at": None,
+            **payload,
+        }
+        data["open_finance_items"].append(record)
+        self._write(data)
+        return record
+
+    def upsert_open_finance_account_link(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_open_finance_collections(data)
+        now = datetime.now(timezone.utc).isoformat()
+        provider = payload.get("provider", "pluggy")
+        external_account_id = payload["external_account_id"]
+        for index, item in enumerate(data["open_finance_account_links"]):
+            if item["user_id"] == user_id and item["provider"] == provider and item["external_account_id"] == external_account_id:
+                updated = {**item, **payload, "updated_at": now}
+                data["open_finance_account_links"][index] = updated
+                self._write(data)
+                return updated
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "user_id": user_id,
+            "provider": provider,
+            "metadata": {},
+            "created_at": now,
+            "updated_at": None,
+            **payload,
+        }
+        data["open_finance_account_links"].append(record)
+        self._write(data)
+        return record
+
+    def get_open_finance_account_link(self, user_id: str, provider: str, external_account_id: str) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_open_finance_collections(data)
+        return next(
+            (
+                item for item in data["open_finance_account_links"]
+                if item["user_id"] == user_id and item["provider"] == provider and item["external_account_id"] == external_account_id
+            ),
+            None,
+        )
+
+    def upsert_open_finance_transaction_link(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_open_finance_collections(data)
+        now = datetime.now(timezone.utc).isoformat()
+        provider = payload.get("provider", "pluggy")
+        external_transaction_id = payload["external_transaction_id"]
+        for index, item in enumerate(data["open_finance_transaction_links"]):
+            if item["user_id"] == user_id and item["provider"] == provider and item["external_transaction_id"] == external_transaction_id:
+                updated = {**item, **payload, "updated_at": now}
+                data["open_finance_transaction_links"][index] = updated
+                self._write(data)
+                return updated
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "user_id": user_id,
+            "provider": provider,
+            "metadata": {},
+            "created_at": now,
+            "updated_at": None,
+            **payload,
+        }
+        data["open_finance_transaction_links"].append(record)
+        self._write(data)
+        return record
+
+    def get_open_finance_transaction_link(self, user_id: str, provider: str, external_transaction_id: str) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_open_finance_collections(data)
+        return next(
+            (
+                item for item in data["open_finance_transaction_links"]
+                if item["user_id"] == user_id and item["provider"] == provider and item["external_transaction_id"] == external_transaction_id
+            ),
+            None,
+        )
+
+    def create_open_finance_sync_run(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_open_finance_collections(data)
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "user_id": user_id,
+            "provider": "pluggy",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "finished_at": None,
+            "duration_ms": None,
+            "accounts_created": 0,
+            "accounts_updated": 0,
+            "cards_created": 0,
+            "cards_updated": 0,
+            "transactions_created": 0,
+            "transactions_updated": 0,
+            "transactions_ignored": 0,
+            "metadata": {},
+            **payload,
+        }
+        data["open_finance_sync_runs"].append(record)
+        self._write(data)
+        return record
+
+    def update_open_finance_sync_run(self, user_id: str, run_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_open_finance_collections(data)
+        for index, item in enumerate(data["open_finance_sync_runs"]):
+            if item["id"] == run_id and item["user_id"] == user_id:
+                updated = {**item, **payload}
+                data["open_finance_sync_runs"][index] = updated
+                self._write(data)
+                return updated
+        return None
+
+    def list_open_finance_sync_runs(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_open_finance_collections(data)
+        runs = [item for item in data["open_finance_sync_runs"] if item["user_id"] == user_id]
+        return sorted(runs, key=lambda item: item.get("started_at", ""), reverse=True)[:limit]
 
     def create_import_file(self, payload: dict[str, Any]) -> dict[str, Any]:
         data = self._read()

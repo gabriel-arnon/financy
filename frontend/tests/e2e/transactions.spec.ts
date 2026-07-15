@@ -56,6 +56,7 @@ function transaction(index: number) {
     installment_current: null,
     installment_total: null,
     status: index === 4 ? "pending" : "confirmed",
+    external_source: index === 1 ? "open_finance" : null,
     created_at: `2026-07-${String((index % 25) + 1).padStart(2, "0")}T12:00:00Z`
   };
 }
@@ -394,6 +395,15 @@ test("hydrates filters from transaction query params", async ({ page }) => {
   await expect(page.getByLabel("Data final")).toHaveValue("2026-07-31");
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await expect(page.locator("tbody tr").first()).toContainText("OPENAI ASSINATURA");
+});
+
+test("filters and labels open finance transactions", async ({ page }) => {
+  await gotoTransactions(page, "/transactions?source=open_finance");
+
+  await expect(page.getByLabel("Origem dos dados")).toHaveValue("open_finance");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator("tbody tr").first()).toContainText("OPENAI ASSINATURA");
+  await expect(page.locator("tbody tr").first()).toContainText("Open Finance");
 });
 
 test("keeps filters empty when transactions route has no query params", async ({ page }) => {

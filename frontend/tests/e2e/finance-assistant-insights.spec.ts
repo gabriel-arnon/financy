@@ -55,6 +55,7 @@ const transactions = [
     installment_current: null,
     installment_total: null,
     status: "confirmed",
+    external_source: "open_finance",
     created_at: "2026-07-05T12:00:00Z"
   },
   {
@@ -74,6 +75,7 @@ const transactions = [
     installment_current: null,
     installment_total: null,
     status: "confirmed",
+    external_source: null,
     created_at: "2026-07-06T12:00:00Z"
   }
 ];
@@ -197,6 +199,17 @@ test("insights suggested rule opens prefilled dialog and removes suggestion afte
   await ruleDialog.getByRole("button", { name: "Adicionar regra" }).click();
   await expect(page.getByText("Regra criada.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Adicionar regra" })).toHaveCount(0);
+});
+
+test("dashboard filters and labels open finance transactions", async ({ page }) => {
+  await mockFinanceApi(page);
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+
+  await page.getByRole("combobox").filter({ hasText: "Todas as origens" }).selectOption("open_finance");
+  await expect(page.getByText("OPENAI ASSINATURA")).toBeVisible();
+  await expect(page.locator("span").filter({ hasText: "Open Finance" })).toBeVisible();
+  await expect(page.getByText("MERCADO***TESTE")).toHaveCount(0);
 });
 
 test("insights rename CTA opens transactions with cleanup filter", async ({ page }) => {

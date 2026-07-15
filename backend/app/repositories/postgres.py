@@ -355,6 +355,209 @@ class PostgresRepository:
     def delete_card(self, user_id: str, card_id: str) -> dict[str, Any] | None:
         return self.update_card(user_id, card_id, {"status": "inactive"})
 
+    def list_open_finance_items(self, user_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            "select * from open_finance_items where user_id = %s order by created_at desc",
+            (user_id,),
+        )
+
+    def get_open_finance_item_by_external_id(self, user_id: str, provider: str, external_item_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            """
+            select * from open_finance_items
+            where user_id = %s and provider = %s and external_item_id = %s
+            """,
+            (user_id, provider, external_item_id),
+        )
+
+    def upsert_open_finance_item(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_profile(user_id)
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "user_id": user_id,
+            "provider": payload.get("provider", "pluggy"),
+            "status": "active",
+            "metadata": {},
+            "created_at": datetime.now(timezone.utc),
+            **payload,
+        }
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into open_finance_items
+                  (id, user_id, provider, external_item_id, connector_name, institution_name, status,
+                   consent_expires_at, last_sync_at, last_successful_sync_at, last_error, metadata, created_at)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (user_id, provider, external_item_id)
+                do update set
+                  connector_name = excluded.connector_name,
+                  institution_name = excluded.institution_name,
+                  status = excluded.status,
+                  consent_expires_at = excluded.consent_expires_at,
+                  last_sync_at = coalesce(excluded.last_sync_at, open_finance_items.last_sync_at),
+                  last_successful_sync_at = coalesce(excluded.last_successful_sync_at, open_finance_items.last_successful_sync_at),
+                  last_error = excluded.last_error,
+                  metadata = excluded.metadata,
+                  updated_at = now()
+                returning *
+                """,
+                (
+                    record["id"],
+                    user_id,
+                    record["provider"],
+                    record["external_item_id"],
+                    record.get("connector_name"),
+                    record.get("institution_name"),
+                    record.get("status", "active"),
+                    record.get("consent_expires_at"),
+                    record.get("last_sync_at"),
+                    record.get("last_successful_sync_at"),
+                    record.get("last_error"),
+                    _adapt(record.get("metadata", {})),
+                    record["created_at"],
+                ),
+            )
+            return _record(cur.fetchone()) or {}
+
+    def upsert_open_finance_account_link(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "user_id": user_id,
+            "provider": payload.get("provider", "pluggy"),
+            "metadata": {},
+            "created_at": datetime.now(timezone.utc),
+            **payload,
+        }
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into open_finance_account_links
+                  (id, user_id, provider, external_account_id, open_finance_item_id, account_id, card_id,
+                   account_type, subtype, display_name, institution_name, last_digits, metadata, created_at)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (user_id, provider, external_account_id)
+                do update set
+                  open_finance_item_id = excluded.open_finance_item_id,
+                  account_id = excluded.account_id,
+                  card_id = excluded.card_id,
+                  account_type = excluded.account_type,
+                  subtype = excluded.subtype,
+                  display_name = excluded.display_name,
+                  institution_name = excluded.institution_name,
+                  last_digits = excluded.last_digits,
+                  metadata = excluded.metadata,
+                  updated_at = now()
+                returning *
+                """,
+                (
+                    record["id"],
+                    user_id,
+                    record["provider"],
+                    record["external_account_id"],
+                    record.get("open_finance_item_id"),
+                    record.get("account_id"),
+                    record.get("card_id"),
+                    record.get("account_type"),
+                    record.get("subtype"),
+                    record.get("display_name"),
+                    record.get("institution_name"),
+                    record.get("last_digits"),
+                    _adapt(record.get("metadata", {})),
+                    record["created_at"],
+                ),
+            )
+            return _record(cur.fetchone()) or {}
+
+    def get_open_finance_account_link(self, user_id: str, provider: str, external_account_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            """
+            select * from open_finance_account_links
+            where user_id = %s and provider = %s and external_account_id = %s
+            """,
+            (user_id, provider, external_account_id),
+        )
+
+    def upsert_open_finance_transaction_link(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "user_id": user_id,
+            "provider": payload.get("provider", "pluggy"),
+            "metadata": {},
+            "created_at": datetime.now(timezone.utc),
+            **payload,
+        }
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into open_finance_transaction_links
+                  (id, user_id, provider, external_transaction_id, external_account_id,
+                   open_finance_item_id, transaction_id, metadata, created_at)
+                values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                on conflict (user_id, provider, external_transaction_id)
+                do update set
+                  external_account_id = excluded.external_account_id,
+                  open_finance_item_id = excluded.open_finance_item_id,
+                  transaction_id = excluded.transaction_id,
+                  metadata = excluded.metadata,
+                  updated_at = now()
+                returning *
+                """,
+                (
+                    record["id"],
+                    user_id,
+                    record["provider"],
+                    record["external_transaction_id"],
+                    record.get("external_account_id"),
+                    record.get("open_finance_item_id"),
+                    record["transaction_id"],
+                    _adapt(record.get("metadata", {})),
+                    record["created_at"],
+                ),
+            )
+            return _record(cur.fetchone()) or {}
+
+    def get_open_finance_transaction_link(self, user_id: str, provider: str, external_transaction_id: str) -> dict[str, Any] | None:
+        return self._fetch_one(
+            """
+            select * from open_finance_transaction_links
+            where user_id = %s and provider = %s and external_transaction_id = %s
+            """,
+            (user_id, provider, external_transaction_id),
+        )
+
+    def create_open_finance_sync_run(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_profile(user_id)
+        return self._insert(
+            "open_finance_sync_runs",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "user_id": user_id,
+                "provider": "pluggy",
+                "started_at": datetime.now(timezone.utc),
+                "metadata": {},
+                **payload,
+            },
+        )
+
+    def update_open_finance_sync_run(self, user_id: str, run_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update(
+            "open_finance_sync_runs",
+            payload,
+            "id = %s and user_id = %s",
+            (run_id, user_id),
+        )
+
+    def list_open_finance_sync_runs(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            """
+            select * from open_finance_sync_runs
+            where user_id = %s
+            order by started_at desc
+            limit %s
+            """,
+            (user_id, limit),
+        )
+
     def create_import_file(self, payload: dict[str, Any]) -> dict[str, Any]:
         if payload.get("user_id"):
             self._ensure_profile(payload["user_id"])

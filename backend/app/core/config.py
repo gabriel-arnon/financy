@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     ai_import_api_key: str | None = None
     ai_import_model: str = "gpt-4o-mini"
     ai_import_timeout_seconds: float = 45.0
+    open_finance_enabled: bool = False
+    open_finance_owner_user_id: str | None = None
+    pluggy_base_url: str = "https://api.pluggy.ai"
+    pluggy_client_id: str | None = None
+    pluggy_client_secret: str | None = None
+    pluggy_webhook_secret: str | None = None
+    pluggy_sync_lookback_days: int = 370
+    pluggy_api_timeout_seconds: float = 30.0
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -53,6 +61,10 @@ class Settings(BaseSettings):
     @property
     def private_files_allowed_mime_type_list(self) -> list[str]:
         return [item.strip() for item in self.private_files_allowed_mime_types.split(",") if item.strip()]
+
+    @property
+    def open_finance_configured(self) -> bool:
+        return bool(self.open_finance_owner_user_id and self.pluggy_client_id and self.pluggy_client_secret)
 
     def validate_private_files_config(self) -> None:
         if not self.private_files_enabled:

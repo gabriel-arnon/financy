@@ -297,6 +297,7 @@ export interface Transaction {
   installment_current: number | null;
   installment_total: number | null;
   status: string;
+  external_source?: string | null;
   created_at: string;
 }
 
@@ -314,6 +315,7 @@ export interface TransactionPayload {
   installment_current?: number | null;
   installment_total?: number | null;
   status?: string;
+  external_source?: string | null;
 }
 
 export interface CardStatementSummary {
@@ -567,4 +569,53 @@ export interface GuestReimbursementClaim {
   last_viewed_at: string | null;
   attachment_count: number;
   items: GuestReimbursementItem[];
+}
+
+export interface OpenFinanceStatus {
+  enabled: boolean;
+  owner_only: boolean;
+  configured: boolean;
+  provider: string;
+}
+
+export interface OpenFinanceItem {
+  id: string;
+  user_id: string;
+  provider: string;
+  external_item_id: string;
+  connector_name: string | null;
+  institution_name: string | null;
+  status: string;
+  consent_expires_at: string | null;
+  last_sync_at: string | null;
+  last_successful_sync_at: string | null;
+  last_error: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface OpenFinanceSyncRun {
+  id: string;
+  user_id: string;
+  provider: string;
+  external_item_id: string | null;
+  status: string;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  accounts_created: number;
+  accounts_updated: number;
+  cards_created: number;
+  cards_updated: number;
+  transactions_created: number;
+  transactions_updated: number;
+  transactions_ignored: number;
+  error_message: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface OpenFinanceSyncResponse {
+  run: OpenFinanceSyncRun;
+  items: OpenFinanceItem[];
 }

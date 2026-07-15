@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import accounts, ai_finance, categories, classification_rules, files, imports, reimbursements, statements, transactions
+from app.api import accounts, ai_finance, categories, classification_rules, files, imports, open_finance, reimbursements, statements, transactions
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 
@@ -24,6 +24,7 @@ app.include_router(files.files_router)
 app.include_router(files.transaction_attachments_router)
 app.include_router(reimbursements.router)
 app.include_router(ai_finance.router)
+app.include_router(open_finance.router)
 app.include_router(statements.router)
 app.include_router(transactions.router)
 app.include_router(categories.router)

@@ -18,6 +18,7 @@ class FakeFinanceRepository:
                 "amount": "100.00",
                 "type": "expense",
                 "category_id": "cat-assinaturas",
+                "external_source": "open_finance",
             },
             {
                 "id": "tx-2",
@@ -38,6 +39,9 @@ class FakeFinanceRepository:
                 "category_id": "cat-mercado",
             },
         ]
+
+    def list_classification_rules(self, user_id: str):
+        return []
 
 
 def test_ai_finance_answer_returns_structured_cta() -> None:
@@ -70,3 +74,9 @@ def test_ai_finance_answer_keeps_textual_fallback_fields() -> None:
     assert response.total_amount == "185.30"
     assert isinstance(response.filters, list)
     assert response.message == response.answer
+
+
+def test_ai_finance_overview_includes_open_finance_transactions() -> None:
+    response = AiFinanceService(FakeFinanceRepository()).overview("user-1")
+
+    assert "saídas somaram 130.30" in response.summary
