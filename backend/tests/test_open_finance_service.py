@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from app.core.errors import AppError
 from app.repositories.local_json import LocalJsonRepository
 from app.services.open_finance_service import OpenFinanceService
+from app.services.pluggy_client import PluggyClientError
 
 
 OWNER_ID = "00000000-0000-4000-8000-000000000777"
@@ -111,3 +112,19 @@ def test_sync_item_blocks_concurrent_sync_for_same_item(tmp_path) -> None:
 
     assert "success" in results
     assert "open_finance_sync_in_progress" in results
+
+
+def test_sync_item_skips_account_transactions_when_pluggy_returns_410(tmp_path) -> None:
+    class GoneTransactionsPluggyClient(FakePluggyClient):
+        def list_transactions(self, account_id: str, **kwargs):
+            raise PluggyClientError("Pluggy retornou HTTP 410 em GET /transactions.", status_code=410, path="/transactions")
+
+    repository = LocalJsonRepository(tmp_path)
+    service = OpenFinanceService(repository=repository, settings=settings(), pluggy_client=GoneTransactionsPluggyClient())
+
+    result = service.sync_item(OWNER_ID, "item-1")
+
+    assert result["run"]["status"] == "success"
+    assert result["run"]["transactions_ignored"] == 1
+    assert repository.list_accounts(OWNER_ID)[0]["name"] == "Conta Pluggy"
+    assert repository.list_transactions(OWNER_ID) == []

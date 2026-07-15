@@ -141,7 +141,14 @@ class OpenFinanceService:
             accounts = self.pluggy_client.list_accounts(external_item_id)
             for account in accounts:
                 link = self._sync_account(user_id, item, account, counters)
-                for transaction in self.pluggy_client.list_transactions(str(account.get("id")), from_date=from_date):
+                try:
+                    transactions = self.pluggy_client.list_transactions(str(account.get("id")), from_date=from_date)
+                except PluggyClientError as exc:
+                    if exc.status_code == 410:
+                        counters["transactions_ignored"] += 1
+                        continue
+                    raise
+                for transaction in transactions:
                     self._sync_transaction(user_id, item, link, transaction, counters)
             now = datetime.now(timezone.utc)
             item = self.repository.upsert_open_finance_item(
