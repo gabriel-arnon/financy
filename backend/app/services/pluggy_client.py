@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 
@@ -95,6 +96,27 @@ class PluggyClient:
                 return results
             page += 1
 
+    def _cursor_paginated_get(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        after: str | None = None
+        results: list[dict[str, Any]] = []
+        while True:
+            query = {**(params or {})}
+            if after:
+                query["after"] = after
+            payload = self._request("GET", path, headers=self._headers(), params=query)
+            batch = payload.get("results") if isinstance(payload, dict) else payload
+            if not isinstance(batch, list):
+                return results
+            results.extend([item for item in batch if isinstance(item, dict)])
+            next_cursor = payload.get("next") if isinstance(payload, dict) else None
+            if not next_cursor or not batch:
+                return results
+            next_value = str(next_cursor)
+            parsed = urlparse(next_value)
+            query_string = parsed.query or next_value.lstrip("?")
+            after_values = parse_qs(query_string).get("after")
+            after = after_values[0] if after_values else next_value
+
     def get_item(self, item_id: str) -> dict[str, Any]:
         return self._request("GET", f"/items/{item_id}", headers=self._headers())
 
@@ -120,7 +142,7 @@ class PluggyClient:
     def list_transactions(self, account_id: str, *, from_date: str | None = None, to_date: str | None = None) -> list[dict[str, Any]]:
         params: dict[str, Any] = {"accountId": account_id}
         if from_date:
-            params["from"] = from_date
+            params["dateFrom"] = from_date
         if to_date:
-            params["to"] = to_date
-        return self._paginated_get("/transactions", params)
+            params["dateTo"] = to_date
+        return self._cursor_paginated_get("/v2/transactions", params)

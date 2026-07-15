@@ -55,6 +55,26 @@ def test_paginated_get_collects_results(monkeypatch: pytest.MonkeyPatch) -> None
     assert client.list_accounts("item-1") == [{"id": "a"}, {"id": "b"}]
 
 
+def test_list_transactions_uses_v2_cursor_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = PluggyClient(settings())
+    monkeypatch.setattr(client, "authenticate", lambda: "pluggy-key")
+    calls = []
+
+    def fake_request(method, path, **kwargs):
+        calls.append((method, path, kwargs["params"]))
+        if "after" not in kwargs["params"]:
+            return {"results": [{"id": "tx-1"}], "next": "?accountId=account-1&after=cursor-1"}
+        return {"results": [{"id": "tx-2"}], "next": None}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    assert client.list_transactions("account-1", from_date="2026-01-01", to_date="2026-01-31") == [{"id": "tx-1"}, {"id": "tx-2"}]
+    assert calls == [
+        ("GET", "/v2/transactions", {"accountId": "account-1", "dateFrom": "2026-01-01", "dateTo": "2026-01-31"}),
+        ("GET", "/v2/transactions", {"accountId": "account-1", "dateFrom": "2026-01-01", "dateTo": "2026-01-31", "after": "cursor-1"}),
+    ]
+
+
 def test_create_connect_token_uses_authenticated_request(monkeypatch: pytest.MonkeyPatch) -> None:
     client = PluggyClient(settings())
     monkeypatch.setattr(client, "authenticate", lambda: "pluggy-key")
