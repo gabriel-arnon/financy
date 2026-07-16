@@ -331,6 +331,27 @@ Risco residual:
 
 - O Playwright ainda emite aviso do Next sobre `script` renderizado no client durante alguns testes; nao bloqueia a suite, mas vale investigar em uma frente separada de higiene do layout/theme init.
 
+## Insights: Criacao Assistida de Categorias
+
+Status: concluido.
+
+Entregas:
+
+- Card de Insights do dashboard ganhou atalho `Adicionar categoria`.
+- Criacao acontece em dialogo revisavel com nome e tipo da categoria, usando a API existente de categorias.
+- A categoria criada atualiza o estado local do dashboard e entra imediatamente no seletor de categorias do dialogo `Adicionar regra`.
+- Os insights sao recarregados apos a criacao para reduzir classificacoes ruins causadas por taxonomia incompleta.
+
+Decisoes de arquitetura:
+
+- Nenhuma categoria, regra ou transacao e criada automaticamente pela IA.
+- O frontend nao envia `user_id`; o backend continua derivando o usuario autenticado.
+- A entrega ficou restrita ao frontend porque o CRUD de categorias ja existia e respeita o modelo user-owned.
+
+Validacoes:
+
+- E2E mockado cobre criacao pelo card de Insights e uso imediato da nova categoria em regras sugeridas.
+
 ## Dashboard: Acoes Rapidas, Grafico Pizza e Insights Enxutos
 
 Status: concluido no codigo; pendencias operacionais de producao do `task.md` seguem dependentes de ambiente real.

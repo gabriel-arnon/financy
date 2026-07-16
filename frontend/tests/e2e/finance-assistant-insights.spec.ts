@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const categories = [
+const initialCategories = [
   { id: "cat-subscriptions", name: "Assinaturas", type: "expense", status: "active" },
   { id: "cat-food", name: "Alimentacao", type: "expense", status: "active" }
 ];
@@ -113,6 +113,7 @@ function overview(ruleCreated: boolean) {
 
 async function mockFinanceApi(page: Page) {
   let ruleCreated = false;
+  let categories = [...initialCategories];
 
   await page.route("**/transactions", async (route) => {
     if (route.request().resourceType() === "document") {
@@ -122,6 +123,24 @@ async function mockFinanceApi(page: Page) {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(transactions) });
   });
   await page.route("**/categories", async (route) => {
+    if (route.request().method() === "POST") {
+      const payload = JSON.parse(route.request().postData() ?? "{}");
+      const category = {
+        id: "cat-housing",
+        name: payload.name,
+        type: payload.type,
+        status: payload.status,
+        is_system: false
+      };
+      categories = [...categories.filter((item) => item.id !== category.id), category];
+      await route.fulfill({
+        status: 201,
+        headers: { "X-Financy-Category-Action": "created" },
+        contentType: "application/json",
+        body: JSON.stringify(category)
+      });
+      return;
+    }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(categories) });
   });
   await page.route("**/accounts", async (route) => {
@@ -199,6 +218,25 @@ test("insights suggested rule opens prefilled dialog and removes suggestion afte
   await ruleDialog.getByRole("button", { name: "Adicionar regra" }).click();
   await expect(page.getByText("Regra criada.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Adicionar regra" })).toHaveCount(0);
+});
+
+test("insights category shortcut creates category and updates rule dialog options", async ({ page }) => {
+  await mockFinanceApi(page);
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
+
+  await page.getByRole("button", { name: "Adicionar categoria" }).click();
+  const categoryDialog = page.getByRole("dialog", { name: "Adicionar categoria" });
+  await expect(categoryDialog.getByRole("heading", { name: "Adicionar categoria" })).toBeVisible();
+  await categoryDialog.getByLabel("Nome").fill("Moradia");
+  await categoryDialog.getByLabel("Tipo").selectOption("expense");
+  await categoryDialog.getByRole("button", { name: "Adicionar categoria" }).click();
+
+  await expect(page.getByText("Categoria criada.")).toBeVisible();
+  await expect(page.getByText("3 categorias disponiveis")).toBeVisible();
+
+  await page.getByRole("button", { name: "Adicionar regra" }).click();
+  await expect(page.getByRole("dialog", { name: "Revisar e adicionar regra" }).getByLabel("Categoria")).toContainText("Moradia");
 });
 
 test("dashboard filters and labels open finance transactions", async ({ page }) => {

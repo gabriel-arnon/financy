@@ -239,6 +239,28 @@ Checklist:
 - [x] Criar estado de loading e erro.
 - [ ] Criar testes com resposta mockada da IA.
 
+### [x] P6.8 - Insights: criacao assistida de categorias
+
+Objetivo:
+
+- Permitir criar categorias diretamente no card de Insights do dashboard, para casos em que a IA identifica corretamente o padrao da transacao, mas ainda nao existe uma categoria pertinente e a classificacao acaba caindo em uma alternativa ruim.
+
+Feito:
+
+- Card de Insights recebeu bloco de Categorias com acao `Adicionar categoria`.
+- Criacao usa a API existente de categorias, preservando isolamento por usuario e sem aceitar `user_id` do cliente.
+- Categoria criada atualiza a lista local do dashboard e passa a aparecer imediatamente no dialogo de criacao de regras sugeridas.
+- Insights sao recarregados apos a criacao, permitindo que sugestoes futuras considerem a nova taxonomia.
+
+Checklist:
+
+- [x] Mapear lacuna entre classificacao automatica e ausencia de categoria pertinente.
+- [x] Adicionar CTA de categoria dentro de Insights.
+- [x] Reutilizar contrato existente de categoria com nome, tipo e status.
+- [x] Exibir confirmacao por toast e erro por toast.
+- [x] Atualizar opcoes de categoria usadas por regras sugeridas sem reload da pagina.
+- [x] Cobrir fluxo em E2E mockado.
+
 ### [/] P6.4 - Busca em linguagem natural
 
 Objetivo:

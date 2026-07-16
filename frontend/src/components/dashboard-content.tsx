@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, BarChart3, FileUp, Loader2, Minus, Plus, Sparkles, TrendingDown, TrendingUp, Wallet } from "lucide-react";
+import { ArrowRight, BarChart3, FileUp, Loader2, Minus, Plus, Sparkles, Tags, TrendingDown, TrendingUp, Wallet } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
+import { CategoryDialog } from "@/components/category-dialog";
 import { ClassificationRuleDialog } from "@/components/classification-rule-dialog";
 import { UiButton } from "@/components/ui-button";
 import { getAiFinanceOverview } from "@/lib/api";
@@ -113,6 +114,8 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
   const [aiOverview, setAiOverview] = useState<AiFinanceOverview | null>(null);
   const [aiLoading, setAiLoading] = useState(true);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [createdCategories, setCreatedCategories] = useState<Category[]>([]);
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [dismissedRuleKeys, setDismissedRuleKeys] = useState<Set<string>>(() => new Set());
   const [ruleInitialValues, setRuleInitialValues] = useState<ClassificationRulePayload | null>(null);
   const [storedProfileName] = useState(() => readStoredProfileName());
@@ -126,6 +129,11 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
   const fallbackApplied = selectedPeriod === "current_month" && !hasCurrentMonthTransactions && transactions.length > 0;
   const effectivePeriod: PeriodKey = fallbackApplied ? "all" : selectedPeriod;
   const cardAccountById = useMemo(() => new Map(cards.map((card) => [card.id, card.account_id])), [cards]);
+  const dashboardCategories = useMemo(() => {
+    const byId = new Map(categories.map((category) => [category.id, category]));
+    createdCategories.forEach((category) => byId.set(category.id, category));
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [categories, createdCategories]);
 
   useEffect(() => {
     let active = true;
@@ -176,7 +184,7 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
     filteredTransactions
       .filter((transaction) => transaction.type === "expense")
       .reduce<Record<string, number>>((summary, transaction) => {
-        const name = getCategoryName(transaction.category_id, categories);
+        const name = getCategoryName(transaction.category_id, dashboardCategories);
         summary[name] = (summary[name] ?? 0) + Number(transaction.amount);
         return summary;
       }, {})
@@ -225,6 +233,16 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
     if (ruleInitialValues) {
       setDismissedRuleKeys((current) => new Set(current).add(`${ruleInitialValues.keyword}-${ruleInitialValues.category_id}-${ruleInitialValues.transaction_type ?? "all"}`));
     }
+    getAiFinanceOverview()
+      .then(setAiOverview)
+      .catch((err) => setAiError(err instanceof Error ? err.message : "Falha ao atualizar insights."));
+  }
+
+  function handleCategoryCreated(category: Category) {
+    setCreatedCategories((current) => {
+      const withoutDuplicated = current.filter((item) => item.id !== category.id);
+      return [...withoutDuplicated, category].sort((a, b) => a.name.localeCompare(b.name));
+    });
     getAiFinanceOverview()
       .then(setAiOverview)
       .catch((err) => setAiError(err instanceof Error ? err.message : "Falha ao atualizar insights."));
@@ -369,6 +387,20 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
             ) : null}
             {aiError ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{aiError}</p> : null}
           </div>
+          <div className="mt-4 rounded-md border border-stone-100 px-3 py-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <Tags className="h-4 w-4 shrink-0 text-mint" />
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold uppercase text-stone-500">Categorias</p>
+                  <p className="mt-1 truncate text-sm text-stone-700">{dashboardCategories.length} categorias disponiveis</p>
+                </div>
+              </div>
+              <UiButton icon={<Plus className="h-4 w-4" />} onClick={() => setCategoryDialogOpen(true)} size="sm" variant="secondary">
+                Adicionar categoria
+              </UiButton>
+            </div>
+          </div>
           {aiOverview ? (
             <div className="mt-4 grid gap-3 border-t border-stone-100 pt-4">
               {visibleSuggestedRules.length > 0 ? (
@@ -483,11 +515,16 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
         </div>
       </div>
       <ClassificationRuleDialog
-        categories={categories}
+        categories={dashboardCategories}
         initialValues={ruleInitialValues}
         onClose={() => setRuleInitialValues(null)}
         onCreated={handleSuggestedRuleCreated}
         open={Boolean(ruleInitialValues)}
+      />
+      <CategoryDialog
+        onClose={() => setCategoryDialogOpen(false)}
+        onCreated={handleCategoryCreated}
+        open={categoryDialogOpen}
       />
     </section>
   );
