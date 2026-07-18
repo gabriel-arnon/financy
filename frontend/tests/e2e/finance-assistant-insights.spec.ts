@@ -98,6 +98,15 @@ function overview(ruleCreated: boolean) {
             reason: "Transacoes parecidas usam esta categoria."
           }
         ],
+    suggested_categories: [
+      {
+        name: "Moradia",
+        type: "expense",
+        match_count: 4,
+        sample_descriptions: ["ALUGUEL JULHO", "ALUGUEL AGOSTO"],
+        reason: "Transacoes recorrentes ficaram em categoria generica."
+      }
+    ],
     category_suggestions: [],
     recurrence_suggestions: [],
     rename_suggestions: [
@@ -220,20 +229,22 @@ test("insights suggested rule opens prefilled dialog and removes suggestion afte
   await expect(page.getByRole("button", { name: "Adicionar regra" })).toHaveCount(0);
 });
 
-test("insights category shortcut creates category and updates rule dialog options", async ({ page }) => {
+test("insights suggested category opens prefilled dialog and updates rule options", async ({ page }) => {
   await mockFinanceApi(page);
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
+  await expect(page.getByText("Categorias sugeridas")).toBeVisible();
+  await expect(page.getByText("Moradia para Despesa (4 ocorr")).toBeVisible();
   await page.getByRole("button", { name: "Adicionar categoria" }).click();
   const categoryDialog = page.getByRole("dialog", { name: "Adicionar categoria" });
   await expect(categoryDialog.getByRole("heading", { name: "Adicionar categoria" })).toBeVisible();
-  await categoryDialog.getByLabel("Nome").fill("Moradia");
-  await categoryDialog.getByLabel("Tipo").selectOption("expense");
+  await expect(categoryDialog.getByLabel("Nome")).toHaveValue("Moradia");
+  await expect(categoryDialog.getByLabel("Tipo")).toHaveValue("expense");
   await categoryDialog.getByRole("button", { name: "Adicionar categoria" }).click();
 
   await expect(page.getByText("Categoria criada.")).toBeVisible();
-  await expect(page.getByText("3 categorias disponiveis")).toBeVisible();
+  await expect(page.getByText("Moradia para Despesa")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Adicionar regra" }).click();
   await expect(page.getByRole("dialog", { name: "Revisar e adicionar regra" }).getByLabel("Categoria")).toContainText("Moradia");

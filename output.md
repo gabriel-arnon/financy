@@ -337,10 +337,11 @@ Status: concluido.
 
 Entregas:
 
-- Card de Insights do dashboard ganhou atalho `Adicionar categoria`.
-- Criacao acontece em dialogo revisavel com nome e tipo da categoria, usando a API existente de categorias.
+- Backend passou a devolver `suggested_categories` no overview financeiro quando detecta recorrencia sem categoria especifica ou em categoria generica.
+- Card de Insights do dashboard ganhou bloco `Categorias sugeridas`, no mesmo padrao visual de `Regras sugeridas`.
+- Criacao acontece em dialogo revisavel pre-preenchido com nome e tipo sugeridos, usando a API existente de categorias.
 - A categoria criada atualiza o estado local do dashboard e entra imediatamente no seletor de categorias do dialogo `Adicionar regra`.
-- Os insights sao recarregados apos a criacao para reduzir classificacoes ruins causadas por taxonomia incompleta.
+- A sugestao criada sai da lista local de Insights para reduzir classificacoes ruins causadas por taxonomia incompleta.
 
 Decisoes de arquitetura:
 
@@ -350,7 +351,8 @@ Decisoes de arquitetura:
 
 Validacoes:
 
-- E2E mockado cobre criacao pelo card de Insights e uso imediato da nova categoria em regras sugeridas.
+- E2E mockado cobre criacao por sugestao no card de Insights e uso imediato da nova categoria em regras sugeridas.
+- Teste backend cobre geracao de categoria sugerida a partir de grupo recorrente em `Outros`.
 
 ## Dashboard: Acoes Rapidas, Grafico Pizza e Insights Enxutos
 

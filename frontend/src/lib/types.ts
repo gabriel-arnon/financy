@@ -219,6 +219,14 @@ export interface AiSuggestedRule {
   reason: string;
 }
 
+export interface AiSuggestedCategory {
+  name: string;
+  type: CategoryType;
+  match_count: number;
+  sample_descriptions: string[];
+  reason: string;
+}
+
 export interface AiCategorySuggestion {
   transaction_id: string;
   description: string;
@@ -247,6 +255,7 @@ export interface AiFinanceOverview {
   summary: string;
   insights: AiFinanceInsight[];
   suggested_rules: AiSuggestedRule[];
+  suggested_categories: AiSuggestedCategory[];
   category_suggestions: AiCategorySuggestion[];
   recurrence_suggestions: AiRecurrenceSuggestion[];
   rename_suggestions: AiRenameSuggestion[];

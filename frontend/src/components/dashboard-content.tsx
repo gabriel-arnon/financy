@@ -11,7 +11,7 @@ import { UiButton } from "@/components/ui-button";
 import { getAiFinanceOverview } from "@/lib/api";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { formatAccountName, formatCardWithAccount, getAccountName, getCardNameWithAccount, getCategoryName, isActiveEntity, translateTransactionType } from "@/lib/labels";
-import type { Account, AiFinanceOverview, AiSuggestedRule, Card, Category, ClassificationRulePayload, Transaction } from "@/lib/types";
+import type { Account, AiFinanceOverview, AiSuggestedCategory, AiSuggestedRule, Card, Category, CategoryType, ClassificationRulePayload, Transaction } from "@/lib/types";
 
 type PeriodKey = "current_month" | "previous_month" | "current_week" | "previous_week" | "last_30" | "last_90" | "custom" | "all";
 
@@ -102,6 +102,16 @@ function ruleKey(rule: AiSuggestedRule) {
   return `${rule.keyword}-${rule.category_id}-${rule.transaction_type ?? "all"}`;
 }
 
+function suggestedCategoryKey(category: AiSuggestedCategory) {
+  return `${category.name}-${category.type}`;
+}
+
+const categoryTypeLabels: Record<CategoryType, string> = {
+  expense: "Despesa",
+  income: "Receita",
+  both: "Ambas",
+};
+
 export function DashboardContent({ transactions, categories, accounts, cards }: DashboardContentProps) {
   const { session } = useAuth();
   const router = useRouter();
@@ -115,7 +125,8 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
   const [aiLoading, setAiLoading] = useState(true);
   const [aiError, setAiError] = useState<string | null>(null);
   const [createdCategories, setCreatedCategories] = useState<Category[]>([]);
-  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+  const [categoryInitialValues, setCategoryInitialValues] = useState<{ name: string; type: CategoryType } | null>(null);
+  const [dismissedCategoryKeys, setDismissedCategoryKeys] = useState<Set<string>>(() => new Set());
   const [dismissedRuleKeys, setDismissedRuleKeys] = useState<Set<string>>(() => new Set());
   const [ruleInitialValues, setRuleInitialValues] = useState<ClassificationRulePayload | null>(null);
   const [storedProfileName] = useState(() => readStoredProfileName());
@@ -216,6 +227,7 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
   ];
 
   const visibleSuggestedRules = (aiOverview?.suggested_rules ?? []).filter((rule) => !dismissedRuleKeys.has(ruleKey(rule)));
+  const visibleSuggestedCategories = (aiOverview?.suggested_categories ?? []).filter((category) => !dismissedCategoryKeys.has(suggestedCategoryKey(category)));
 
   function openSuggestedRule(rule: AiSuggestedRule) {
     setRuleInitialValues({
@@ -239,6 +251,9 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
   }
 
   function handleCategoryCreated(category: Category) {
+    if (categoryInitialValues) {
+      setDismissedCategoryKeys((current) => new Set(current).add(`${categoryInitialValues.name}-${categoryInitialValues.type}`));
+    }
     setCreatedCategories((current) => {
       const withoutDuplicated = current.filter((item) => item.id !== category.id);
       return [...withoutDuplicated, category].sort((a, b) => a.name.localeCompare(b.name));
@@ -246,6 +261,10 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
     getAiFinanceOverview()
       .then(setAiOverview)
       .catch((err) => setAiError(err instanceof Error ? err.message : "Falha ao atualizar insights."));
+  }
+
+  function openSuggestedCategory(category: AiSuggestedCategory) {
+    setCategoryInitialValues({ name: category.name, type: category.type });
   }
 
   function viewRenameSuggestions() {
@@ -387,22 +406,28 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
             ) : null}
             {aiError ? <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">{aiError}</p> : null}
           </div>
-          <div className="mt-4 rounded-md border border-stone-100 px-3 py-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 items-center gap-3">
-                <Tags className="h-4 w-4 shrink-0 text-mint" />
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase text-stone-500">Categorias</p>
-                  <p className="mt-1 truncate text-sm text-stone-700">{dashboardCategories.length} categorias disponiveis</p>
-                </div>
-              </div>
-              <UiButton icon={<Plus className="h-4 w-4" />} onClick={() => setCategoryDialogOpen(true)} size="sm" variant="secondary">
-                Adicionar categoria
-              </UiButton>
-            </div>
-          </div>
           {aiOverview ? (
             <div className="mt-4 grid gap-3 border-t border-stone-100 pt-4">
+              {visibleSuggestedCategories.length > 0 ? (
+                <div>
+                  <p className="text-xs font-semibold uppercase text-stone-500">Categorias sugeridas</p>
+                  <div className="mt-2 grid gap-2">
+                    {visibleSuggestedCategories.slice(0, 2).map((category) => (
+                      <div key={suggestedCategoryKey(category)} className="flex flex-col gap-3 rounded-md border border-stone-100 px-3 py-2 text-sm text-stone-700 sm:flex-row sm:items-center sm:justify-between">
+                        <span className="inline-flex min-w-0 items-center gap-2">
+                          <Tags className="h-4 w-4 shrink-0 text-mint" />
+                          <span className="min-w-0">
+                            <span className="font-semibold text-ink">{category.name}</span> para {categoryTypeLabels[category.type] ?? "Despesa"} ({category.match_count} ocorrÃªncias)
+                          </span>
+                        </span>
+                        <UiButton icon={<Plus className="h-4 w-4" />} onClick={() => openSuggestedCategory(category)} size="sm" variant="secondary">
+                          Adicionar categoria
+                        </UiButton>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               {visibleSuggestedRules.length > 0 ? (
                 <div>
                   <p className="text-xs font-semibold uppercase text-stone-500">Regras sugeridas</p>
@@ -522,9 +547,11 @@ export function DashboardContent({ transactions, categories, accounts, cards }: 
         open={Boolean(ruleInitialValues)}
       />
       <CategoryDialog
-        onClose={() => setCategoryDialogOpen(false)}
+        initialName={categoryInitialValues?.name}
+        initialType={categoryInitialValues?.type}
+        onClose={() => setCategoryInitialValues(null)}
         onCreated={handleCategoryCreated}
-        open={categoryDialogOpen}
+        open={Boolean(categoryInitialValues)}
       />
     </section>
   );

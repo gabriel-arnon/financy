@@ -6,6 +6,7 @@ class FakeFinanceRepository:
         return [
             {"id": "cat-assinaturas", "name": "Assinaturas", "type": "expense", "status": "active"},
             {"id": "cat-mercado", "name": "Mercado", "type": "expense", "status": "active"},
+            {"id": "cat-outros", "name": "Outros", "type": "both", "status": "active"},
         ]
 
     def list_transactions(self, user_id: str):
@@ -37,6 +38,24 @@ class FakeFinanceRepository:
                 "amount": "55.00",
                 "type": "expense",
                 "category_id": "cat-mercado",
+            },
+            {
+                "id": "tx-4",
+                "transaction_date": "2026-07-11",
+                "description": "PETZ LOJA",
+                "original_description": "PETZ LOJA",
+                "amount": "80.00",
+                "type": "expense",
+                "category_id": "cat-outros",
+            },
+            {
+                "id": "tx-5",
+                "transaction_date": "2026-07-12",
+                "description": "PETZ BANHO",
+                "original_description": "PETZ BANHO",
+                "amount": "95.00",
+                "type": "expense",
+                "category_id": "cat-outros",
             },
         ]
 
@@ -70,8 +89,8 @@ def test_ai_finance_answer_keeps_textual_fallback_fields() -> None:
     response = AiFinanceService(FakeFinanceRepository()).answer("user-1", "quanto")
 
     assert response.answer
-    assert response.matched_count == 3
-    assert response.total_amount == "185.30"
+    assert response.matched_count == 5
+    assert response.total_amount == "360.30"
     assert isinstance(response.filters, list)
     assert response.message == response.answer
 
@@ -79,4 +98,15 @@ def test_ai_finance_answer_keeps_textual_fallback_fields() -> None:
 def test_ai_finance_overview_includes_open_finance_transactions() -> None:
     response = AiFinanceService(FakeFinanceRepository()).overview("user-1")
 
-    assert "saídas somaram 130.30" in response.summary
+    assert "305.30" in response.summary
+
+
+def test_ai_finance_overview_suggests_new_category_for_generic_recurring_group() -> None:
+    response = AiFinanceService(FakeFinanceRepository()).overview("user-1")
+
+    assert response.suggested_categories
+    suggestion = response.suggested_categories[0]
+    assert suggestion.name == "Petz"
+    assert suggestion.type == "expense"
+    assert suggestion.match_count == 2
+    assert "PETZ LOJA" in suggestion.sample_descriptions

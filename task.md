@@ -247,19 +247,21 @@ Objetivo:
 
 Feito:
 
-- Card de Insights recebeu bloco de Categorias com acao `Adicionar categoria`.
-- Criacao usa a API existente de categorias, preservando isolamento por usuario e sem aceitar `user_id` do cliente.
+- Backend passou a gerar `suggested_categories` quando ha transacoes recorrentes sem categoria especifica ou presas em categoria generica.
+- Card de Insights recebeu bloco `Categorias sugeridas`, com nome, tipo, ocorrencias e acao `Adicionar categoria`.
+- Dialogo abre pre-preenchido com a sugestao e usa a API existente de categorias, preservando isolamento por usuario e sem aceitar `user_id` do cliente.
 - Categoria criada atualiza a lista local do dashboard e passa a aparecer imediatamente no dialogo de criacao de regras sugeridas.
-- Insights sao recarregados apos a criacao, permitindo que sugestoes futuras considerem a nova taxonomia.
+- Sugestao criada sai da lista local de Insights sem criar regra/transacao automaticamente.
 
 Checklist:
 
 - [x] Mapear lacuna entre classificacao automatica e ausencia de categoria pertinente.
-- [x] Adicionar CTA de categoria dentro de Insights.
+- [x] Adicionar sugestao de categoria dentro de Insights.
+- [x] Gerar sugestao a partir de recorrencia em categoria generica/sem categoria especifica.
 - [x] Reutilizar contrato existente de categoria com nome, tipo e status.
 - [x] Exibir confirmacao por toast e erro por toast.
 - [x] Atualizar opcoes de categoria usadas por regras sugeridas sem reload da pagina.
-- [x] Cobrir fluxo em E2E mockado.
+- [x] Cobrir fluxo em E2E mockado e teste backend de overview.
 
 ### [/] P6.4 - Busca em linguagem natural
 

@@ -15,6 +15,7 @@ from app.schemas.ai_finance import (
     AiFinanceQuestionSummary,
     AiRecurrenceSuggestion,
     AiRenameSuggestion,
+    AiSuggestedCategory,
     AiSuggestedRule,
 )
 
@@ -35,6 +36,7 @@ STOPWORDS = {
     "loja",
     "online",
 }
+GENERIC_CATEGORY_NAMES = {"outros", "outras", "diversos", "diversas", "sem categoria", "geral"}
 
 
 def _money(value: Any) -> Decimal:
@@ -80,6 +82,11 @@ def _pretty_description(description: str) -> str:
     return cleaned.title() if cleaned.isupper() else cleaned
 
 
+def _category_candidate_name(keyword: str) -> str:
+    words = [word for word in keyword.split() if word and word not in STOPWORDS]
+    return " ".join(words[:2]).title()
+
+
 class AiFinanceService:
     def __init__(self, repository: Any):
         self.repository = repository
@@ -105,6 +112,7 @@ class AiFinanceService:
             ),
             insights=insights,
             suggested_rules=self._suggest_rules(transactions, category_by_id, rules),
+            suggested_categories=self._suggest_new_categories(transactions, category_by_id),
             category_suggestions=self._suggest_categories(transactions, category_by_id),
             recurrence_suggestions=self._suggest_recurrences(transactions),
             rename_suggestions=self._suggest_renames(transactions),
@@ -313,6 +321,54 @@ class AiFinanceService:
             for (keyword, category_id, transaction_type), count in grouped.items()
             if count >= 2
         ]
+        return sorted(suggestions, key=lambda item: item.match_count, reverse=True)[:5]
+
+    def _suggest_new_categories(
+        self,
+        transactions: list[dict[str, Any]],
+        category_by_id: dict[str, dict[str, Any]],
+    ) -> list[AiSuggestedCategory]:
+        existing_names = {_normalize_description(category.get("name", "")) for category in category_by_id.values()}
+        grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+
+        for item in transactions:
+            keyword = _keyword(item.get("description", ""))
+            if not keyword:
+                continue
+
+            category = category_by_id.get(item.get("category_id"))
+            category_name = _normalize_description(category.get("name", "")) if category else ""
+            if category and category_name not in GENERIC_CATEGORY_NAMES:
+                continue
+
+            candidate_name = _category_candidate_name(keyword.split()[0])
+            candidate_key = _normalize_description(candidate_name)
+            if not candidate_key or candidate_key in existing_names:
+                continue
+
+            grouped[(candidate_name, str(item.get("type") or "expense"))].append(item)
+
+        suggestions: list[AiSuggestedCategory] = []
+        for (name, transaction_type), items in grouped.items():
+            if len(items) < 2:
+                continue
+            samples = []
+            for item in items:
+                description = item.get("description", "")
+                if description and description not in samples:
+                    samples.append(description)
+                if len(samples) == 3:
+                    break
+            suggestions.append(
+                AiSuggestedCategory(
+                    name=name,
+                    type="income" if transaction_type in INCOME_TYPES else "expense",
+                    match_count=len(items),
+                    sample_descriptions=samples,
+                    reason="Transacoes recorrentes ficaram sem categoria especifica ou em uma categoria generica.",
+                )
+            )
+
         return sorted(suggestions, key=lambda item: item.match_count, reverse=True)[:5]
 
     def _suggest_categories(

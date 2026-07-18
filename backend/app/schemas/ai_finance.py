@@ -16,6 +16,14 @@ class AiSuggestedRule(BaseModel):
     reason: str
 
 
+class AiSuggestedCategory(BaseModel):
+    name: str
+    type: str = "expense"
+    match_count: int
+    sample_descriptions: list[str] = Field(default_factory=list)
+    reason: str
+
+
 class AiCategorySuggestion(BaseModel):
     transaction_id: str
     description: str
@@ -44,6 +52,7 @@ class AiFinanceOverview(BaseModel):
     summary: str
     insights: list[AiFinanceInsight] = Field(default_factory=list)
     suggested_rules: list[AiSuggestedRule] = Field(default_factory=list)
+    suggested_categories: list[AiSuggestedCategory] = Field(default_factory=list)
     category_suggestions: list[AiCategorySuggestion] = Field(default_factory=list)
     recurrence_suggestions: list[AiRecurrenceSuggestion] = Field(default_factory=list)
     rename_suggestions: list[AiRenameSuggestion] = Field(default_factory=list)

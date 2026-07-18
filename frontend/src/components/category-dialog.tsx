@@ -8,6 +8,7 @@ import { createCategory } from "@/lib/api";
 import type { Category, CategoryPayload, CategoryType } from "@/lib/types";
 
 interface CategoryDialogProps {
+  initialName?: string;
   initialType?: CategoryType;
   open: boolean;
   onClose: () => void;
@@ -20,7 +21,7 @@ const emptyCategory: CategoryPayload = {
   status: "active",
 };
 
-export function CategoryDialog({ initialType = "expense", open, onClose, onCreated }: CategoryDialogProps) {
+export function CategoryDialog({ initialName = "", initialType = "expense", open, onClose, onCreated }: CategoryDialogProps) {
   const toast = useToast();
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
   const [form, setForm] = useState<CategoryPayload>({ ...emptyCategory, type: initialType });
@@ -30,12 +31,12 @@ export function CategoryDialog({ initialType = "expense", open, onClose, onCreat
   useEffect(() => {
     if (!open) return;
     const timeoutId = window.setTimeout(() => {
-      setForm({ ...emptyCategory, type: initialType });
+      setForm({ ...emptyCategory, name: initialName, type: initialType });
       setError(null);
       firstFieldRef.current?.focus();
     }, 0);
     return () => window.clearTimeout(timeoutId);
-  }, [initialType, open]);
+  }, [initialName, initialType, open]);
 
   useEffect(() => {
     if (!open) return;
