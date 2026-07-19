@@ -648,3 +648,104 @@ export interface OpenFinanceSyncResponse {
   run: OpenFinanceSyncRun;
   items: OpenFinanceItem[];
 }
+
+export type RecurringKind = "installment" | "fixed_bill" | "subscription";
+export type RecurringStatus = "suggested" | "active" | "ignored" | "inactive";
+export type GoalStatus = "active" | "completed" | "paused" | "inactive";
+export type BudgetStatus = "active" | "inactive";
+
+export interface RecurringItem {
+  id: string;
+  user_id: string;
+  name: string;
+  kind: RecurringKind;
+  amount: string;
+  cadence: string;
+  category_id: string | null;
+  account_id: string | null;
+  card_id: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  next_due_date: string | null;
+  status: RecurringStatus;
+  source: string;
+  notes: string | null;
+  metadata: Record<string, unknown>;
+  linked_transaction_count: number;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface RecurringItemPayload {
+  name: string;
+  kind: RecurringKind;
+  amount: string;
+  cadence: string;
+  category_id: string | null;
+  account_id: string | null;
+  card_id: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  next_due_date: string | null;
+  status: RecurringStatus;
+  source: string;
+  notes: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface FinancialGoal {
+  id: string;
+  user_id: string;
+  name: string;
+  target_amount: string;
+  current_amount: string;
+  target_date: string | null;
+  status: GoalStatus;
+  notes: string | null;
+  progress_percent: string;
+  remaining_amount: string;
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface FinancialGoalPayload {
+  name: string;
+  target_amount: string;
+  current_amount: string;
+  target_date: string | null;
+  status: GoalStatus;
+  notes: string | null;
+}
+
+export interface Budget {
+  id: string;
+  user_id: string;
+  name: string;
+  amount: string;
+  period_month: string;
+  category_id: string | null;
+  status: BudgetStatus;
+  notes: string | null;
+  spent_amount: string;
+  remaining_amount: string;
+  usage_percent: string;
+  alert_level: "ok" | "near_limit" | "over_limit";
+  created_at: string;
+  updated_at: string | null;
+}
+
+export interface BudgetPayload {
+  name: string;
+  amount: string;
+  period_month: string;
+  category_id: string | null;
+  status: BudgetStatus;
+  notes: string | null;
+}
+
+export interface PlanningOverview {
+  recurring_items: RecurringItem[];
+  recurring_suggestions: RecurringItem[];
+  goals: FinancialGoal[];
+  budgets: Budget[];
+}

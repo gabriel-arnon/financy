@@ -674,3 +674,71 @@ Pendente operacional:
 - Aplicar migrations `009`, `010` e `011` em Production somente com autorizacao explicita.
 - Validar smoke manual autenticado em Dev/Preview antes de preparar merge para `main`.
 - Nao iniciar pagamentos, Telegram, OCR, audio, inbox, filas ou Fundacao 4 antes da validacao remota autorizada.
+
+## P10 - Planejamento Financeiro
+
+Objetivo:
+
+- Criar uma area propria para planejamento financeiro, usando transacoes reais, Open Finance e IA como apoio, sem criar acoes automaticas sensiveis sem confirmacao do usuario.
+- Manter `P6.6 - Deteccao de recorrencias` como camada de inteligencia/sugestao, enquanto P10 cria a area operacional para gerenciar recorrentes, metas e orcamentos.
+
+### [x] P10.1 - Aba Recorrentes
+
+Objetivo:
+
+- Criar uma aba `Recorrentes` com subtabs para `Parcelas`, `Contas fixas` e `Assinaturas`.
+
+Checklist:
+
+- [x] Criar navegacao lateral para `Recorrentes`.
+- [x] Criar layout com abas internas: `Parcelas`, `Contas fixas`, `Assinaturas`.
+- [x] Permitir cadastro manual de recorrentes.
+- [x] Usar historico/transacoes/Open Finance para detectar recorrentes provaveis.
+- [x] Usar IA para sugerir nome, tipo e explicacao de recorrentes ambiguos.
+- [x] Exigir confirmacao do usuario antes de transformar sugestao em recorrente.
+- [x] Permitir ignorar sugestao de recorrente.
+- [x] Vincular recorrente confirmado as transacoes relacionadas quando seguro.
+- [x] Preparar visao de proximos vencimentos/cobrancas previstas.
+- [x] Garantir que parcelas, contas fixas e assinaturas nao gerem duplicidade no dashboard.
+
+Resultado esperado:
+
+- Usuario consegue acompanhar compras parceladas, contas mensais e assinaturas em uma area propria, com sugestoes assistidas por IA e confirmacao manual.
+
+### [x] P10.2 - Aba Metas e Orcamentos
+
+Objetivo:
+
+- Criar uma aba `Metas e Orcamentos` dividida visualmente em dois cards principais: `Metas` e `Orcamentos`.
+
+Checklist:
+
+- [x] Criar navegacao lateral para `Metas e Orcamentos`.
+- [x] Criar layout inicial com dois cards lado a lado em desktop e empilhados no mobile.
+- [x] Card `Metas`: permitir cadastrar metas financeiras com nome, valor alvo, valor atual, prazo e status.
+- [x] Card `Orcamentos`: permitir cadastrar orcamento mensal por categoria ou grupo de categorias.
+- [x] Mostrar progresso de metas e consumo de orcamento com valores e percentuais.
+- [x] Integrar transacoes confirmadas ao acompanhamento de orcamento.
+- [x] Considerar transacoes Open Finance no calculo.
+- [x] Preparar alertas visuais quando orcamento estiver proximo do limite ou ultrapassado.
+- [x] Nao criar, mover ou alterar transacoes automaticamente a partir de metas/orcamentos.
+
+Resultado esperado:
+
+- Usuario consegue acompanhar objetivos financeiros e limites de gastos mensais em uma tela clara, separada em dois cards: metas e orcamentos.
+
+Validacao:
+
+```powershell
+cd frontend
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run build
+```
+
+Se houver backend, migration, API ou persistencia:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```

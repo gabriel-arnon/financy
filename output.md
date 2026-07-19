@@ -1645,3 +1645,27 @@ Risco residual:
 - Investimentos usam campos financeiros comuns (`balance`, `amount`, `currentAmount`, `grossAmount`, `netAmount`, `value`) porque a resposta pode variar por instituicao/conector.
 - Implementar sync de faturas/cartao detalhada apos observar payload real de bills/statements.
 - Criar scheduler/cron protegido para sync diaria, se o webhook nao for suficiente.
+
+## P10 - Planejamento Financeiro
+
+Entregas:
+
+- Criada aba `Recorrentes` com subtabs `Parcelas`, `Contas fixas` e `Assinaturas`.
+- Recorrentes podem ser cadastrados manualmente, editados, removidos e acompanhados por proximo vencimento.
+- Sugestoes de recorrentes usam historico de transacoes, incluindo transacoes vindas do Open Finance, exigem confirmacao manual e podem ser ignoradas.
+- Recorrentes confirmados vinculam transacoes relacionadas quando a correspondencia e segura e nao geram transacoes novas no dashboard.
+- Criada aba `Metas e Orcamentos` com dois cards principais: metas financeiras e orcamentos mensais.
+- Metas exibem progresso por valor alvo, valor atual, prazo e status.
+- Orcamentos calculam consumo mensal por categoria usando transacoes confirmadas, incluindo Open Finance, com alerta visual perto do limite ou acima dele.
+- Criada migration `013_planning_finance.sql` para persistir recorrentes, vinculos, metas e orcamentos.
+
+Validacao:
+
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_planning_service.py` passou com 3 testes.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest` passou com 133 testes.
+- `frontend`: `npm.cmd run typecheck`, `npm.cmd run lint` e `npm.cmd run build` passaram.
+
+Risco residual:
+
+- Aplicar `docs/supabase/migrations/013_planning_finance.sql` no banco Dev/Preview antes de usar as novas abas no deploy.
+- As sugestoes de recorrentes usam heuristica local com explicacao assistida; podem ser refinadas depois com provider de IA estruturado.

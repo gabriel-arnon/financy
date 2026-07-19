@@ -6,6 +6,8 @@ import { AccountsContent } from "@/components/accounts-content";
 import { CardsContent } from "@/components/cards-content";
 import { DashboardContent } from "@/components/dashboard-content";
 import { GuestReimbursementsContent } from "@/components/guest-reimbursements-content";
+import { PlanningContent } from "@/components/planning-content";
+import { RecurringContent } from "@/components/recurring-content";
 import { ReimbursementsContent } from "@/components/reimbursements-content";
 import { RulesContent } from "@/components/rules-content";
 import { StatementsContent } from "@/components/statements-content";
@@ -25,6 +27,7 @@ import {
   getReimbursementInvitations,
   getReimbursementMemberships,
   getGuestReimbursementClaims,
+  getPlanningOverview,
   getStatements,
   getTransactions
 } from "@/lib/api";
@@ -388,6 +391,44 @@ export function TransactionsPageLoader({
           />
         </section>
       )}
+    />
+  );
+}
+
+export function RecurringPageLoader() {
+  const ready = useReadyForData();
+  const load = useCallback(async () => {
+    const [overview, categories, accounts, cards] = await Promise.all([getPlanningOverview(), getCategories(), getAccounts(), getCards()]);
+    return { overview, categories, accounts, cards };
+  }, []);
+  const state = usePageData(ready, load, "Falha ao carregar recorrentes.");
+
+  return (
+    <PageDataBoundary
+      {...state}
+      label="Carregando recorrentes..."
+      variant="list"
+      render={({ overview, categories, accounts, cards }) => (
+        <RecurringContent initialOverview={overview} categories={categories} accounts={accounts} cards={cards} />
+      )}
+    />
+  );
+}
+
+export function PlanningPageLoader() {
+  const ready = useReadyForData();
+  const load = useCallback(async () => {
+    const [overview, categories] = await Promise.all([getPlanningOverview(), getCategories()]);
+    return { overview, categories };
+  }, []);
+  const state = usePageData(ready, load, "Falha ao carregar metas e orcamentos.");
+
+  return (
+    <PageDataBoundary
+      {...state}
+      label="Carregando metas e orcamentos..."
+      variant="list"
+      render={({ overview, categories }) => <PlanningContent initialOverview={overview} categories={categories} />}
     />
   );
 }

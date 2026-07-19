@@ -355,6 +355,124 @@ class PostgresRepository:
     def delete_card(self, user_id: str, card_id: str) -> dict[str, Any] | None:
         return self.update_card(user_id, card_id, {"status": "inactive"})
 
+    def list_recurring_items(self, user_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            """
+            select
+              ri.*,
+              coalesce(count(rit.id), 0)::int as linked_transaction_count
+            from recurring_items ri
+            left join recurring_item_transactions rit
+              on rit.recurring_item_id = ri.id and rit.user_id = ri.user_id
+            where ri.user_id = %s and ri.status <> 'inactive'
+            group by ri.id
+            order by ri.next_due_date nulls last, ri.created_at desc
+            """,
+            (user_id,),
+        )
+
+    def create_recurring_item(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_profile(user_id)
+        return self._insert(
+            "recurring_items",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "user_id": user_id,
+                "metadata": {},
+                "created_at": datetime.now(timezone.utc),
+                **payload,
+            },
+        )
+
+    def update_recurring_item(self, user_id: str, recurring_item_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update(
+            "recurring_items",
+            {**payload, "updated_at": datetime.now(timezone.utc)},
+            "id = %s and user_id = %s",
+            (recurring_item_id, user_id),
+        )
+
+    def link_recurring_item_transaction(self, user_id: str, recurring_item_id: str, transaction_id: str) -> dict[str, Any]:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                insert into recurring_item_transactions (id, user_id, recurring_item_id, transaction_id, created_at)
+                values (%s, %s, %s, %s, %s)
+                on conflict (user_id, recurring_item_id, transaction_id) do update set transaction_id = excluded.transaction_id
+                returning *
+                """,
+                (str(uuid4()), user_id, recurring_item_id, transaction_id, datetime.now(timezone.utc)),
+            )
+            return _record(cur.fetchone()) or {}
+
+    def count_recurring_item_transactions(self, user_id: str, recurring_item_id: str) -> int:
+        result = self._fetch_one(
+            "select count(*)::int as count from recurring_item_transactions where user_id = %s and recurring_item_id = %s",
+            (user_id, recurring_item_id),
+        )
+        return int((result or {}).get("count") or 0)
+
+    def list_financial_goals(self, user_id: str) -> list[dict[str, Any]]:
+        return self._fetch_all(
+            "select * from financial_goals where user_id = %s and status <> 'inactive' order by target_date nulls last, created_at desc",
+            (user_id,),
+        )
+
+    def create_financial_goal(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_profile(user_id)
+        return self._insert(
+            "financial_goals",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "user_id": user_id,
+                "created_at": datetime.now(timezone.utc),
+                **payload,
+            },
+        )
+
+    def update_financial_goal(self, user_id: str, goal_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update(
+            "financial_goals",
+            {**payload, "updated_at": datetime.now(timezone.utc)},
+            "id = %s and user_id = %s",
+            (goal_id, user_id),
+        )
+
+    def list_budgets(self, user_id: str, period_month: str | None = None) -> list[dict[str, Any]]:
+        if period_month:
+            return self._fetch_all(
+                """
+                select * from budgets
+                where user_id = %s and status <> 'inactive' and period_month = %s
+                order by created_at desc
+                """,
+                (user_id, period_month),
+            )
+        return self._fetch_all(
+            "select * from budgets where user_id = %s and status <> 'inactive' order by period_month desc, created_at desc",
+            (user_id,),
+        )
+
+    def create_budget(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_profile(user_id)
+        return self._insert(
+            "budgets",
+            {
+                "id": payload.get("id") or str(uuid4()),
+                "user_id": user_id,
+                "created_at": datetime.now(timezone.utc),
+                **payload,
+            },
+        )
+
+    def update_budget(self, user_id: str, budget_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        return self._update(
+            "budgets",
+            {**payload, "updated_at": datetime.now(timezone.utc)},
+            "id = %s and user_id = %s",
+            (budget_id, user_id),
+        )
+
     def list_open_finance_items(self, user_id: str) -> list[dict[str, Any]]:
         return self._fetch_all(
             "select * from open_finance_items where user_id = %s order by created_at desc",

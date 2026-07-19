@@ -114,6 +114,10 @@ class LocalJsonRepository:
                     "open_finance_account_links": [],
                     "open_finance_transaction_links": [],
                     "open_finance_sync_runs": [],
+                    "recurring_items": [],
+                    "recurring_item_transactions": [],
+                    "financial_goals": [],
+                    "budgets": [],
                 }
             )
 
@@ -407,6 +411,115 @@ class LocalJsonRepository:
 
     def delete_card(self, user_id: str, card_id: str) -> dict[str, Any] | None:
         return self.update_card(user_id, card_id, {"status": "inactive"})
+
+    def _ensure_planning_collections(self, data: dict[str, Any]) -> None:
+        data.setdefault("recurring_items", [])
+        data.setdefault("recurring_item_transactions", [])
+        data.setdefault("financial_goals", [])
+        data.setdefault("budgets", [])
+
+    def list_recurring_items(self, user_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_planning_collections(data)
+        return [item for item in data["recurring_items"] if item["user_id"] == user_id and item.get("status") != "inactive"]
+
+    def create_recurring_item(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_planning_collections(data)
+        now = datetime.now(timezone.utc).isoformat()
+        record = {"id": payload.get("id") or str(uuid4()), "user_id": user_id, "created_at": now, "updated_at": None, **payload}
+        data["recurring_items"].append(record)
+        self._write(data)
+        return record
+
+    def update_recurring_item(self, user_id: str, recurring_item_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_planning_collections(data)
+        for index, item in enumerate(data["recurring_items"]):
+            if item["id"] == recurring_item_id and item["user_id"] == user_id:
+                updated = {**item, **payload, "updated_at": datetime.now(timezone.utc).isoformat()}
+                data["recurring_items"][index] = updated
+                self._write(data)
+                return updated
+        return None
+
+    def link_recurring_item_transaction(self, user_id: str, recurring_item_id: str, transaction_id: str) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_planning_collections(data)
+        for item in data["recurring_item_transactions"]:
+            if item["user_id"] == user_id and item["recurring_item_id"] == recurring_item_id and item["transaction_id"] == transaction_id:
+                return item
+        record = {
+            "id": str(uuid4()),
+            "user_id": user_id,
+            "recurring_item_id": recurring_item_id,
+            "transaction_id": transaction_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        data["recurring_item_transactions"].append(record)
+        self._write(data)
+        return record
+
+    def count_recurring_item_transactions(self, user_id: str, recurring_item_id: str) -> int:
+        data = self._read()
+        self._ensure_planning_collections(data)
+        return len([item for item in data["recurring_item_transactions"] if item["user_id"] == user_id and item["recurring_item_id"] == recurring_item_id])
+
+    def list_financial_goals(self, user_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_planning_collections(data)
+        return [item for item in data["financial_goals"] if item["user_id"] == user_id and item.get("status") != "inactive"]
+
+    def create_financial_goal(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_planning_collections(data)
+        now = datetime.now(timezone.utc).isoformat()
+        record = {"id": payload.get("id") or str(uuid4()), "user_id": user_id, "created_at": now, "updated_at": None, **payload}
+        data["financial_goals"].append(record)
+        self._write(data)
+        return record
+
+    def update_financial_goal(self, user_id: str, goal_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_planning_collections(data)
+        for index, item in enumerate(data["financial_goals"]):
+            if item["id"] == goal_id and item["user_id"] == user_id:
+                updated = {**item, **payload, "updated_at": datetime.now(timezone.utc).isoformat()}
+                data["financial_goals"][index] = updated
+                self._write(data)
+                return updated
+        return None
+
+    def list_budgets(self, user_id: str, period_month: str | None = None) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_planning_collections(data)
+        return [
+            item
+            for item in data["budgets"]
+            if item["user_id"] == user_id
+            and item.get("status") != "inactive"
+            and (period_month is None or item.get("period_month") == period_month)
+        ]
+
+    def create_budget(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_planning_collections(data)
+        now = datetime.now(timezone.utc).isoformat()
+        record = {"id": payload.get("id") or str(uuid4()), "user_id": user_id, "created_at": now, "updated_at": None, **payload}
+        data["budgets"].append(record)
+        self._write(data)
+        return record
+
+    def update_budget(self, user_id: str, budget_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_planning_collections(data)
+        for index, item in enumerate(data["budgets"]):
+            if item["id"] == budget_id and item["user_id"] == user_id:
+                updated = {**item, **payload, "updated_at": datetime.now(timezone.utc).isoformat()}
+                data["budgets"][index] = updated
+                self._write(data)
+                return updated
+        return None
 
     def _ensure_open_finance_collections(self, data: dict[str, Any]) -> None:
         data.setdefault("open_finance_items", [])

@@ -8,6 +8,7 @@ from app.services.ai_finance_service import AiFinanceService
 from app.services.file_storage_service import FileService
 from app.services.import_service import ImportService
 from app.services.open_finance_service import OpenFinanceService
+from app.services.planning_service import PlanningService
 from app.services.pluggy_client import PluggyClient
 from app.services.reimbursement_service import ReimbursementService
 from app.services.transaction_service import TransactionService
@@ -63,3 +64,7 @@ def get_reimbursement_service() -> ReimbursementService:
 
 def get_open_finance_service() -> OpenFinanceService:
     return OpenFinanceService(repository=repository, settings=settings, pluggy_client=PluggyClient(settings))
+
+
+def get_planning_service() -> PlanningService:
+    return PlanningService(repository=repository)

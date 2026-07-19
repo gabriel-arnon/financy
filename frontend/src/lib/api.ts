@@ -19,9 +19,16 @@ import type {
   GuestReimbursementClaim,
   OpenFinanceConnectToken,
   OpenFinanceItem,
+  PlanningOverview,
   OpenFinanceStatus,
   OpenFinanceSyncResponse,
   OpenFinanceSyncRun,
+  Budget,
+  BudgetPayload,
+  FinancialGoal,
+  FinancialGoalPayload,
+  RecurringItem,
+  RecurringItemPayload,
   ReimbursementClaim,
   ReimbursementClaimAttachment,
   ReimbursementComment,
@@ -214,6 +221,46 @@ export async function syncOpenFinanceItem(externalItemId: string): Promise<OpenF
 
 export async function getOpenFinanceSyncRuns(): Promise<OpenFinanceSyncRun[]> {
   return request<OpenFinanceSyncRun[]>("/open-finance/sync-runs");
+}
+
+export async function getPlanningOverview(periodMonth?: string): Promise<PlanningOverview> {
+  return request<PlanningOverview>(`/planning/overview${periodMonth ? `?period_month=${encodeURIComponent(periodMonth)}` : ""}`);
+}
+
+export async function createRecurringItem(payload: RecurringItemPayload): Promise<RecurringItem> {
+  return request<RecurringItem>("/planning/recurring-items", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateRecurringItem(recurringItemId: string, payload: Partial<RecurringItemPayload>): Promise<RecurringItem> {
+  return request<RecurringItem>(`/planning/recurring-items/${recurringItemId}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export async function deleteRecurringItem(recurringItemId: string): Promise<RecurringItem> {
+  return request<RecurringItem>(`/planning/recurring-items/${recurringItemId}`, { method: "DELETE" });
+}
+
+export async function createFinancialGoal(payload: FinancialGoalPayload): Promise<FinancialGoal> {
+  return request<FinancialGoal>("/planning/goals", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateFinancialGoal(goalId: string, payload: Partial<FinancialGoalPayload>): Promise<FinancialGoal> {
+  return request<FinancialGoal>(`/planning/goals/${goalId}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export async function deleteFinancialGoal(goalId: string): Promise<FinancialGoal> {
+  return request<FinancialGoal>(`/planning/goals/${goalId}`, { method: "DELETE" });
+}
+
+export async function createBudget(payload: BudgetPayload): Promise<Budget> {
+  return request<Budget>("/planning/budgets", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function updateBudget(budgetId: string, payload: Partial<BudgetPayload>): Promise<Budget> {
+  return request<Budget>(`/planning/budgets/${budgetId}`, { method: "PUT", body: JSON.stringify(payload) });
+}
+
+export async function deleteBudget(budgetId: string): Promise<Budget> {
+  return request<Budget>(`/planning/budgets/${budgetId}`, { method: "DELETE" });
 }
 
 export async function askAiFinance(question: string): Promise<AiFinanceQuestionResponse> {

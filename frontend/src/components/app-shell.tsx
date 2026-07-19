@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, CreditCard, Crown, FileUp, HandCoins, Landmark, LayoutDashboard, LogOut, Menu, PiggyBank, Settings, WalletCards, X } from "lucide-react";
+import { BarChart3, ChevronDown, ChevronLeft, ChevronRight, CreditCard, Crown, FileUp, HandCoins, Landmark, LayoutDashboard, LogOut, Menu, PiggyBank, Repeat2, Settings, Target, WalletCards, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { FinanceAssistantLauncher } from "@/components/finance-assistant-launcher";
 import { getOpenFinanceStatus } from "@/lib/api";
@@ -17,6 +17,8 @@ const navItems = [
   { href: "/accounts", label: "Contas Bancárias", icon: WalletCards },
   { href: "/investments", label: "Investimentos", icon: PiggyBank },
   { href: "/cards", label: "Cartões de Crédito", icon: CreditCard },
+  { href: "/recurring", label: "Recorrentes", icon: Repeat2 },
+  { href: "/planning", label: "Metas e Orçamentos", icon: Target },
   { href: "/importacao", label: "Importação", icon: FileUp }
 ];
 
