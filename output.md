@@ -1669,3 +1669,23 @@ Risco residual:
 
 - Aplicar `docs/supabase/migrations/013_planning_finance.sql` no banco Dev/Preview antes de usar as novas abas no deploy.
 - As sugestoes de recorrentes usam heuristica local com explicacao assistida; podem ser refinadas depois com provider de IA estruturado.
+
+## IA - Provider compartilhado para planejamento
+
+Entregas:
+
+- Criada camada `AiProviderClient` para chamadas OpenAI-compatible com resposta JSON estruturada.
+- Importacao assistida passou a usar o provider compartilhado em vez de montar HTTP diretamente.
+- Planejamento/recorrentes passou a usar `AiPlanningAnalyzer` para enriquecer sugestoes provaveis com nome, tipo, explicacao e confianca.
+- Sugestoes de recorrentes continuam sem acao automatica sensivel: a IA apenas sugere, e o usuario precisa confirmar ou ignorar.
+- Provider envia apenas candidatos compactos de recorrencia, valores, meses, descricoes de amostra e categorias, sem mandar o banco completo.
+- Variaveis preferenciais passam a ser `AI_*`, mantendo aliases legados `AI_IMPORT_*` quando `AI_*` nao estiver configurado.
+
+Validacao:
+
+- `backend`: `.\.venv\Scripts\python.exe -m pytest` passou com 136 testes.
+
+Risco residual:
+
+- Para testar IA real no Dev/Preview, configurar `AI_ENABLED=true`, `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_PROVIDER` e `AI_TIMEOUT_SECONDS` no Render.
+- As respostas do provider sao tratadas como sugestao; qualquer ajuste financeiro continua dependendo de confirmacao humana.

@@ -5,6 +5,8 @@ from app.core.config import settings
 from app.repositories.factory import create_repository
 from app.services.ai_import_service import AiImportAnalyzer
 from app.services.ai_finance_service import AiFinanceService
+from app.services.ai_planning_service import AiPlanningAnalyzer
+from app.services.ai_provider import AiProviderClient
 from app.services.file_storage_service import FileService
 from app.services.import_service import ImportService
 from app.services.open_finance_service import OpenFinanceService
@@ -42,7 +44,7 @@ def get_request_user(request: Request) -> CurrentUser:
 
 
 def get_import_service() -> ImportService:
-    analyzer = AiImportAnalyzer(settings)
+    analyzer = AiImportAnalyzer(settings, provider=AiProviderClient(settings))
     return ImportService(repository=repository, upload_dir=settings.upload_dir, ai_analyzer=analyzer)
 
 
@@ -67,4 +69,5 @@ def get_open_finance_service() -> OpenFinanceService:
 
 
 def get_planning_service() -> PlanningService:
-    return PlanningService(repository=repository)
+    provider = AiProviderClient(settings)
+    return PlanningService(repository=repository, ai_planning_analyzer=AiPlanningAnalyzer(provider))

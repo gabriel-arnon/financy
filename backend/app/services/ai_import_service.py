@@ -5,7 +5,6 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
-import httpx
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.core.config import Settings
@@ -14,6 +13,7 @@ from app.models.enums import ExcludedReason, TransactionType
 from app.parsers.pdf_parser import _extract_text
 from app.parsers.utils import parse_brazilian_money
 from app.schemas.common import IgnoredPdfLine, NormalizedTransactionPreview, ParserResult, StatementMetadata
+from app.services.ai_provider import AiProviderClient
 
 
 class AiCard(BaseModel):
@@ -127,18 +127,6 @@ def _parse_ai_money(value: str | None) -> Decimal | None:
             return None
 
 
-def _json_from_response(content: str) -> dict[str, Any]:
-    cleaned = content.strip()
-    if cleaned.startswith("```"):
-        cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.IGNORECASE).strip()
-        cleaned = re.sub(r"```$", "", cleaned).strip()
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise AppError("A IA nao retornou JSON valido.", status_code=502, code="ai_import_invalid_json")
-    return json.loads(cleaned[start : end + 1])
-
-
 def _prompt_for_text(text: str) -> list[dict[str, str]]:
     schema_description = """
 Retorne somente JSON valido com este formato:
@@ -239,12 +227,13 @@ Retorne somente JSON valido:
 
 
 class AiImportAnalyzer:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, provider: AiProviderClient | None = None) -> None:
         self.settings = settings
+        self.provider = provider or AiProviderClient(settings)
 
     @property
     def enabled(self) -> bool:
-        return bool(self.settings.ai_import_enabled and self.settings.ai_import_api_key)
+        return self.provider.enabled
 
     def analyze_pdf(self, path: Path) -> ParserResult:
         if not self.enabled:
@@ -260,50 +249,20 @@ class AiImportAnalyzer:
         return self._to_parser_result(extraction)
 
     def _call_provider(self, text: str) -> AiInvoiceExtraction:
-        url = self.settings.ai_import_base_url.rstrip("/") + "/chat/completions"
-        payload = {
-            "model": self.settings.ai_import_model,
-            "messages": _prompt_for_text(text),
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-        }
         try:
-            response = httpx.post(
-                url,
-                headers={"Authorization": f"Bearer {self.settings.ai_import_api_key}", "Content-Type": "application/json"},
-                json=payload,
-                timeout=self.settings.ai_import_timeout_seconds,
-            )
-            response.raise_for_status()
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
-            return AiInvoiceExtraction.model_validate(_json_from_response(content))
-        except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError, ValidationError) as exc:
+            return AiInvoiceExtraction.model_validate(self.provider.chat_json(_prompt_for_text(text), code="ai_import_failed"))
+        except (AppError, ValidationError) as exc:
             raise AppError("Falha na analise com IA. Tente novamente ou revise o arquivo manualmente.", status_code=502, code="ai_import_failed") from exc
 
     def enrich_preview_items(self, items: list[dict[str, Any]], categories: list[dict[str, Any]], total_amount: Any | None = None) -> AiPreviewEnrichment:
         if not self.enabled or not items:
             return AiPreviewEnrichment()
 
-        url = self.settings.ai_import_base_url.rstrip("/") + "/chat/completions"
-        payload = {
-            "model": self.settings.ai_import_model,
-            "messages": _prompt_for_preview_items(items, categories, total_amount),
-            "temperature": 0,
-            "response_format": {"type": "json_object"},
-        }
         try:
-            response = httpx.post(
-                url,
-                headers={"Authorization": f"Bearer {self.settings.ai_import_api_key}", "Content-Type": "application/json"},
-                json=payload,
-                timeout=self.settings.ai_import_timeout_seconds,
+            return AiPreviewEnrichment.model_validate(
+                self.provider.chat_json(_prompt_for_preview_items(items, categories, total_amount), code="ai_import_enrichment_failed")
             )
-            response.raise_for_status()
-            data = response.json()
-            content = data["choices"][0]["message"]["content"]
-            return AiPreviewEnrichment.model_validate(_json_from_response(content))
-        except (httpx.HTTPError, KeyError, IndexError, json.JSONDecodeError, ValidationError):
+        except (AppError, ValidationError):
             return AiPreviewEnrichment(
                 consistency_status="unknown",
                 consistency_message="Nao foi possivel enriquecer a previa com IA.",
@@ -344,8 +303,8 @@ class AiImportAnalyzer:
                     raw_text=tx.raw_text,
                     raw_row={
                         "parser": "ai_import_v1",
-                        "provider": self.settings.ai_import_provider,
-                        "model": self.settings.ai_import_model,
+                        "provider": self.provider.provider_name,
+                        "model": self.provider.model,
                         "source": "ai",
                     },
                     parser_confidence=confidence,

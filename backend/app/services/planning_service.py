@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, datetime
 from decimal import Decimal
+from hashlib import sha1
 from typing import Any
 
 from app.core.errors import AppError
@@ -52,8 +53,9 @@ def _progress(current: Decimal, target: Decimal) -> Decimal:
 
 
 class PlanningService:
-    def __init__(self, repository: Any):
+    def __init__(self, repository: Any, ai_planning_analyzer: Any | None = None):
         self.repository = repository
+        self.ai_planning_analyzer = ai_planning_analyzer
 
     def overview(self, user_id: str, period_month: str | None = None) -> PlanningOverview:
         month = period_month or _month()
@@ -188,6 +190,7 @@ class PlanningService:
 
     def _recurring_suggestions(self, user_id: str) -> list[RecurringItemRead]:
         existing_names = {normalize_description(item.get("name", "")) for item in self.repository.list_recurring_items(user_id)}
+        categories = self.repository.categories(user_id)
         grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
         for transaction in self.repository.list_transactions(user_id):
             if transaction.get("type") not in EXPENSE_TYPES:
@@ -209,9 +212,11 @@ class PlanningService:
             name = str(sample.get("description") or description_key).title()
             description_terms = description_key.lower()
             kind = "subscription" if any(term in description_terms for term in ("assinatura", "netflix", "spotify", "openai", "amazon", "icloud")) else "fixed_bill"
+            suggestion_key = sha1(f"{description_key}|{amount}".encode("utf-8")).hexdigest()[:12]
+            source_counts = Counter(str(item.get("external_source") or item.get("source") or "manual") for item in items)
             suggestions.append(
                 {
-                    "id": f"suggestion-{abs(hash((description_key, amount))) % 10_000_000}",
+                    "id": f"suggestion-{suggestion_key}",
                     "user_id": user_id,
                     "name": name,
                     "kind": kind,
@@ -224,13 +229,21 @@ class PlanningService:
                     "end_date": None,
                     "next_due_date": None,
                     "status": "suggested",
-                    "source": "ai_suggestion",
+                    "source": "heuristic_suggestion",
                     "notes": "Sugestão baseada em transações semelhantes em meses diferentes.",
-                    "metadata": {"transaction_ids": [item["id"] for item in items[:12]], "occurrences": len(items)},
+                    "metadata": {
+                        "transaction_ids": [item["id"] for item in items[:12]],
+                        "occurrences": len(items),
+                        "months": [f"{year:04d}-{month:02d}" for year, month in months],
+                        "sample_descriptions": list(dict.fromkeys(str(item.get("description") or "") for item in items if item.get("description")))[:5],
+                        "source_counts": dict(source_counts),
+                    },
                     "created_at": datetime.now().isoformat(),
                     "updated_at": None,
                 }
             )
+        if self.ai_planning_analyzer:
+            suggestions = self.ai_planning_analyzer.enrich_recurring_suggestions(suggestions, categories)
         return [RecurringItemRead(**item, linked_transaction_count=len(item["metadata"].get("transaction_ids", []))) for item in suggestions[:10]]
 
     def _link_matching_transactions(self, user_id: str, recurring_item: dict[str, Any]) -> None:

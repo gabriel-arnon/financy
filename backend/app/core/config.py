@@ -35,6 +35,12 @@ class Settings(BaseSettings):
     supabase_jwks_url: str | None = None
     supabase_audience: str | None = None
     jwt_secret: str = "change-me-local-only"
+    ai_enabled: bool = Field(default=False, validation_alias=AliasChoices("AI_ENABLED", "AI_IMPORT_ENABLED"))
+    ai_provider: str = Field(default="openai-compatible", validation_alias=AliasChoices("AI_PROVIDER", "AI_IMPORT_PROVIDER"))
+    ai_base_url: str = Field(default="https://api.openai.com/v1", validation_alias=AliasChoices("AI_BASE_URL", "AI_IMPORT_BASE_URL"))
+    ai_api_key: str | None = Field(default=None, validation_alias=AliasChoices("AI_API_KEY", "AI_IMPORT_API_KEY"))
+    ai_model: str = Field(default="gpt-4o-mini", validation_alias=AliasChoices("AI_MODEL", "AI_IMPORT_MODEL"))
+    ai_timeout_seconds: float = Field(default=45.0, validation_alias=AliasChoices("AI_TIMEOUT_SECONDS", "AI_IMPORT_TIMEOUT_SECONDS"))
     ai_import_enabled: bool = False
     ai_import_provider: str = "openai-compatible"
     ai_import_base_url: str = "https://api.openai.com/v1"

@@ -18,13 +18,17 @@ Usar IA como fallback para PDFs desconhecidos ou de baixa confianca e como assis
 ## Variaveis de ambiente
 
 ```env
-AI_IMPORT_ENABLED=false
-AI_IMPORT_PROVIDER=openai-compatible
-AI_IMPORT_BASE_URL=https://api.openai.com/v1
-AI_IMPORT_API_KEY=
-AI_IMPORT_MODEL=gpt-4o-mini
-AI_IMPORT_TIMEOUT_SECONDS=45
+AI_ENABLED=false
+AI_PROVIDER=openai-compatible
+AI_BASE_URL=https://api.openai.com/v1
+AI_API_KEY=
+AI_MODEL=gpt-4o-mini
+AI_TIMEOUT_SECONDS=45
 ```
+
+Aliases legados `AI_IMPORT_*` continuam aceitos quando os nomes `AI_*` nao estiverem configurados.
+
+Esta camada e compartilhada pela importacao assistida e pelas sugestoes de planejamento/recorrentes.
 
 ## Privacidade
 
