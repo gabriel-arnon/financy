@@ -254,3 +254,122 @@ def test_sync_item_infers_institution_from_account_name(tmp_path) -> None:
     account = repository.list_accounts(OWNER_ID)[0]
     assert account["institution"] == "BANCO DO BRASIL S/A"
     assert account["name"] == "Conta Corrente"
+
+
+def test_sync_item_imports_investments_as_investment_accounts(tmp_path) -> None:
+    class InvestmentPluggyClient(FakePluggyClient):
+        def list_transactions(self, account_id: str, **kwargs):
+            return []
+
+        def list_investments(self, item_id: str):
+            return [
+                {
+                    "id": "investment-1",
+                    "itemId": item_id,
+                    "type": "FIXED_INCOME",
+                    "name": "Tesouro Selic",
+                    "grossAmount": "1234.56",
+                    "code": "LFT",
+                }
+            ]
+
+    repository = LocalJsonRepository(tmp_path)
+    service = OpenFinanceService(repository=repository, settings=settings(), pluggy_client=InvestmentPluggyClient())
+
+    result = service.sync_item(OWNER_ID, "item-1")
+
+    investment_accounts = [account for account in repository.list_accounts(OWNER_ID) if account["type"] == "investment"]
+    assert result["run"]["metadata"]["investments_found"] == 1
+    assert investment_accounts[0]["name"] == "Tesouro Selic"
+    assert investment_accounts[0]["balance"] == "1234.56"
+    assert investment_accounts[0]["external_source"] == "open_finance"
+
+
+def test_sync_item_links_credit_card_to_bank_account_from_same_item(tmp_path) -> None:
+    class LinkedCardPluggyClient(FakePluggyClient):
+        def list_accounts(self, item_id: str):
+            return [
+                {
+                    "id": "credit-1",
+                    "itemId": item_id,
+                    "name": "Cartao",
+                    "type": "CREDIT",
+                    "subtype": "CREDIT_CARD",
+                    "number": "1111222233334444",
+                    "taxNumber": "12345678900",
+                    "creditData": {"brand": "MASTERCARD", "level": "GOLD", "creditLimit": 4000},
+                },
+                {
+                    "id": "bank-1",
+                    "itemId": item_id,
+                    "name": "Banco Teste - Conta Corrente",
+                    "type": "BANK",
+                    "subtype": "CHECKING_ACCOUNT",
+                    "number": "12345",
+                    "taxNumber": "12345678900",
+                    "balance": "10",
+                },
+            ]
+
+        def list_transactions(self, account_id: str, **kwargs):
+            return []
+
+    repository = LocalJsonRepository(tmp_path)
+    service = OpenFinanceService(repository=repository, settings=settings(), pluggy_client=LinkedCardPluggyClient())
+
+    service.sync_item(OWNER_ID, "item-1")
+
+    account = repository.list_accounts(OWNER_ID)[0]
+    card = repository.list_cards(OWNER_ID)[0]
+    assert card["account_id"] == account["id"]
+    assert card["name"] == "Banco Teste Mastercard Gold final 4444"
+
+
+def test_sync_item_ignores_own_transfers_and_credit_card_payments(tmp_path) -> None:
+    class IgnoredTransactionsPluggyClient(FakePluggyClient):
+        def list_transactions(self, account_id: str, **kwargs):
+            return [
+                {"id": "transfer-1", "date": "2026-07-04", "description": "PIX TRANSFERENCIA MESMA TITULARIDADE", "amount": "-100", "type": "TRANSFER"},
+                {"id": "payment-1", "date": "2026-07-05", "description": "PAGAMENTO FATURA CARTAO", "amount": "-250", "type": "PAYMENT"},
+            ]
+
+    repository = LocalJsonRepository(tmp_path)
+    service = OpenFinanceService(repository=repository, settings=settings(), pluggy_client=IgnoredTransactionsPluggyClient())
+
+    result = service.sync_item(OWNER_ID, "item-1")
+
+    assert repository.list_transactions(OWNER_ID) == []
+    assert result["run"]["transactions_ignored"] == 2
+    assert result["run"]["metadata"]["transactions_ignored_reasons"] == {"own_transfer": 1, "credit_card_payment": 1}
+
+
+def test_sync_item_maps_positive_credit_card_transaction_as_expense(tmp_path) -> None:
+    class CreditExpensePluggyClient(FakePluggyClient):
+        def list_accounts(self, item_id: str):
+            return [
+                {
+                    "id": "credit-1",
+                    "itemId": item_id,
+                    "name": "GABRIEL ALMEIDA",
+                    "type": "CREDIT",
+                    "subtype": "CREDIT_CARD",
+                    "number": "8928",
+                    "creditData": {"brand": "MASTERCARD", "creditLimit": 3500},
+                }
+            ]
+
+        def list_transactions(self, account_id: str, **kwargs):
+            return [
+                {"id": "tx-card-1", "date": "2026-07-06", "description": "IFOOD", "amount": "55.90", "type": "DEBIT"},
+            ]
+
+    repository = LocalJsonRepository(tmp_path)
+    service = OpenFinanceService(repository=repository, settings=settings(), pluggy_client=CreditExpensePluggyClient())
+
+    service.sync_item(OWNER_ID, "item-1")
+
+    transaction = repository.list_transactions(OWNER_ID)[0]
+    assert transaction["type"] == "expense"
+    assert transaction["amount"] == "55.90"
+    assert transaction["card_id"] == repository.list_cards(OWNER_ID)[0]["id"]
+    assert repository.list_cards(OWNER_ID)[0]["name"] == "Banco Teste Mastercard final 8928"

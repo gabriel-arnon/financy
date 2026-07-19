@@ -139,6 +139,9 @@ class PluggyClient:
     def list_accounts(self, item_id: str) -> list[dict[str, Any]]:
         return self._paginated_get("/accounts", {"itemId": item_id})
 
+    def list_investments(self, item_id: str) -> list[dict[str, Any]]:
+        return self._paginated_get("/investments", {"itemId": item_id})
+
     def list_transactions(self, account_id: str, *, from_date: str | None = None, to_date: str | None = None) -> list[dict[str, Any]]:
         params: dict[str, Any] = {"accountId": account_id}
         if from_date:

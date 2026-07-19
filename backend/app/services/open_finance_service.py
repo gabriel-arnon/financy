@@ -69,6 +69,15 @@ def _split_institution_from_name(name: str) -> tuple[str | None, str]:
     return None, name
 
 
+def _normalized_text(value: Any) -> str:
+    return normalize_description(str(value or "")).upper()
+
+
+def _is_credit_account(account: dict[str, Any]) -> bool:
+    account_type = str(account.get("type") or account.get("subtype") or "").upper()
+    return "CREDIT" in account_type or "CARD" in account_type
+
+
 class OpenFinanceService:
     _sync_locks_guard = Lock()
     _sync_locks: dict[tuple[str, str], Lock] = {}
@@ -185,8 +194,11 @@ class OpenFinanceService:
                 from_date = (datetime.now(timezone.utc).date() - timedelta(days=self.settings.pluggy_sync_lookback_days)).isoformat()
             accounts = self.pluggy_client.list_accounts(external_item_id)
             stats["accounts_found"] = len(accounts)
-            for account in accounts:
-                link = self._sync_account(user_id, item, account, counters)
+            account_links = []
+            sorted_accounts = sorted(accounts, key=lambda account: 1 if _is_credit_account(account) else 0)
+            for account in sorted_accounts:
+                link = self._sync_account(user_id, item, account, counters, account_links)
+                account_links.append(link)
                 try:
                     transactions = self.pluggy_client.list_transactions(str(account.get("id")), from_date=from_date)
                 except PluggyClientError as exc:
@@ -199,6 +211,9 @@ class OpenFinanceService:
                 stats["transactions_found"] += len(transactions)
                 for transaction in transactions:
                     self._sync_transaction(user_id, item, link, transaction, counters, stats)
+            investments = self._list_investments(external_item_id, stats)
+            for investment in investments:
+                self._sync_investment(user_id, item, investment, counters)
             now = datetime.now(timezone.utc)
             item = self.repository.upsert_open_finance_item(
                 user_id,
@@ -267,7 +282,14 @@ class OpenFinanceService:
             "metadata": {"raw_status": item.get("status"), "execution_status": item.get("executionStatus")},
         }
 
-    def _sync_account(self, user_id: str, item: dict[str, Any], account: dict[str, Any], counters: dict[str, int]) -> dict[str, Any]:
+    def _sync_account(
+        self,
+        user_id: str,
+        item: dict[str, Any],
+        account: dict[str, Any],
+        counters: dict[str, int],
+        account_links: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         external_account_id = str(account.get("id"))
         account_type = str(account.get("type") or account.get("subtype") or "").upper()
         raw_name = str(account.get("name") or account.get("marketingName") or account.get("number") or "Open Finance")
@@ -280,10 +302,13 @@ class OpenFinanceService:
         last_digits = (_digits(account.get("number")) or _digits(credit_data.get("number")) or external_account_id)[-4:]
         if not last_digits.isdigit() or len(last_digits) != 4:
             last_digits = "0000"
-        if "CREDIT" in account_type or "CARD" in account_type:
+        if _is_credit_account(account):
             limit_amount = _decimal(credit_data.get("creditLimit") or account.get("creditLimit") or account.get("limit"))
+            card_name = self._smart_card_name(account, institution_name, last_digits)
+            linked_account_id = self._linked_account_id_for_card(account, institution_name, account_links or [])
             payload = {
-                "name": name,
+                "account_id": linked_account_id,
+                "name": card_name,
                 "institution": institution_name,
                 "brand": credit_data.get("brand") or account.get("brand"),
                 "last_digits": last_digits,
@@ -309,7 +334,7 @@ class OpenFinanceService:
                     "account_id": None,
                     "account_type": account.get("type"),
                     "subtype": account.get("subtype"),
-                    "display_name": name,
+                    "display_name": card_name,
                     "institution_name": institution_name,
                     "last_digits": last_digits,
                     "metadata": self._account_metadata(account),
@@ -348,6 +373,72 @@ class OpenFinanceService:
             },
         )
 
+    def _list_investments(self, external_item_id: str, stats: dict[str, Any]) -> list[dict[str, Any]]:
+        if not hasattr(self.pluggy_client, "list_investments"):
+            return []
+        try:
+            investments = self.pluggy_client.list_investments(external_item_id)
+        except PluggyClientError as exc:
+            stats["investments_error"] = _safe_error(exc)
+            return []
+        stats["investments_found"] = len(investments)
+        return investments
+
+    def _sync_investment(self, user_id: str, item: dict[str, Any], investment: dict[str, Any], counters: dict[str, int]) -> None:
+        external_investment_id = str(investment.get("id") or "")
+        if not external_investment_id:
+            return
+        name = str(
+            investment.get("name")
+            or investment.get("code")
+            or investment.get("ticker")
+            or investment.get("isin")
+            or investment.get("type")
+            or "Investimento Open Finance"
+        )
+        institution_name = investment.get("institutionName") or item.get("institution_name")
+        balance = _decimal(
+            investment.get("balance")
+            or investment.get("amount")
+            or investment.get("currentAmount")
+            or investment.get("grossAmount")
+            or investment.get("netAmount")
+            or investment.get("value")
+        )
+        existing = self.repository.get_open_finance_account_link(user_id, PROVIDER, external_investment_id)
+        payload = {
+            "name": name,
+            "institution": institution_name,
+            "agency": None,
+            "account_number": str(investment.get("number") or investment.get("code") or investment.get("ticker") or "") or None,
+            "type": "investment",
+            "balance": str(balance),
+            "status": "active",
+            "external_source": "open_finance",
+        }
+        if existing and existing.get("account_id"):
+            local_account = self.repository.update_account(user_id, existing["account_id"], payload)
+            counters["accounts_updated"] += 1
+        else:
+            local_account = self.repository.create_account(user_id, payload)
+            counters["accounts_created"] += 1
+        self.repository.upsert_open_finance_account_link(
+            user_id,
+            {
+                "provider": PROVIDER,
+                "external_account_id": external_investment_id,
+                "open_finance_item_id": item["id"],
+                "account_id": local_account["id"],
+                "card_id": None,
+                "account_type": "INVESTMENT",
+                "subtype": investment.get("type"),
+                "display_name": name,
+                "institution_name": institution_name,
+                "last_digits": None,
+                "metadata": {"raw_type": investment.get("type"), "item_id": investment.get("itemId"), "raw": investment},
+            },
+        )
+
     def _account_type(self, account_type: str) -> str:
         if "SAV" in account_type:
             return "savings"
@@ -372,7 +463,12 @@ class OpenFinanceService:
         existing = self.repository.get_open_finance_transaction_link(user_id, PROVIDER, external_transaction_id)
         merchant = transaction.get("merchant") if isinstance(transaction.get("merchant"), dict) else {}
         description = str(transaction.get("description") or merchant.get("name") or transaction.get("providerCode") or "Open Finance")
-        tx_type = self._transaction_type(transaction)
+        tx_type = self._transaction_type(transaction, link)
+        ignored_reason = self._ignored_transaction_reason(transaction, link, tx_type)
+        if ignored_reason:
+            counters["transactions_ignored"] += 1
+            self._count_ignored(stats, ignored_reason)
+            return
         payload = {
             "account_id": link.get("account_id"),
             "card_id": link.get("card_id"),
@@ -470,9 +566,15 @@ class OpenFinanceService:
             return ""
         return "|".join([str(link.get("external_account_id") or ""), date, amount, provider_code, description])
 
-    def _transaction_type(self, transaction: dict[str, Any]) -> str:
+    def _transaction_type(self, transaction: dict[str, Any], link: dict[str, Any] | None = None) -> str:
         raw_type = str(transaction.get("type") or transaction.get("operationType") or "").upper()
         amount = _decimal(transaction.get("amount") or transaction.get("value"))
+        if link and link.get("card_id"):
+            if "PAYMENT" in raw_type:
+                return "payment"
+            if "REFUND" in raw_type or amount < 0:
+                return "refund"
+            return "expense"
         if "TRANSFER" in raw_type:
             return "transfer"
         if "PAYMENT" in raw_type:
@@ -482,3 +584,62 @@ class OpenFinanceService:
         if "CREDIT" in raw_type or amount > 0:
             return "income"
         return "expense"
+
+    def _ignored_transaction_reason(self, transaction: dict[str, Any], link: dict[str, Any], tx_type: str) -> str | None:
+        text = _normalized_text(" ".join(str(transaction.get(key) or "") for key in ("description", "providerCode", "type", "operationType")))
+        if tx_type == "transfer":
+            return "own_transfer"
+        credit_payment_terms = (
+            "PAGAMENTO CARTAO",
+            "PAGAMENTO DE CARTAO",
+            "PAGAMENTO FATURA",
+            "PAG FATURA",
+            "PGTO FATURA",
+            "PGTO CARTAO",
+            "DEBITO AUT PAGAMENTO",
+            "DEB AUT PAGAMENTO",
+            "CARTAO DE CREDITO",
+        )
+        if tx_type == "payment" or any(term in text for term in credit_payment_terms):
+            return "credit_card_payment"
+        if link.get("card_id") and tx_type in {"payment", "refund"} and "PAG" in text and "FATURA" in text:
+            return "credit_card_payment"
+        return None
+
+    def _linked_account_id_for_card(self, account: dict[str, Any], institution_name: Any, account_links: list[dict[str, Any]]) -> str | None:
+        candidates = [link for link in account_links if link.get("account_id") and not link.get("card_id")]
+        if not candidates:
+            return None
+        tax_number = _digits(account.get("taxNumber"))
+        institution = _normalized_text(institution_name)
+        for link in candidates:
+            metadata = link.get("metadata") if isinstance(link.get("metadata"), dict) else {}
+            if tax_number and _digits(metadata.get("tax_number")) == tax_number:
+                return str(link["account_id"])
+        for link in candidates:
+            if institution and _normalized_text(link.get("institution_name")) == institution:
+                return str(link["account_id"])
+        return str(candidates[0]["account_id"])
+
+    def _smart_card_name(self, account: dict[str, Any], institution_name: Any, last_digits: str) -> str:
+        credit_data = account.get("creditData") if isinstance(account.get("creditData"), dict) else {}
+        brand = str(credit_data.get("brand") or account.get("brand") or "").strip().upper()
+        level = str(credit_data.get("level") or credit_data.get("brandAdditionalInfo") or "").strip().upper()
+        raw_name = str(account.get("marketingName") or account.get("name") or "").strip()
+        owner = str(account.get("owner") or "").strip()
+        institution = str(institution_name or "").strip()
+        name = raw_name
+        generic_tokens = ("CARTAO", "CARTÃO", "CONTA", "CREDIT", "CREDITO", "CRÉDITO")
+        normalized_name = _normalized_text(name)
+        normalized_owner = _normalized_text(owner)
+        looks_like_owner = bool(normalized_owner and (normalized_name in normalized_owner or normalized_owner in normalized_name))
+        looks_like_person_name = bool(brand and normalized_name and all(token.isalpha() for token in normalized_name.split()) and len(normalized_name.split()) in {2, 3})
+        looks_generic = not name or name.upper() in generic_tokens or name[-4:] == last_digits or looks_like_owner or looks_like_person_name
+        if looks_generic:
+            parts = [part for part in [institution, brand.title() if brand else "", level.title() if level else ""] if part]
+            name = " ".join(parts) or "Cartao Open Finance"
+        cleaned = " ".join(name.replace("•", " ").replace("*", " ").split())
+        suffix = f" final {last_digits}"
+        if last_digits and last_digits != "0000" and last_digits not in cleaned:
+            cleaned = f"{cleaned}{suffix}"
+        return cleaned[:120]

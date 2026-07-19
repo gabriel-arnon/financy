@@ -55,6 +55,21 @@ def test_paginated_get_collects_results(monkeypatch: pytest.MonkeyPatch) -> None
     assert client.list_accounts("item-1") == [{"id": "a"}, {"id": "b"}]
 
 
+def test_list_investments_uses_item_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = PluggyClient(settings())
+    monkeypatch.setattr(client, "authenticate", lambda: "pluggy-key")
+    calls = []
+
+    def fake_request(method, path, **kwargs):
+        calls.append((method, path, kwargs["params"]))
+        return {"results": [{"id": "investment-1"}], "totalPages": 1}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+
+    assert client.list_investments("item-1") == [{"id": "investment-1"}]
+    assert calls == [("GET", "/investments", {"pageSize": 500, "itemId": "item-1", "page": 1})]
+
+
 def test_list_transactions_uses_v2_cursor_pagination(monkeypatch: pytest.MonkeyPatch) -> None:
     client = PluggyClient(settings())
     monkeypatch.setattr(client, "authenticate", lambda: "pluggy-key")

@@ -1622,5 +1622,26 @@ Pendencias restantes:
 
 - Smoke real contra Meu Pluggy/Pluggy apos deploy deste codigo.
 - Confirmar formato oficial da assinatura dos webhooks Pluggy antes de ativar webhooks em producao ampla.
+
+## Open Finance - Qualidade de Sync Pluggy
+
+Entregas:
+
+- Criada aba `Investimentos` no frontend, separando contas tipo `investment` da tela de contas bancarias.
+- Sync Pluggy passou a buscar `/investments` e cadastrar investimentos como contas de investimento.
+- Cartoes de credito vindos do Open Finance passam a tentar vinculo automatico com conta bancaria do mesmo item/instituicao/titular.
+- Transacoes Open Finance de transferencia e pagamento de fatura/cartao sao ignoradas para evitar duplicidade e ruido no dashboard.
+- Transacoes positivas de cartao de credito passam a ser tratadas como despesa, alinhado ao comportamento da Pluggy para contas `CREDIT`.
+- Nomes de cartoes vindos como nome do titular ou genericos passam por normalizacao local para instituicao, bandeira, nivel e final do cartao.
+
+Validacao:
+
+- `backend`: `.\.venv\Scripts\python.exe -m pytest` passou com 130 testes.
+- `frontend`: `npm.cmd run typecheck`, `npm.cmd run lint` e `npm.cmd run build` passaram.
+
+Risco residual:
+
+- O vinculo automatico de cartao usa heuristica por titular/instituicao quando a Pluggy nao fornece relacionamento explicito.
+- Investimentos usam campos financeiros comuns (`balance`, `amount`, `currentAmount`, `grossAmount`, `netAmount`, `value`) porque a resposta pode variar por instituicao/conector.
 - Implementar sync de faturas/cartao detalhada apos observar payload real de bills/statements.
 - Criar scheduler/cron protegido para sync diaria, se o webhook nao for suficiente.

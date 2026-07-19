@@ -295,6 +295,24 @@ export function AccountsPageLoader() {
   );
 }
 
+export function InvestmentsPageLoader() {
+  const ready = useReadyForData();
+  const load = useCallback(async () => {
+    const [accounts, cards] = await Promise.all([getAccounts(), getCards()]);
+    return { accounts, cards };
+  }, []);
+  const state = usePageData(ready, load, "Falha ao carregar investimentos.");
+
+  return (
+    <PageDataBoundary
+      {...state}
+      label="Carregando investimentos..."
+      variant="list"
+      render={({ accounts, cards }) => <AccountsContent initialAccounts={accounts} initialCards={cards} mode="investment" />}
+    />
+  );
+}
+
 export function CardsPageLoader() {
   const ready = useReadyForData();
   const load = useCallback(async () => {
