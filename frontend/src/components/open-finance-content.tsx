@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { Activity, AlertCircle, CheckCircle2, Clock3, Landmark, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import type { ProductType } from "pluggy-js";
@@ -96,6 +96,7 @@ export function OpenFinanceContent() {
   const [items, setItems] = useState<OpenFinanceItem[]>([]);
   const [runs, setRuns] = useState<OpenFinanceSyncRun[]>([]);
   const [jobs, setJobs] = useState<JobRun[]>([]);
+  const [jobsUnavailable, setJobsUnavailable] = useState(false);
   const [externalItemId, setExternalItemId] = useState("");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState<string | null>(null);
@@ -117,22 +118,30 @@ export function OpenFinanceContent() {
     );
   }, [runs]);
 
-  async function loadData() {
+  const refreshJobs = useCallback(async (showToast = true) => {
+    try {
+      const nextJobs = await getJobs();
+      setJobs(nextJobs);
+      setJobsUnavailable(false);
+      if (showToast) toast.info("Status de jobs atualizado.");
+    } catch (err) {
+      setJobs([]);
+      setJobsUnavailable(true);
+      console.warn("Open Finance jobs status unavailable", err);
+      if (showToast) toast.error("Status de jobs indisponivel agora. Use a sincronizacao direta ou tente novamente depois.");
+    }
+  }, [toast]);
+
+  const loadData = useCallback(async () => {
     const nextStatus = await getOpenFinanceStatus();
     setStatus(nextStatus);
     if (nextStatus.enabled) {
-      const [nextItems, nextRuns, nextJobs] = await Promise.all([getOpenFinanceItems(), getOpenFinanceSyncRuns(), getJobs()]);
+      const [nextItems, nextRuns] = await Promise.all([getOpenFinanceItems(), getOpenFinanceSyncRuns()]);
       setItems(nextItems);
       setRuns(nextRuns);
-      setJobs(nextJobs);
+      await refreshJobs(false);
     }
-  }
-
-  async function refreshJobs(showToast = true) {
-    const nextJobs = await getJobs();
-    setJobs(nextJobs);
-    if (showToast) toast.info("Status de jobs atualizado.");
-  }
+  }, [refreshJobs]);
 
   useEffect(() => {
     let active = true;
@@ -149,7 +158,7 @@ export function OpenFinanceContent() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [toast]);
+  }, [loadData, toast]);
 
   async function handleCreateItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -248,7 +257,8 @@ export function OpenFinanceContent() {
       await refreshJobs(false);
       toast.info(job.status === "queued" ? "Sync enviado para a fila." : "Job de sync localizado.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Falha ao enfileirar sincronizacao.");
+      setJobsUnavailable(true);
+      toast.error("Nao foi possivel enfileirar agora. Use sincronizacao direta enquanto o backend de jobs finaliza o deploy.");
     } finally {
       setSyncing(null);
     }
@@ -406,7 +416,7 @@ export function OpenFinanceContent() {
                           <ShieldCheck className="h-4 w-4" />
                           Reconectar
                         </UiButton>
-                        <UiButton disabled={Boolean(syncing) || !status.configured} onClick={() => handleQueueSyncItem(item)} size="sm" title="Enfileirar sincronizacao em segundo plano" type="button" variant="secondary">
+                        <UiButton disabled={Boolean(syncing) || !status.configured || jobsUnavailable} onClick={() => handleQueueSyncItem(item)} size="sm" title="Enfileirar sincronizacao em segundo plano" type="button" variant="secondary">
                           <Clock3 className={cn("h-4 w-4", syncing === `job-${item.external_item_id}` && "animate-spin")} />
                           Fila
                         </UiButton>
@@ -435,7 +445,12 @@ export function OpenFinanceContent() {
             Atualizar status
           </UiButton>
         </div>
-        {openFinanceJobs.length === 0 ? (
+        {jobsUnavailable ? (
+          <div className="flex items-center gap-3 px-4 py-6 text-sm text-stone-600">
+            <AlertCircle className="h-5 w-5 text-amber-600" />
+            <span>Status de jobs indisponivel. A sincronizacao direta continua disponivel.</span>
+          </div>
+        ) : openFinanceJobs.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-stone-500">Nenhum job recente de Open Finance.</div>
         ) : (
           <div className="divide-y divide-stone-100">

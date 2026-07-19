@@ -140,3 +140,18 @@ test("open finance page handles disabled state", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Open Finance" })).toBeVisible();
   await expect(page.getByText("Feature desabilitada ou restrita ao owner.")).toBeVisible();
 });
+
+test("open finance page still loads when jobs endpoint is unavailable", async ({ page }) => {
+  await mockOpenFinanceApi(page);
+  await page.route("**/jobs", async (route) => {
+    await route.abort("failed");
+  });
+
+  await page.goto("/open-finance");
+
+  await expect(page.getByRole("heading", { name: "Open Finance" })).toBeVisible();
+  await expect(page.getByText("Banco Teste")).toBeVisible();
+  await expect(page.getByText("Status de jobs indisponivel. A sincronizacao direta continua disponivel.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sincronizar", exact: true })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Fila" })).toBeDisabled();
+});
