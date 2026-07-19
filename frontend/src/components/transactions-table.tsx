@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowUpDown, ExternalLink, HandCoins, Paperclip, Pencil, Plus, Save, Search, Trash2, Upload, Wand2, X } from "lucide-react";
+import { ArrowUpDown, Download, ExternalLink, HandCoins, Paperclip, Pencil, Plus, Save, Search, Trash2, Upload, Wand2, X } from "lucide-react";
 import { UiButton } from "@/components/ui-button";
 import { useToast } from "@/components/toast-provider";
 import { addReimbursementItem, attachFileToTransaction, createClassificationRule, createReimbursementClaim, createTransaction, deleteTransaction, deleteTransactionAttachment, getFileSignedUrl, getReimbursementClaims, getReimbursementContacts, getTransactionAttachments, updateTransaction, uploadPrivateFile } from "@/lib/api";
@@ -146,6 +146,33 @@ function parseBrlInput(value: string) {
   const digits = value.replace(/\D/g, "");
   if (!digits) return Number.NaN;
   return Number(digits) / 100;
+}
+
+function csvCell(value: string | number | null | undefined) {
+  const text = String(value ?? "");
+  if (/[;"\r\n]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function csvAmount(transaction: Transaction) {
+  const amount = Math.abs(Number(transaction.amount));
+  const signedAmount = expenseTypes.has(transaction.type) ? -amount : amount;
+  return signedAmount.toFixed(2).replace(".", ",");
+}
+
+function downloadCsv(filename: string, rows: string[][]) {
+  const content = rows.map((row) => row.map(csvCell).join(";")).join("\r\n");
+  const blob = new Blob([`\uFEFF${content}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function formFromTransaction(transaction: Transaction): ManualTransactionForm {
@@ -345,6 +372,27 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
   function filterUncategorizedTransactions() {
     setCategory(uncategorizedValue);
     resetVisibleList();
+  }
+
+  function exportFilteredTransactions() {
+    const rowsToExport = sortedTransactions;
+    const exportedAt = new Date().toISOString().slice(0, 10);
+    downloadCsv(`financy-transacoes-${exportedAt}.csv`, [
+      ["data", "descricao", "tipo", "categoria", "conta", "cartao", "status", "origem_dados", "valor", "id"],
+      ...rowsToExport.map((transaction) => [
+        transaction.transaction_date,
+        transaction.description,
+        translateTransactionType(transaction.type),
+        getCategoryName(transaction.category_id, categories),
+        getAccountName(transaction.account_id, accounts),
+        getCardNameWithAccount(transaction.card_id, cards, accounts),
+        transaction.status,
+        transaction.external_source === "open_finance" ? "Open Finance" : "Manual/importacao",
+        csvAmount(transaction),
+        transaction.id
+      ])
+    ]);
+    toast.success(`${rowsToExport.length} transacoes exportadas.`);
   }
 
   async function loadTransactionAttachments(transactionId: string) {
@@ -819,7 +867,10 @@ export function TransactionsTable({ transactions, categories, accounts, cards, i
         </p>
       ) : null}
 
-      <div className="flex justify-end">
+      <div className="flex flex-col justify-end gap-2 sm:flex-row">
+        <UiButton className="w-full sm:w-auto" icon={<Download className="h-4 w-4" />} onClick={exportFilteredTransactions} variant="secondary" disabled={isBusy}>
+          Exportar CSV
+        </UiButton>
         <UiButton className="w-full sm:w-auto" icon={<Plus className="h-4 w-4" />} onClick={openCreateDrawer} variant="primary" disabled={isBusy}>
           Nova transação
         </UiButton>

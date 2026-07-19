@@ -169,13 +169,22 @@ def dev_current_user() -> CurrentUser:
     return CurrentUser(id=settings.dev_user_id, auth_source="dev_bypass")
 
 
+def _store_request_user(request: Request | None, user: CurrentUser) -> None:
+    if request is not None and hasattr(request, "state"):
+        request.state.current_user_id = user.id
+
+
 def get_current_user(request: Request | None = None) -> CurrentUser:
     token = _bearer_token(request)
     if token:
-        return decode_supabase_jwt(token)
+        user = decode_supabase_jwt(token)
+        _store_request_user(request, user)
+        return user
 
     if settings.allows_dev_auth_bypass:
-        return dev_current_user()
+        user = dev_current_user()
+        _store_request_user(request, user)
+        return user
 
     if settings.auth_required:
         raise _unauthorized()

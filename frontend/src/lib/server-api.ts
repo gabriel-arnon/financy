@@ -15,19 +15,47 @@ const API_URL = resolveApiBaseUrl("Financy server API");
 const RETRY_DELAYS_MS = [600, 1500, 3000];
 const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
+function createRequestId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `financy-server-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function logServerApiFailure(details: {
+  path: string;
+  requestId: string;
+  attempt: number;
+  status?: number;
+  message: string;
+}) {
+  console.warn("Financy server API request failed", {
+    path: details.path,
+    method: "GET",
+    request_id: details.requestId,
+    attempt: details.attempt,
+    status: details.status,
+    message: details.message
+  });
+}
+
 async function serverRequest<T>(path: string): Promise<T> {
   const token = (await cookies()).get("financy_access_token")?.value;
+  const requestId = createRequestId();
   const attempts = RETRY_DELAYS_MS.length + 1;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     let response: Response;
     try {
       response = await fetch(`${API_URL}${path}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: {
+          "X-Request-Id": requestId,
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
         cache: "no-store"
       });
     } catch (err) {
@@ -36,7 +64,9 @@ async function serverRequest<T>(path: string): Promise<T> {
         continue;
       }
       const detail = err instanceof Error && err.message ? ` Detalhe: ${err.message}` : "";
-      throw new Error(`Falha de conexao com a API em ${path}.${detail}`);
+      const message = `Falha de conexao com a API em ${path}. Request ID: ${requestId}.${detail}`;
+      logServerApiFailure({ path, requestId, attempt: attempt + 1, message });
+      throw new Error(message);
     }
 
     if (response.ok) {
@@ -44,11 +74,26 @@ async function serverRequest<T>(path: string): Promise<T> {
     }
 
     if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < attempts - 1) {
+      logServerApiFailure({
+        path,
+        requestId,
+        attempt: attempt + 1,
+        status: response.status,
+        message: `Retryable API status ${response.status}`
+      });
       await sleep(RETRY_DELAYS_MS[attempt]);
       continue;
     }
 
     const body = await response.json().catch(() => null);
+    const responseRequestId = response.headers.get("X-Request-Id") ?? body?.error?.request_id ?? requestId;
+    logServerApiFailure({
+      path,
+      requestId: responseRequestId,
+      attempt: attempt + 1,
+      status: response.status,
+      message: body?.error?.message ?? `Erro na API (${response.status})`
+    });
     throw new Error(body?.error?.message ?? `Erro na API (${response.status})`);
   }
 

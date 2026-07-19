@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { ListChecks, Pencil, Plus, Save, Trash2 } from "lucide-react";
+import { Eye, ListChecks, Pencil, Plus, Save, Trash2 } from "lucide-react";
 import { IconButton, UiButton } from "@/components/ui-button";
 import { useToast } from "@/components/toast-provider";
 import {
@@ -9,6 +9,7 @@ import {
   deleteClassificationRule,
   getCategories,
   getClassificationRules,
+  previewClassificationRule,
   updateClassificationRule,
 } from "@/lib/api";
 import { getCategoryName, translateTransactionType } from "@/lib/labels";
@@ -17,6 +18,7 @@ import type {
   ClassificationMatchScope,
   ClassificationRule,
   ClassificationRulePayload,
+  ClassificationRulePreview,
   TransactionType,
 } from "@/lib/types";
 
@@ -33,10 +35,13 @@ interface RuleFormProps {
   compact?: boolean;
   form: ClassificationRulePayload;
   isEditing: boolean;
+  isPreviewing: boolean;
   isSubmitting: boolean;
   onCancel: () => void;
   onChange: (payload: ClassificationRulePayload) => void;
+  onPreview: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  preview: ClassificationRulePreview | null;
 }
 
 type RuleGroupKey = "income" | "expense" | "both";
@@ -62,6 +67,16 @@ const ruleGroups: Array<{ key: RuleGroupKey; title: string }> = [
   { key: "expense", title: "Despesas" },
   { key: "both", title: "Ambas" },
 ];
+
+function withRuleCategory(payload: ClassificationRulePayload, categoryId: string): ClassificationRulePayload {
+  return {
+    ...payload,
+    category_id: categoryId,
+    actions: payload.actions?.map((action) => (
+      action.type === "set_category" ? { ...action, category_id: categoryId } : action
+    ))
+  };
+}
 
 function getRuleGroupKey(rule: ClassificationRule): RuleGroupKey {
   if (rule.transaction_type === "income") return "income";
@@ -101,7 +116,40 @@ function RulesListLoading() {
   );
 }
 
-function RuleForm({ categories, compact = false, form, isEditing, isSubmitting, onCancel, onChange, onSubmit }: RuleFormProps) {
+function formatCurrency(value: string) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value));
+}
+
+function RuleImpactPreview({ preview }: { preview: ClassificationRulePreview }) {
+  return (
+    <div className="mt-4 rounded-md border border-stone-200 bg-white p-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-stone-600">
+        <span className="font-semibold text-ink">{preview.matched_count} encontradas</span>
+        <span>{preview.changed_count} seriam alteradas</span>
+        <span>{preview.unchanged_count} já estão na categoria final</span>
+      </div>
+
+      {preview.samples.length > 0 ? (
+        <div className="mt-3 divide-y divide-stone-100">
+          {preview.samples.map((sample) => (
+            <div key={sample.transaction_id} className="grid gap-2 py-2 text-sm text-stone-600 md:grid-cols-[1fr_110px_1fr]">
+              <div className="min-w-0">
+                <span className="block truncate font-medium text-ink">{sample.description}</span>
+                <span className="text-xs text-stone-500">{sample.transaction_date}</span>
+              </div>
+              <span className="font-medium text-ink">{formatCurrency(sample.amount)}</span>
+              <span className="min-w-0 truncate">
+                {sample.current_category_name ?? "Sem categoria"} → {sample.proposed_category_name ?? "Categoria"}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RuleForm({ categories, compact = false, form, isEditing, isPreviewing, isSubmitting, onCancel, onChange, onPreview, onSubmit, preview }: RuleFormProps) {
   return (
     <form className="rounded-md border border-stone-100 bg-stone-50 p-4" onSubmit={onSubmit}>
       <div className="flex items-center gap-2">
@@ -127,7 +175,7 @@ function RuleForm({ categories, compact = false, form, isEditing, isSubmitting, 
           <select
             className="h-10 w-full rounded-md border border-stone-200 bg-white px-3 text-sm text-ink outline-none transition focus:border-mint focus:ring-2 focus:ring-mint/10"
             disabled={isSubmitting}
-            onChange={(event) => onChange({ ...form, category_id: event.target.value })}
+            onChange={(event) => onChange(withRuleCategory(form, event.target.value))}
             required
             value={form.category_id}
           >
@@ -185,10 +233,20 @@ function RuleForm({ categories, compact = false, form, isEditing, isSubmitting, 
         <UiButton disabled={isSubmitting} icon={isEditing ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />} type="submit" variant="primary">
           {isEditing ? "Salvar regra" : "Criar regra"}
         </UiButton>
+        <UiButton
+          disabled={isSubmitting || isPreviewing || !form.keyword || !form.category_id}
+          icon={<Eye className="h-4 w-4" />}
+          onClick={onPreview}
+          variant="secondary"
+        >
+          {isPreviewing ? "Calculando" : "Prévia"}
+        </UiButton>
         <UiButton disabled={isSubmitting} onClick={onCancel} variant="secondary">
           Cancelar
         </UiButton>
       </div>
+
+      {preview ? <RuleImpactPreview preview={preview} /> : null}
     </form>
   );
 }
@@ -202,6 +260,8 @@ export function RulesContent({ initialRules, initialCategories, compact = false,
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState<ClassificationRule | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [preview, setPreview] = useState<ClassificationRulePreview | null>(null);
   const [isLoading, setIsLoading] = useState(!skipInitialLoad);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -226,6 +286,7 @@ export function RulesContent({ initialRules, initialCategories, compact = false,
     setError(null);
     setEditingId(null);
     setConfirmingDelete(null);
+    setPreview(null);
     setForm({ ...emptyRule, category_id: categories[0]?.id ?? "" });
     setShowCreateForm(true);
   }
@@ -235,6 +296,7 @@ export function RulesContent({ initialRules, initialCategories, compact = false,
     setError(null);
     setShowCreateForm(false);
     setConfirmingDelete(null);
+    setPreview(null);
     setEditingId(rule.id);
     setForm({
       keyword: rule.keyword,
@@ -244,13 +306,42 @@ export function RulesContent({ initialRules, initialCategories, compact = false,
       status: "active",
       match_scope: rule.match_scope,
       auto_created: rule.auto_created,
+      conditions: rule.conditions,
+      condition_logic: rule.condition_logic,
+      actions: rule.actions,
+      rule_version: rule.rule_version,
     });
   }
 
   function cancelEdit() {
     setEditingId(null);
     setShowCreateForm(false);
+    setPreview(null);
     setForm({ ...emptyRule, category_id: categories[0]?.id ?? "" });
+  }
+
+  function updateForm(payload: ClassificationRulePayload) {
+    setPreview(null);
+    setForm(payload);
+  }
+
+  async function handlePreview() {
+    setMessage(null);
+    setError(null);
+    setIsPreviewing(true);
+
+    try {
+      const payload = { ...form, keyword: form.keyword.toUpperCase(), auto_created: false };
+      const impact = await previewClassificationRule(payload);
+      setPreview(impact);
+      toast.info(`${impact.changed_count} transações seriam alteradas.`);
+    } catch (err) {
+      const messageText = err instanceof Error ? err.message : "Falha ao calcular prévia.";
+      setError(messageText);
+      toast.error(messageText);
+    } finally {
+      setIsPreviewing(false);
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -338,10 +429,13 @@ export function RulesContent({ initialRules, initialCategories, compact = false,
             compact={compact}
             form={form}
             isEditing={false}
+            isPreviewing={isPreviewing}
             isSubmitting={isSubmitting}
             onCancel={cancelEdit}
-            onChange={setForm}
+            onChange={updateForm}
+            onPreview={handlePreview}
             onSubmit={handleSubmit}
+            preview={preview}
           />
         </div>
       ) : null}
@@ -374,10 +468,13 @@ export function RulesContent({ initialRules, initialCategories, compact = false,
                         compact={compact}
                         form={form}
                         isEditing
+                        isPreviewing={isPreviewing}
                         isSubmitting={isSubmitting}
                         onCancel={cancelEdit}
-                        onChange={setForm}
+                        onChange={updateForm}
+                        onPreview={handlePreview}
                         onSubmit={handleSubmit}
+                        preview={preview}
                       />
                     ) : (
                       <div key={rule.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-stone-100 bg-stone-50 px-4 py-3">

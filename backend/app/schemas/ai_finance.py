@@ -14,11 +14,23 @@ class AiSuggestedRule(BaseModel):
     transaction_type: str | None = None
     match_count: int
     reason: str
+    conditions: list[dict[str, str | int | float | None]] = Field(default_factory=list)
+    condition_logic: str = "all"
+    actions: list[dict[str, str | None]] = Field(default_factory=list)
+    rule_version: int = 2
 
 
 class AiSuggestedCategory(BaseModel):
     name: str
     type: str = "expense"
+    match_count: int
+    sample_descriptions: list[str] = Field(default_factory=list)
+    reason: str
+
+
+class AiSuggestedPayeeAlias(BaseModel):
+    canonical_name: str
+    aliases: list[str] = Field(default_factory=list)
     match_count: int
     sample_descriptions: list[str] = Field(default_factory=list)
     reason: str
@@ -53,6 +65,7 @@ class AiFinanceOverview(BaseModel):
     insights: list[AiFinanceInsight] = Field(default_factory=list)
     suggested_rules: list[AiSuggestedRule] = Field(default_factory=list)
     suggested_categories: list[AiSuggestedCategory] = Field(default_factory=list)
+    suggested_payee_aliases: list[AiSuggestedPayeeAlias] = Field(default_factory=list)
     category_suggestions: list[AiCategorySuggestion] = Field(default_factory=list)
     recurrence_suggestions: list[AiRecurrenceSuggestion] = Field(default_factory=list)
     rename_suggestions: list[AiRenameSuggestion] = Field(default_factory=list)

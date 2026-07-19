@@ -1689,3 +1689,347 @@ Risco residual:
 
 - Para testar IA real no Dev/Preview, configurar `AI_ENABLED=true`, `AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL`, `AI_PROVIDER` e `AI_TIMEOUT_SECONDS` no Render.
 - As respostas do provider sao tratadas como sugestao; qualquer ajuste financeiro continua dependendo de confirmacao humana.
+
+## P11.1 - Observabilidade de API e `Failed to fetch`
+
+Entregas:
+
+- Backend recebeu middleware central de observabilidade para gerar/propagar `X-Request-Id`.
+- Respostas incluem `X-Request-Id` e `X-Process-Time-Ms`.
+- Logs seguros da API passam a registrar `request_id`, metodo, path, status, duracao e usuario autenticado mascarado quando disponivel.
+- Handlers de erro incluem `request_id` no corpo JSON para facilitar suporte.
+- Frontend client-side e server-side passam a enviar `X-Request-Id`.
+- Falhas de rede/status HTTP no frontend registram path, metodo, tentativa, status e request id, sem payload nem token.
+- Retry automatico permanece restrito a leituras/idempotentes.
+- `ApiError` agora inclui `Request ID` na mensagem exibida pelas telas que usam `err.message`.
+- Criado `docs/failed-fetch-correlation-runbook.md` com fluxo de correlacao entre navegador, Render e Supabase.
+
+Validacao:
+
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_observability.py` passou com 3 testes.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest` passou com 140 testes.
+- `frontend`: `npm.cmd run typecheck`, `npm.cmd run lint` e `npm.cmd run build` passaram.
+- `frontend`: `npm.cmd run typecheck` passou apos expor `Request ID` em `ApiError`.
+- `frontend`: `npm.cmd run lint` passou.
+- `frontend`: `npm.cmd run build` passou.
+
+Risco residual:
+
+- A causa raiz de uma falha historica especifica ainda depende de uma nova ocorrencia real em producao; o runbook define exatamente quais evidencias coletar.
+
+## P11.3 - Plano de workspaces
+
+Entregas:
+
+- Criado `docs/workspaces-plan.md`.
+- Plano define `workspace_id` como tenant financeiro e preserva `user_id` como identidade/ator de auditoria.
+- Papeis iniciais definidos: `owner`, `editor` e `viewer`.
+- Fallback definido para workspace pessoal padrao do usuario atual.
+- Entidades impactadas mapeadas: contas, cartoes, faturas, transacoes, imports, categorias, regras, arquivos, planejamento, Open Finance, ressarcimentos e futuros payees/aliases.
+- Estrategia de migracao incremental definida, mantendo `user_id` durante a primeira fase.
+- Impactos em RLS Supabase, portal guest de ressarcimentos, Open Finance e frontend documentados.
+- Ordem de implementacao, testes obrigatorios, riscos e criterio de pronto foram registrados.
+
+Validacao:
+
+- Revisado contra `docs/auth-user-isolation-plan.md`, `docs/architecture.md`, `docs/supabase/rls_phase3_draft.sql` e `docs/reimbursements-plan.md`.
+
+Risco residual:
+
+- Plano ainda nao implementa migrations nem APIs. A implementacao deve aguardar backup/restore testados, RLS revisada e repository Postgres menos concentrado.
+
+## P11.8 - Exportacao CSV de transacoes
+
+Entregas:
+
+- Tela de transacoes recebeu acao `Exportar CSV`.
+- Exportacao usa as transacoes filtradas e ordenadas atualmente na tela, nao apenas a pagina visivel.
+- CSV inclui BOM UTF-8 e separador `;` para melhor abertura em Excel pt-BR.
+- Colunas exportadas: data, descricao, tipo, categoria, conta, cartao, status, origem dos dados, valor e id.
+- Valor exportado usa sinal negativo para saidas (`expense`/`payment`) e positivo para entradas/estornos.
+- E2E cobre exportacao com filtro ativo de Open Finance e valida que registros fora do filtro nao entram no arquivo.
+
+Validacao:
+
+- `frontend`: `npm.cmd run typecheck` passou.
+- `frontend`: `npm.cmd run lint` passou.
+- `frontend`: `npx.cmd playwright test tests/e2e/transactions.spec.ts --project=chromium --reporter=line` passou com 16 testes.
+- `frontend`: `npm.cmd run build` passou.
+
+Risco residual:
+
+- P11.8 segue em andamento para relatorios de receita vs despesa, patrimonio liquido, drilldown e validacao visual de graficos.
+
+## P11.8 / P6.3 - Comparacao com periodo anterior nos insights
+
+Entregas:
+
+- `AiFinanceService.overview` passou a calcular tambem o mes anterior ao periodo atual analisado.
+- Insights mensais passam a incluir `Comparacao com periodo anterior` quando houver transacoes no mes anterior.
+- O insight compara variacao de saidas e variacao de resultado, com severidade `warning`, `positive` ou `info` conforme o movimento.
+- A mesma entrega fecha a pendencia de P6.3 sobre comparacao com periodo anterior.
+
+Validacao:
+
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_ai_finance_service.py` passou com 5 testes.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest` passou com 140 testes.
+
+Risco residual:
+
+- A comparacao usa meses fechados por data da transacao e o periodo atual continua sendo o mes mais recente presente nos dados do usuario.
+
+## P11.5 - Providers extensiveis para Open Finance
+
+Entregas:
+
+- Criado contrato interno `OpenFinanceProvider`.
+- Criado `PluggyOpenFinanceProvider` para encapsular o client HTTP da Pluggy.
+- `OpenFinanceService` passou a depender de um provider generico e manteve Pluggy apenas como implementacao injetada.
+- Sync runs, items, account links e transaction links passam a usar `provider_name` da implementacao injetada.
+- Regras de owner-only, dedupe, normalizacao, motivos de ignorados e persistencia continuaram concentradas no `OpenFinanceService`.
+- Criado `docs/open-finance-providers.md` documentando contrato, fronteiras e passos para adicionar provider sem expor segredos ao frontend.
+
+Validacao:
+
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_open_finance_service.py tests\test_open_finance_api.py tests\test_open_finance_pluggy_client.py` passou com 26 testes.
+
+Risco residual:
+
+- Ainda existe somente o provider Pluggy implementado. A abstracao esta pronta para novos providers, mas um segundo provider real deve entrar em lote separado com credenciais, fixture propria e testes dedicados.
+
+## P11.2 - Modularizacao inicial do PostgresRepository
+
+Entregas:
+
+- Criado `docs/postgres-repository-modularization.md` com o mapa dos metodos por dominio e ordem sugerida de extracao.
+- Extraido o primeiro dominio de baixo risco para `PostgresCategoriesRulesMixin`.
+- Extraidos lotes adicionais para `PostgresPayeesMixin`, `PostgresJobsMixin` e `PostgresAccountsCardsMixin`.
+- `PostgresRepository` continua sendo a fachada publica retornada por `create_repository(settings)`.
+- Contratos de categorias e regras foram preservados para APIs, servicos e testes existentes.
+- Contratos de contas/cartoes foram preservados com as mesmas queries owner-scoped e soft delete.
+- O lote nao alterou regra financeira, frontend ou persistencia de transacoes.
+
+Validacao:
+
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_categories_api.py tests\test_classification_rules.py tests\test_transactions_api.py tests\test_open_finance_service.py` passou com 31 testes.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_accounts_cards_api.py tests\test_statements_api.py tests\test_transactions_api.py tests\test_open_finance_service.py` passou com 25 testes.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest` passou com 162 testes.
+
+Risco residual:
+
+- Ainda existem dominios grandes no arquivo principal, mas P11.2 foi concluida com extracoes repetidas e verificadas por dominio; proximas extracoes ficam como melhoria incremental.
+
+## P11.8 - Relatorio Receitas vs Despesas
+
+Entregas:
+
+- Dashboard recebeu relatorio `Receitas vs Despesas` agrupado por mes dentro dos filtros ativos.
+- O relatorio mostra barras comparativas de receitas e despesas, resultado liquido e quantidade de transacoes por periodo.
+- Transferencias e pagamentos de cartao continuam fora do calculo do relatorio para evitar distorcao do resultado.
+- E2E de dashboard/insights passou a cobrir a presenca do novo relatorio com receita mockada.
+
+Validacao:
+
+- `frontend`: `npm.cmd run typecheck` passou.
+- `frontend`: `npx.cmd playwright test tests/e2e/finance-assistant-insights.spec.ts --project=chromium --reporter=line` passou com 7 testes.
+- `frontend`: `npm.cmd run lint` passou.
+- `frontend`: `npm.cmd run build` passou.
+
+Risco residual:
+
+- P11.8 segue em andamento para patrimonio liquido, drilldown de categoria e validacao visual desktop/mobile com screenshots.
+
+## P11.8 - Visao inicial de patrimonio liquido
+
+Entregas:
+
+- Dashboard recebeu bloco `Patrimonio liquido`.
+- O total usa saldos atuais de contas ativas e contas de tipo investimento.
+- O bloco separa `Contas`, `Investimentos` e `Limite de cartoes`.
+- Limite de cartao aparece como informacao operacional, mas nao entra no patrimonio liquido.
+- E2E de dashboard/insights passou a cobrir patrimonio com conta corrente e investimento mockados.
+
+Validacao:
+
+- `frontend`: `npm.cmd run typecheck` passou.
+- `frontend`: `npx.cmd playwright test tests/e2e/finance-assistant-insights.spec.ts --project=chromium --reporter=line` passou com 7 testes.
+- `frontend`: `npm.cmd run lint` passou.
+- `frontend`: `npm.cmd run build` passou.
+
+Risco residual:
+
+- A visao ainda nao desconta saldo aberto de faturas/cartoes porque o app nao possui uma fonte unica de divida corrente por cartao nessa tela.
+
+## P11.8 - Drilldown de categoria
+
+Entregas:
+
+- `Gastos por categoria` e `Resumo por categoria` agora permitem abrir `/transactions` filtrada pela categoria.
+- Drilldown preserva tipo `expense`, periodo atual, origem Open Finance quando ativa e cartao quando filtrado.
+- Transferencias e pagamentos de cartao seguem fora dos calculos de categorias e do relatorio `Receitas vs Despesas`.
+- E2E cobre navegacao a partir de categoria para a tela de transacoes filtrada.
+
+Validacao:
+
+- `frontend`: `npm.cmd run typecheck` passou.
+- `frontend`: `npx.cmd playwright test tests/e2e/finance-assistant-insights.spec.ts --project=chromium --reporter=line` passou com 7 testes.
+- `frontend`: `npm.cmd run lint` passou.
+- `frontend`: `npm.cmd run build` passou.
+
+Risco residual:
+
+- Filtro de conta ainda nao e propagado no drilldown porque `/transactions` nao possui `account_id` como query param inicial.
+
+## P11.6 - Payees e merchant aliases
+
+Entregas:
+
+- Criada migration proposta `docs/supabase/migrations/016_payees_and_merchant_aliases.sql` com `payees` e `merchant_aliases`.
+- Criado `PostgresPayeesMixin` e suporte equivalente no `LocalJsonRepository`.
+- `AiFinanceOverview` passou a expor `suggested_payee_aliases`.
+- Dashboard mostra aliases sugeridos em Insights sem aplicar automaticamente.
+- Aliases confirmados passam a ser usados como contexto em classificacao deterministica, recorrencias e busca em linguagem natural.
+- `original_description` permanece intacto; testes cobrem esse comportamento.
+- Criado `docs/payees-merchant-aliases.md` com modelo, uso atual e regras de seguranca.
+
+Validacao:
+
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_classification_rules.py tests\test_ai_finance_service.py` passou com 13 testes.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest` passou com 143 testes.
+- `frontend`: `npm.cmd run typecheck` passou.
+- `frontend`: `npx.cmd playwright test tests/e2e/finance-assistant-insights.spec.ts --project=chromium --reporter=line` passou com 7 testes.
+- `frontend`: `npm.cmd run lint` passou.
+- `frontend`: `npm.cmd run build` passou.
+
+Risco residual:
+
+- Ainda nao existe tela/API dedicada para confirmar e gerenciar aliases; a camada de repository e migration ja esta pronta para essa proxima evolucao.
+
+## P11.7 - Nucleo de regras estruturadas
+
+Entregas:
+
+- Criada migration proposta `docs/supabase/migrations/017_structured_classification_rules.sql` para `conditions`, `actions` e `rule_version`.
+- Criado `backend/app/services/structured_rules.py` com avaliador puro, sem banco e sem efeitos colaterais.
+- Operadores iniciais suportados: `contains`, `starts_with`, `equals`, `regex`, `gt` e `lt`.
+- Acoes iniciais suportadas: `set_category`, `set_payee` e `ignore_from_reports`.
+- Regex invalida ou longa demais e recusada sem executar regra.
+- Criado helper `legacy_keyword_rule_to_structured` para representar regra keyword atual em formato estruturado.
+- Criado `docs/structured-rules.md` com schema, operadores, acoes, seguranca e proximos passos.
+- Integrado o avaliador estruturado ao matcher real usado por importacao, criacao/edicao de transacoes e sincronizacao Open Finance.
+- Persistido o contrato estruturado via schemas/API com `conditions`, `condition_logic`, `actions` e `rule_version`.
+- Adicionada validacao de categoria em acoes `set_category` e bloqueio de regras ativas duplicadas por keyword/tipo/escopo.
+- Preservada a semantica legacy de `match_scope=both` via `combined_description`, sem tornar outras condicoes opcionais.
+- Mantida ordenacao deterministica por `priority` e desempate por `created_at` para regras legacy e estruturadas.
+
+Validacao:
+
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_structured_rules.py tests\test_classification_rules.py` passou com 15 testes.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_import_service.py tests\test_transactions_api.py tests\test_open_finance_service.py` passou com 29 testes.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest` passou com 152 testes.
+- `frontend`: `npm.cmd run typecheck` passou.
+- `frontend`: `npm.cmd run lint` passou.
+- `frontend`: `npm.cmd run build` passou.
+
+Risco residual:
+
+- P11.7 segue em andamento: ainda falta permitir sugestoes de IA estruturadas sempre com confirmacao humana.
+
+## P11.7 - Preview de impacto para regras
+
+Entregas:
+
+- Criado `POST /classification-rules/preview`, reutilizando o payload de criacao de regra e as validacoes de categoria.
+- Criado `backend/app/services/classification_rule_preview_service.py` para calcular impacto sem persistir regra e sem alterar transacoes.
+- O preview retorna total de matches, quantidade que mudaria categoria, quantidade que ja esta na categoria final e amostras com categoria atual/proposta.
+- A tela de regras ganhou botao `Previa` no formulario de criacao/edicao e painel com amostras antes de salvar.
+- Atualizado `docs/structured-rules.md` com contrato e garantia de que a previa nao aplica acoes.
+
+Validacao:
+
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_structured_rules.py tests\test_classification_rules.py` passou com 17 testes.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest` passou com 154 testes.
+- `frontend`: `npm.cmd run typecheck` passou.
+- `frontend`: `npm.cmd run lint` passou.
+- `frontend`: `npm.cmd run build` passou.
+- `frontend`: verificacao visual com Playwright em `/rules` passou; screenshot salvo em `.uploads/rules-preview.png`.
+
+Risco residual:
+
+- Edicao visual avancada de condicoes estruturadas ainda nao existe; hoje a UI cria regras estruturadas via sugestao revisada e regra keyword via formulario manual.
+
+## P11.7 - Sugestoes estruturadas de IA
+
+Entregas:
+
+- `AiSuggestedRule` agora inclui `conditions`, `condition_logic`, `actions` e `rule_version`.
+- `AiFinanceService.overview` sugere regras estruturadas com `combined_description` e acao `set_category`.
+- A sugestao continua assistiva: o dashboard abre `ClassificationRuleDialog`, e a regra so e criada apos confirmacao do usuario.
+- O dialog preserva payload estruturado ao criar a regra sugerida e sincroniza `actions.set_category.category_id` se o usuario trocar a categoria antes de confirmar.
+- A tela `/rules` preserva `conditions/actions/rule_version` ao editar uma regra estruturada existente.
+- Atualizado `docs/structured-rules.md` com o contrato de sugestoes de IA.
+
+Validacao:
+
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_ai_finance_service.py tests\test_classification_rules.py tests\test_structured_rules.py` passou com 25 testes.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest` passou com 155 testes.
+- `frontend`: `npm.cmd run typecheck` passou.
+- `frontend`: `npm.cmd run lint` passou.
+- `frontend`: `npm.cmd run build` passou.
+
+Risco residual:
+
+- Nenhuma regra sugerida por IA e aplicada automaticamente; a unica pendencia futura e uma UI dedicada para montar condicoes estruturadas manualmente.
+
+## P11.8 - Validacao visual de analytics
+
+Entregas:
+
+- Gerados screenshots do dashboard com dados mockados e APIs interceptadas por Playwright.
+- Desktop salvo em `.uploads/dashboard-desktop.png`.
+- Mobile salvo em `.uploads/dashboard-mobile.png`.
+- Validacao visual confirmou renderizacao de `Receitas vs Despesas`, `Patrimonio liquido`, `Gastos por categoria` e `Aliases sugeridos`.
+- Corrigidos labels novos que estavam com mojibake no dashboard.
+
+Validacao:
+
+- `frontend`: `npm.cmd run typecheck` passou.
+- `frontend`: `npm.cmd run lint` passou.
+- `frontend`: `npm.cmd run build` passou.
+
+Risco residual:
+
+- Screenshots usam mocks locais; validacao com dados reais de producao continua dependente do ambiente remoto.
+
+## P11.4 - Fundacao para jobs assincronos
+
+Entregas:
+
+- Decidida estrategia inicial: fila simples em PostgreSQL antes de adicionar Redis.
+- Criada migration proposta `docs/supabase/migrations/015_job_runs.sql`.
+- Criado `docs/async-jobs-plan.md` com contrato de `job_runs`, candidatos, fluxo de Open Finance, importacoes grandes, IA financeira, frontend e operacao.
+- Open Finance sync foi definido como primeiro candidato a job, preservando endpoint sincrono atual durante a transicao.
+- Importacao grande e IA financeira pesada foram avaliadas como segundo e terceiro candidatos.
+- Criados `JobService`, schema `JobRunRead`, repository local e mixin Postgres para `job_runs`.
+- Adicionados `GET /jobs`, `GET /jobs/{job_id}` e `POST /open-finance/items/{external_item_id}/sync-jobs`.
+- Jobs de sync Open Finance agora sao idempotentes por `provider:external_item_id:yyyy-mm-dd`, sem aceitar `user_id` do cliente.
+- `PostgresRepository` recebeu `PostgresJobsMixin`, continuando a modularizacao por dominio.
+- `/open-finance` ganhou UI de jobs: botao `Fila` por item, banner de jobs ativos, lista de jobs recentes e atualizacao manual de status.
+- Criado screenshot de validacao visual em `.uploads/open-finance-jobs.png`.
+- Criado `JobWorkerService` para consumir jobs `queued`, marcar `running`, executar `OpenFinanceService.sync_item` e finalizar com `success/error`.
+- Criado entrypoint `python -m app.workers.job_worker` com modo `--once` para smoke test/local.
+
+Validacao:
+
+- Revisao estatica da migration e do contrato contra a arquitetura atual.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest tests\test_jobs_api.py tests\test_open_finance_api.py` passou com 14 testes.
+- `backend`: `.\.venv\Scripts\python.exe -m pytest` passou com 162 testes.
+- `frontend`: `npx.cmd playwright test tests/e2e/open-finance.spec.ts --project=chromium --reporter=line` passou com 2 testes.
+- `frontend`: `npm.cmd run typecheck` passou.
+- `frontend`: `npm.cmd run lint` passou.
+- `frontend`: `npm.cmd run build` passou.
+- Nenhuma migration foi aplicada em ambiente real.
+
+Risco residual:
+
+- Worker precisa ser configurado como processo separado no ambiente de deploy; nenhuma migration foi aplicada em ambiente real.

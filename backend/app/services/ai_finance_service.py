@@ -16,6 +16,7 @@ from app.schemas.ai_finance import (
     AiRecurrenceSuggestion,
     AiRenameSuggestion,
     AiSuggestedCategory,
+    AiSuggestedPayeeAlias,
     AiSuggestedRule,
 )
 
@@ -35,8 +36,28 @@ STOPWORDS = {
     "mercado",
     "loja",
     "online",
+    "com",
+    "pag",
+    "pagto",
+    "superdigital",
+    "internet",
 }
 GENERIC_CATEGORY_NAMES = {"outros", "outras", "diversos", "diversas", "sem categoria", "geral"}
+PAYEE_NOISE_WORDS = STOPWORDS | {
+    "assinatura",
+    "brasil",
+    "ecommerce",
+    "marketplace",
+    "mercadopago",
+    "mp",
+    "pagseguro",
+    "pay",
+    "recarga",
+    "sa",
+    "servico",
+    "servicos",
+    "shop",
+}
 
 
 def _money(value: Any) -> Decimal:
@@ -82,9 +103,26 @@ def _pretty_description(description: str) -> str:
     return cleaned.title() if cleaned.isupper() else cleaned
 
 
+def _alias_fingerprint(description: str) -> str | None:
+    normalized = _normalize_description(description)
+    normalized = re.sub(r"\b\d+\b", " ", normalized)
+    words = [word for word in normalized.split() if len(word) >= 3 and word not in PAYEE_NOISE_WORDS]
+    if not words:
+        return None
+    return " ".join(words[:2])
+
+
 def _category_candidate_name(keyword: str) -> str:
     words = [word for word in keyword.split() if word and word not in STOPWORDS]
     return " ".join(words[:2]).title()
+
+
+def _previous_month(value: date | None) -> date | None:
+    if value is None:
+        return None
+    if value.month == 1:
+        return date(value.year - 1, 12, 1)
+    return date(value.year, value.month - 1, 1)
 
 
 class AiFinanceService:
@@ -95,16 +133,18 @@ class AiFinanceService:
         transactions = self.repository.list_transactions(user_id)
         categories = self.repository.categories(user_id)
         rules = self.repository.list_classification_rules(user_id)
+        payee_aliases = self._payee_aliases(user_id)
         category_by_id = {category["id"]: category for category in categories}
         transaction_dates = [parsed for item in transactions if (parsed := _parse_date(item.get("transaction_date")))]
         current_month = max(transaction_dates, default=None)
         month_transactions = self._month_transactions(transactions, current_month)
+        previous_month_transactions = self._month_transactions(transactions, _previous_month(current_month))
 
         income_total = sum((_money(item.get("amount")) for item in month_transactions if item.get("type") in INCOME_TYPES), Decimal("0"))
         expense_total = sum((_money(item.get("amount")) for item in month_transactions if item.get("type") in EXPENSE_TYPES), Decimal("0"))
         net_total = income_total - expense_total
 
-        insights = self._insights(month_transactions, category_by_id, income_total, expense_total, net_total)
+        insights = self._insights(month_transactions, previous_month_transactions, category_by_id, income_total, expense_total, net_total)
         return AiFinanceOverview(
             summary=(
                 f"No período analisado, entradas somaram {_money_text(income_total)}, "
@@ -113,8 +153,9 @@ class AiFinanceService:
             insights=insights,
             suggested_rules=self._suggest_rules(transactions, category_by_id, rules),
             suggested_categories=self._suggest_new_categories(transactions, category_by_id),
+            suggested_payee_aliases=self._suggest_payee_aliases(transactions, payee_aliases),
             category_suggestions=self._suggest_categories(transactions, category_by_id),
-            recurrence_suggestions=self._suggest_recurrences(transactions),
+            recurrence_suggestions=self._suggest_recurrences(transactions, payee_aliases),
             rename_suggestions=self._suggest_renames(transactions),
         )
 
@@ -168,6 +209,7 @@ class AiFinanceService:
     def answer(self, user_id: str, question: str) -> AiFinanceQuestionResponse:
         transactions = self.repository.list_transactions(user_id)
         categories = self.repository.categories(user_id)
+        payee_aliases = self._payee_aliases(user_id)
         category_by_id = {category["id"]: category for category in categories}
         normalized_question = _normalize_description(question)
         matched = transactions
@@ -197,8 +239,8 @@ class AiFinanceService:
                 matched = [
                     item
                     for item in matched
-                    if keyword in _normalize_description(item.get("description", ""))
-                    or keyword in _normalize_description(item.get("original_description", "") or "")
+                    if keyword in _normalize_description(self._canonical_description(item.get("description", ""), payee_aliases))
+                    or keyword in _normalize_description(self._canonical_description(item.get("original_description", "") or "", payee_aliases))
                 ]
                 filters.append(keyword)
                 query["q"] = keyword
@@ -260,6 +302,7 @@ class AiFinanceService:
     def _insights(
         self,
         transactions: list[dict[str, Any]],
+        previous_transactions: list[dict[str, Any]],
         category_by_id: dict[str, dict[str, Any]],
         income_total: Decimal,
         expense_total: Decimal,
@@ -281,6 +324,24 @@ class AiFinanceService:
                     severity="warning" if ratio > 80 else "info",
                 )
             )
+        if previous_transactions:
+            previous_income = sum((_money(item.get("amount")) for item in previous_transactions if item.get("type") in INCOME_TYPES), Decimal("0"))
+            previous_expense = sum((_money(item.get("amount")) for item in previous_transactions if item.get("type") in EXPENSE_TYPES), Decimal("0"))
+            previous_net = previous_income - previous_expense
+            expense_delta = expense_total - previous_expense
+            net_delta = net_total - previous_net
+            expense_direction = "aumentaram" if expense_delta > 0 else "cairam" if expense_delta < 0 else "ficaram iguais"
+            net_direction = "melhorou" if net_delta > 0 else "piorou" if net_delta < 0 else "ficou igual"
+            insights.append(
+                AiFinanceInsight(
+                    title="Comparacao com periodo anterior",
+                    description=(
+                        f"As saidas {expense_direction} {_money_text(abs(expense_delta))} "
+                        f"e o resultado {net_direction} {_money_text(abs(net_delta))}."
+                    ),
+                    severity="warning" if expense_delta > 0 and net_delta < 0 else "positive" if net_delta > 0 else "info",
+                )
+            )
         top_category = self._top_expense_categories(transactions, category_by_id, limit=1)
         if top_category:
             name, amount = top_category[0]
@@ -292,6 +353,21 @@ class AiFinanceService:
                 )
             )
         return insights
+
+    def _payee_aliases(self, user_id: str) -> list[dict[str, Any]]:
+        list_aliases = getattr(self.repository, "list_payee_aliases", None)
+        if not list_aliases:
+            return []
+        return list_aliases(user_id)
+
+    def _canonical_description(self, description: str, payee_aliases: list[dict[str, Any]]) -> str:
+        normalized = _normalize_description(description)
+        for alias in payee_aliases:
+            normalized_alias = str(alias.get("normalized_alias") or "").strip()
+            canonical_name = str(alias.get("canonical_name") or "").strip()
+            if normalized_alias and canonical_name and normalized_alias in normalized:
+                return canonical_name
+        return description
 
     def _suggest_rules(
         self,
@@ -316,11 +392,53 @@ class AiFinanceService:
                 category_name=category_by_id[category_id]["name"],
                 transaction_type=transaction_type or None,
                 match_count=count,
+                conditions=[{"field": "combined_description", "operator": "contains", "value": keyword}],
+                condition_logic="all",
+                actions=[{"type": "set_category", "category_id": category_id}],
+                rule_version=2,
                 reason="Várias transações semelhantes já usam esta categoria.",
             )
             for (keyword, category_id, transaction_type), count in grouped.items()
             if count >= 2
         ]
+        return sorted(suggestions, key=lambda item: item.match_count, reverse=True)[:5]
+
+    def _suggest_payee_aliases(
+        self,
+        transactions: list[dict[str, Any]],
+        payee_aliases: list[dict[str, Any]],
+    ) -> list[AiSuggestedPayeeAlias]:
+        existing_aliases = {_normalize_description(alias.get("alias", "")) for alias in payee_aliases}
+        grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for item in transactions:
+            description = str(item.get("original_description") or item.get("description") or "")
+            fingerprint = _alias_fingerprint(description)
+            if not fingerprint or fingerprint in existing_aliases:
+                continue
+            grouped[fingerprint].append(item)
+
+        suggestions: list[AiSuggestedPayeeAlias] = []
+        for fingerprint, items in grouped.items():
+            raw_aliases: list[str] = []
+            samples: list[str] = []
+            for item in items:
+                description = str(item.get("original_description") or item.get("description") or "")
+                normalized_description = _normalize_description(description)
+                if normalized_description and normalized_description not in {_normalize_description(alias) for alias in raw_aliases}:
+                    raw_aliases.append(description[:80])
+                if description and description not in samples:
+                    samples.append(description[:120])
+            if len({_normalize_description(alias) for alias in raw_aliases}) < 2:
+                continue
+            suggestions.append(
+                AiSuggestedPayeeAlias(
+                    canonical_name=_category_candidate_name(fingerprint),
+                    aliases=raw_aliases[:4],
+                    match_count=len(items),
+                    sample_descriptions=samples[:3],
+                    reason="Descricoes parecem representar o mesmo estabelecimento, mas precisam de confirmacao antes de mesclar.",
+                )
+            )
         return sorted(suggestions, key=lambda item: item.match_count, reverse=True)[:5]
 
     def _suggest_new_categories(
@@ -405,10 +523,11 @@ class AiFinanceService:
             )
         return suggestions[:8]
 
-    def _suggest_recurrences(self, transactions: list[dict[str, Any]]) -> list[AiRecurrenceSuggestion]:
+    def _suggest_recurrences(self, transactions: list[dict[str, Any]], payee_aliases: list[dict[str, Any]] | None = None) -> list[AiRecurrenceSuggestion]:
         grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
         for item in transactions:
-            key = (_normalize_description(item.get("description", "")), _money_text(_money(item.get("amount"))), str(item.get("type") or ""))
+            description = self._canonical_description(item.get("description", ""), payee_aliases or [])
+            key = (_normalize_description(description), _money_text(_money(item.get("amount"))), str(item.get("type") or ""))
             if key[0]:
                 grouped[key].append(item)
         suggestions: list[AiRecurrenceSuggestion] = []

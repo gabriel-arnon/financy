@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from app.models.enums import PreviewStatus
 from app.parsers.utils import normalize_description
+from app.services.structured_rules import evaluate_structured_rule
 
 
 DEFAULT_CATEGORIES = [
@@ -101,6 +102,8 @@ class LocalJsonRepository:
                     "accounts": [],
                     "cards": [],
                     "classification_rules": [],
+                    "payees": [],
+                    "merchant_aliases": [],
                     "import_files": [],
                     "import_batches": [],
                     "import_preview_items": [],
@@ -122,6 +125,7 @@ class LocalJsonRepository:
                     "open_finance_account_links": [],
                     "open_finance_transaction_links": [],
                     "open_finance_sync_runs": [],
+                    "job_runs": [],
                     "recurring_items": [],
                     "recurring_item_transactions": [],
                     "financial_goals": [],
@@ -345,6 +349,9 @@ class LocalJsonRepository:
         description: str,
         original_description: str | None,
         transaction_type: str | None,
+        amount: Any = None,
+        external_source: str | None = None,
+        category_id: str | None = None,
     ) -> dict[str, Any] | None:
         rules = [
             rule
@@ -355,7 +362,22 @@ class LocalJsonRepository:
         candidates: list[dict[str, Any]] = []
         description_text = description.upper()
         original_text = (original_description or "").upper()
+        canonical_text = self._classification_payee_text(user_id, description, original_description)
         for rule in rules:
+            if rule.get("conditions") and rule.get("actions"):
+                matched_rule = self._match_structured_classification_rule(
+                    rule,
+                    description,
+                    original_description,
+                    transaction_type,
+                    canonical_text,
+                    amount=amount,
+                    external_source=external_source,
+                    category_id=category_id,
+                )
+                if matched_rule:
+                    candidates.append(matched_rule)
+                continue
             keyword = rule["keyword"].upper()
             scope = rule.get("match_scope", "both")
             haystacks = []
@@ -363,11 +385,113 @@ class LocalJsonRepository:
                 haystacks.append(description_text)
             if scope in ("original_description", "both"):
                 haystacks.append(original_text)
+            if canonical_text:
+                haystacks.append(canonical_text.upper())
             if any(keyword in haystack for haystack in haystacks):
                 candidates.append(rule)
         if not candidates:
             return None
         return sorted(candidates, key=lambda item: (item.get("priority", 0), item.get("created_at", "")), reverse=True)[0]
+
+    def _classification_payee_text(self, user_id: str, description: str, original_description: str | None) -> str:
+        combined = f"{description} {original_description or ''}"
+        normalized = normalize_description(combined).lower()
+        return " ".join(
+            str(alias.get("canonical_name") or "")
+            for alias in self.list_payee_aliases(user_id)
+            if alias.get("normalized_alias") and str(alias["normalized_alias"]).lower() in normalized
+        )
+
+    def _match_structured_classification_rule(
+        self,
+        rule: dict[str, Any],
+        description: str,
+        original_description: str | None,
+        transaction_type: str | None,
+        canonical_text: str,
+        amount: Any = None,
+        external_source: str | None = None,
+        category_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        result = evaluate_structured_rule(
+            rule,
+            {
+                "description": description,
+                "original_description": original_description,
+                "normalized_description": normalize_description(description),
+                "amount": amount,
+                "category_id": category_id,
+                "external_source": external_source,
+                "payee": canonical_text,
+                "type": transaction_type,
+            },
+        )
+        if not result.matched:
+            return None
+        category_id = rule.get("category_id")
+        for action in result.actions:
+            if action.get("type") == "set_category":
+                category_id = action.get("category_id")
+                break
+        if not category_id:
+            return None
+        return {**rule, "category_id": category_id}
+
+    def list_payees(self, user_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        return [
+            item
+            for item in data.setdefault("payees", [])
+            if item.get("user_id") == user_id and _is_active_entity(item)
+        ]
+
+    def create_payee(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        record = {
+            "id": str(uuid4()),
+            "user_id": user_id,
+            "status": "active",
+            "metadata": {},
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **payload,
+        }
+        data.setdefault("payees", []).append(record)
+        self._write(data)
+        return record
+
+    def list_payee_aliases(self, user_id: str) -> list[dict[str, Any]]:
+        data = self._read()
+        payees_by_id = {
+            item["id"]: item
+            for item in data.setdefault("payees", [])
+            if item.get("user_id") == user_id and _is_active_entity(item)
+        }
+        aliases = []
+        for alias in data.setdefault("merchant_aliases", []):
+            payee = payees_by_id.get(alias.get("payee_id"))
+            if not payee or alias.get("user_id") != user_id or not _is_active_entity(alias):
+                continue
+            aliases.append({**alias, "canonical_name": payee.get("canonical_name")})
+        return sorted(aliases, key=lambda item: (-len(item.get("normalized_alias", "")), item.get("created_at", "")))
+
+    def create_payee_alias(self, user_id: str, payee_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        alias = str(payload.get("alias") or "")
+        record = {
+            "id": str(uuid4()),
+            "user_id": user_id,
+            "payee_id": payee_id,
+            "alias": alias,
+            "normalized_alias": normalize_description(alias),
+            "source": "manual",
+            "status": "active",
+            "metadata": {},
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            **payload,
+        }
+        data.setdefault("merchant_aliases", []).append(record)
+        self._write(data)
+        return record
 
     def list_accounts(self, user_id: str) -> list[dict[str, Any]]:
         data = self._read()
@@ -555,6 +679,82 @@ class LocalJsonRepository:
         data.setdefault("open_finance_account_links", [])
         data.setdefault("open_finance_transaction_links", [])
         data.setdefault("open_finance_sync_runs", [])
+
+    def _ensure_job_collections(self, data: dict[str, Any]) -> None:
+        data.setdefault("job_runs", [])
+
+    def create_job_run(self, user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        data = self._read()
+        self._ensure_job_collections(data)
+        idempotency_key = payload.get("idempotency_key")
+        kind = payload["kind"]
+        if idempotency_key:
+            for item in data["job_runs"]:
+                if item["user_id"] == user_id and item["kind"] == kind and item.get("idempotency_key") == idempotency_key:
+                    return item
+
+        now = datetime.now(timezone.utc).isoformat()
+        record = {
+            "id": payload.get("id") or str(uuid4()),
+            "user_id": user_id,
+            "status": "queued",
+            "resource_type": None,
+            "resource_id": None,
+            "idempotency_key": None,
+            "progress_current": 0,
+            "progress_total": None,
+            "error_message": None,
+            "result": {},
+            "metadata": {},
+            "queued_at": now,
+            "started_at": None,
+            "finished_at": None,
+            "updated_at": None,
+            **payload,
+        }
+        data["job_runs"].append(record)
+        self._write(data)
+        return record
+
+    def get_job_run(self, user_id: str, job_id: str) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_job_collections(data)
+        return next((item for item in data["job_runs"] if item["id"] == job_id and item["user_id"] == user_id), None)
+
+    def list_job_runs(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
+        data = self._read()
+        self._ensure_job_collections(data)
+        jobs = [item for item in data["job_runs"] if item["user_id"] == user_id]
+        return sorted(jobs, key=lambda item: item.get("queued_at", ""), reverse=True)[:limit]
+
+    def claim_next_job_run(self, kinds: list[str]) -> dict[str, Any] | None:
+        with self._lock:
+            data = self._read()
+            self._ensure_job_collections(data)
+            candidates = [
+                (index, item)
+                for index, item in enumerate(data["job_runs"])
+                if item.get("status") == "queued" and item.get("kind") in kinds
+            ]
+            if not candidates:
+                return None
+            index, item = sorted(candidates, key=lambda candidate: candidate[1].get("queued_at", ""))[0]
+            now = datetime.now(timezone.utc).isoformat()
+            updated = {**item, "status": "running", "started_at": now, "updated_at": now}
+            data["job_runs"][index] = updated
+            self._write(data)
+            return updated
+
+    def update_job_run(self, user_id: str, job_id: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+        data = self._read()
+        self._ensure_job_collections(data)
+        for index, item in enumerate(data["job_runs"]):
+            if item["id"] == job_id and item["user_id"] == user_id:
+                updated = {**item, **payload, "updated_at": datetime.now(timezone.utc).isoformat()}
+                data["job_runs"][index] = updated
+                self._write(data)
+                return updated
+        return None
 
     def list_open_finance_items(self, user_id: str) -> list[dict[str, Any]]:
         data = self._read()

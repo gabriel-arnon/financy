@@ -83,6 +83,10 @@ export interface ClassificationRule {
   status: EntityStatus;
   match_scope: ClassificationMatchScope;
   auto_created: boolean;
+  conditions?: Array<{ field: string; operator: string; value: string | number | null }> | null;
+  condition_logic?: "all" | "any";
+  actions?: Array<{ type: "set_category" | "set_payee" | "ignore_from_reports"; category_id?: string | null; payee_id?: string | null }> | null;
+  rule_version?: number;
   created_at: string;
 }
 
@@ -94,6 +98,31 @@ export interface ClassificationRulePayload {
   status: EntityStatus;
   match_scope: ClassificationMatchScope;
   auto_created: boolean;
+  conditions?: Array<{ field: string; operator: string; value: string | number | null }> | null;
+  condition_logic?: "all" | "any";
+  actions?: Array<{ type: "set_category" | "set_payee" | "ignore_from_reports"; category_id?: string | null; payee_id?: string | null }> | null;
+  rule_version?: number;
+}
+
+export interface ClassificationRulePreviewSample {
+  transaction_id: string;
+  transaction_date: string;
+  description: string;
+  amount: string;
+  type: TransactionType;
+  current_category_id: string | null;
+  current_category_name: string | null;
+  proposed_category_id: string;
+  proposed_category_name: string | null;
+  already_same_category: boolean;
+}
+
+export interface ClassificationRulePreview {
+  matched_count: number;
+  changed_count: number;
+  unchanged_count: number;
+  sample_limit: number;
+  samples: ClassificationRulePreviewSample[];
 }
 
 export interface ImportPreviewItem {
@@ -217,11 +246,23 @@ export interface AiSuggestedRule {
   transaction_type: TransactionType | null;
   match_count: number;
   reason: string;
+  conditions?: Array<{ field: string; operator: string; value: string | number | null }>;
+  condition_logic?: "all" | "any";
+  actions?: Array<{ type: "set_category" | "set_payee" | "ignore_from_reports"; category_id?: string | null; payee_id?: string | null }>;
+  rule_version?: number;
 }
 
 export interface AiSuggestedCategory {
   name: string;
   type: CategoryType;
+  match_count: number;
+  sample_descriptions: string[];
+  reason: string;
+}
+
+export interface AiSuggestedPayeeAlias {
+  canonical_name: string;
+  aliases: string[];
   match_count: number;
   sample_descriptions: string[];
   reason: string;
@@ -256,6 +297,7 @@ export interface AiFinanceOverview {
   insights: AiFinanceInsight[];
   suggested_rules: AiSuggestedRule[];
   suggested_categories: AiSuggestedCategory[];
+  suggested_payee_aliases: AiSuggestedPayeeAlias[];
   category_suggestions: AiCategorySuggestion[];
   recurrence_suggestions: AiRecurrenceSuggestion[];
   rename_suggestions: AiRenameSuggestion[];
@@ -647,6 +689,27 @@ export interface OpenFinanceSyncRun {
 export interface OpenFinanceSyncResponse {
   run: OpenFinanceSyncRun;
   items: OpenFinanceItem[];
+}
+
+export type JobStatus = "queued" | "running" | "success" | "error" | "canceled";
+
+export interface JobRun {
+  id: string;
+  user_id: string;
+  kind: string;
+  status: JobStatus;
+  resource_type: string | null;
+  resource_id: string | null;
+  idempotency_key: string | null;
+  progress_current: number;
+  progress_total: number | null;
+  error_message: string | null;
+  result: Record<string, unknown>;
+  metadata: Record<string, unknown>;
+  queued_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string | null;
 }
 
 export type RecurringKind = "installment" | "fixed_bill" | "subscription";

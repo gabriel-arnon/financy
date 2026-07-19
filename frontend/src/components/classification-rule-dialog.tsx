@@ -32,6 +32,16 @@ const matchScopeLabels: Record<ClassificationMatchScope, string> = {
   both: "Ambas",
 };
 
+function withRuleCategory(payload: ClassificationRulePayload, categoryId: string): ClassificationRulePayload {
+  return {
+    ...payload,
+    category_id: categoryId,
+    actions: payload.actions?.map((action) => (
+      action.type === "set_category" ? { ...action, category_id: categoryId } : action
+    ))
+  };
+}
+
 export function ClassificationRuleDialog({ categories, initialValues, open, onClose, onCreated }: ClassificationRuleDialogProps) {
   const toast = useToast();
   const firstFieldRef = useRef<HTMLInputElement | null>(null);
@@ -113,7 +123,7 @@ export function ClassificationRuleDialog({ categories, initialValues, open, onCl
             </label>
             <label className="grid gap-1.5 text-sm font-medium text-stone-600">
               Categoria
-              <select className="h-10 rounded-md border border-stone-200 px-3 text-sm text-ink outline-none focus:border-mint" disabled={isSubmitting} onChange={(event) => setForm((current) => ({ ...current, category_id: event.target.value }))} required value={form.category_id}>
+              <select className="h-10 rounded-md border border-stone-200 px-3 text-sm text-ink outline-none focus:border-mint" disabled={isSubmitting} onChange={(event) => setForm((current) => withRuleCategory(current, event.target.value))} required value={form.category_id}>
                 {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
               </select>
             </label>

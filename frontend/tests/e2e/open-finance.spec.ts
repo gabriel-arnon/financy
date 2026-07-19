@@ -43,7 +43,30 @@ const run = {
   }
 };
 
+const queuedJob = {
+  id: "job-open-finance-1",
+  user_id: "owner-user",
+  kind: "open_finance_sync_item",
+  status: "queued",
+  resource_type: "open_finance_item",
+  resource_id: "pluggy-item-1",
+  idempotency_key: "pluggy:pluggy-item-1:2026-07-19",
+  progress_current: 0,
+  progress_total: null,
+  error_message: null,
+  result: {},
+  metadata: {
+    provider: "pluggy",
+    external_item_id: "pluggy-item-1"
+  },
+  queued_at: "2026-07-19T10:00:00Z",
+  started_at: null,
+  finished_at: null,
+  updated_at: null
+};
+
 async function mockOpenFinanceApi(page: Page) {
+  let jobs = [queuedJob];
   await page.route("**/open-finance/status", async (route) => {
     await route.fulfill({
       status: 200,
@@ -61,11 +84,18 @@ async function mockOpenFinanceApi(page: Page) {
   await page.route("**/open-finance/sync-runs", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([run]) });
   });
+  await page.route("**/open-finance/items/*/sync-jobs", async (route) => {
+    jobs = [queuedJob];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(queuedJob) });
+  });
   await page.route("**/open-finance/sync", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ run, items: [item] }) });
   });
   await page.route("**/open-finance/items/*/sync", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ run, items: [item] }) });
+  });
+  await page.route("**/jobs", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(jobs) });
   });
 }
 
@@ -76,9 +106,16 @@ test("open finance page renders owner operations", async ({ page }) => {
 
   await expect(page.getByRole("heading", { name: "Open Finance" })).toBeVisible();
   await expect(page.getByText("Banco Teste")).toBeVisible();
+  await expect(page.getByText("Jobs recentes")).toBeVisible();
+  await expect(page.getByText("Na fila", { exact: true })).toBeVisible();
+  await expect(page.getByText("Aguardando worker")).toBeVisible();
   await expect(page.getByText("3 novas, 1 atualizadas, 0 ignoradas")).toBeVisible();
   await expect(page.getByText("Pluggy: 2 contas, 4 transacoes, execucao SUCCESS")).toBeVisible();
   await expect(page.getByRole("button", { name: "Conectar banco" })).toBeVisible();
+  await page.screenshot({ path: "../.uploads/open-finance-jobs.png", fullPage: true });
+
+  await page.getByRole("button", { name: "Fila" }).click();
+  await expect(page.getByText("Sync enviado para a fila.")).toBeVisible();
 
   await page.getByRole("button", { name: "Sincronizar tudo" }).click();
   await expect(page.getByText("Sincronizacao Open Finance concluida.")).toBeVisible();

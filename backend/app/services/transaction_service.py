@@ -108,7 +108,15 @@ class TransactionService:
             description = data.get("description") or current.get("description", "")
             original_description = data.get("original_description") or current.get("original_description")
             transaction_type = data.get("type") or current.get("type")
-            rule = self.repository.match_classification_rule(user_id, description, original_description, transaction_type)
+            rule = self.repository.match_classification_rule(
+                user_id,
+                description,
+                original_description,
+                transaction_type,
+                amount=data.get("amount") or current.get("amount"),
+                external_source=data.get("external_source") or current.get("external_source"),
+                category_id=current.get("category_id"),
+            )
             if rule:
                 data["category_id"] = rule["category_id"]
         merged = {**current, **data}

@@ -17,6 +17,18 @@ const accounts = [
     balance: "1250.00",
     status: "active",
     created_at: "2026-07-01T00:00:00Z"
+  },
+  {
+    id: "acc-investment",
+    user_id: "dev-user",
+    name: "Investimentos",
+    institution: "Banco Teste",
+    agency: null,
+    account_number: null,
+    type: "investment",
+    balance: "5000.00",
+    status: "active",
+    created_at: "2026-07-01T00:00:00Z"
   }
 ];
 
@@ -77,6 +89,26 @@ const transactions = [
     status: "confirmed",
     external_source: null,
     created_at: "2026-07-06T12:00:00Z"
+  },
+  {
+    id: "tx-salary",
+    user_id: "dev-user",
+    account_id: "acc-1",
+    card_id: null,
+    card_statement_id: null,
+    transaction_date: "2026-07-03",
+    description: "SALARIO",
+    original_description: "SALARIO",
+    normalized_description: "salario",
+    amount: "3000.00",
+    type: "income",
+    category_id: null,
+    source_file_id: null,
+    installment_current: null,
+    installment_total: null,
+    status: "confirmed",
+    external_source: null,
+    created_at: "2026-07-03T12:00:00Z"
   }
 ];
 
@@ -105,6 +137,15 @@ function overview(ruleCreated: boolean) {
         match_count: 4,
         sample_descriptions: ["ALUGUEL JULHO", "ALUGUEL AGOSTO"],
         reason: "Transacoes recorrentes ficaram em categoria generica."
+      }
+    ],
+    suggested_payee_aliases: [
+      {
+        canonical_name: "Netflix",
+        aliases: ["MERCADOPAGO NETFLIX 123", "NETFLIX.COM"],
+        match_count: 2,
+        sample_descriptions: ["MERCADOPAGO NETFLIX 123", "NETFLIX.COM"],
+        reason: "Descricoes parecem representar o mesmo estabelecimento."
       }
     ],
     category_suggestions: [],
@@ -154,6 +195,13 @@ async function mockFinanceApi(page: Page) {
   });
   await page.route("**/accounts", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(accounts) });
+  });
+  await page.route("**/open-finance/status", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ enabled: true, configured: true, owner_only: true, provider: "pluggy" })
+    });
   });
   await page.route("**/cards", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(cards) });
@@ -236,6 +284,8 @@ test("insights suggested category opens prefilled dialog and updates rule option
 
   await expect(page.getByText("Categorias sugeridas")).toBeVisible();
   await expect(page.getByText("Moradia para Despesa (4 ocorr")).toBeVisible();
+  await expect(page.getByText("Aliases sugeridos")).toBeVisible();
+  await expect(page.getByText("Netflix para 2 descricoes parecidas")).toBeVisible();
   await page.getByRole("button", { name: "Adicionar categoria" }).click();
   const categoryDialog = page.getByRole("dialog", { name: "Adicionar categoria" });
   await expect(categoryDialog.getByRole("heading", { name: "Adicionar categoria" })).toBeVisible();
@@ -255,9 +305,19 @@ test("dashboard filters and labels open finance transactions", async ({ page }) 
   await page.goto("/");
   await page.waitForLoadState("networkidle");
 
+  await expect(page.getByRole("heading", { name: "Receitas vs Despesas" })).toBeVisible();
+  await expect(page.getByText("R$ 3.000,00").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "PatrimÃ´nio lÃ­quido" })).toBeVisible();
+  await expect(page.getByText("R$ 6.250,00")).toBeVisible();
+  await page.getByRole("link", { name: /Assinaturas R\$ 100,00/ }).last().click();
+  await expect(page).toHaveURL(/\/transactions\?/);
+  await expect(page.getByLabel("Tipo")).toHaveValue("expense");
+  await expect(page.getByLabel("Categoria")).toHaveValue("cat-subscriptions");
+  await page.goto("/");
+  await page.waitForLoadState("networkidle");
   await page.getByRole("combobox").filter({ hasText: "Todas as origens" }).selectOption("open_finance");
   await expect(page.getByText("OPENAI ASSINATURA")).toBeVisible();
-  await expect(page.locator("span").filter({ hasText: "Open Finance" })).toBeVisible();
+  await expect(page.getByRole("main").locator("span").filter({ hasText: "Open Finance" })).toBeVisible();
   await expect(page.getByText("MERCADO***TESTE")).toHaveCount(0);
 });
 

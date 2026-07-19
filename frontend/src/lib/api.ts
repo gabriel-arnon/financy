@@ -14,8 +14,10 @@ import type {
   CategoryPayload,
   ClassificationRule,
   ClassificationRulePayload,
+  ClassificationRulePreview,
   ConfirmImportResponse,
   ImportPreviewResponse,
+  JobRun,
   GuestReimbursementClaim,
   OpenFinanceConnectToken,
   OpenFinanceItem,
@@ -55,6 +57,13 @@ const API_URL = resolveApiBaseUrl("Financy client API");
 const RETRY_DELAYS_MS = [600, 1500, 3000];
 const RETRYABLE_STATUS_CODES = new Set([408, 425, 429, 500, 502, 503, 504]);
 
+function createRequestId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `financy-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -66,12 +75,15 @@ function requestMethod(init?: RequestInit) {
 export class ApiError extends Error {
   status: number;
   code: string | null;
+  requestId: string | null;
 
-  constructor(message: string, status: number, code: string | null = null) {
-    super(message);
+  constructor(message: string, status: number, code: string | null = null, requestId: string | null = null) {
+    const messageWithRequestId = requestId && !message.includes("Request ID:") ? `${message} Request ID: ${requestId}.` : message;
+    super(messageWithRequestId);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
+    this.requestId = requestId;
   }
 }
 
@@ -81,9 +93,27 @@ function canRetry(path: string, init?: RequestInit) {
   return method === "GET" || method === "HEAD";
 }
 
-function networkErrorMessage(path: string, err: unknown) {
+function logApiFailure(details: {
+  path: string;
+  method: string;
+  requestId: string;
+  attempt: number;
+  status?: number;
+  message: string;
+}) {
+  console.warn("Financy API request failed", {
+    path: details.path,
+    method: details.method,
+    request_id: details.requestId,
+    attempt: details.attempt,
+    status: details.status,
+    message: details.message
+  });
+}
+
+function networkErrorMessage(path: string, requestId: string, err: unknown) {
   const detail = err instanceof Error && err.message ? ` Detalhe: ${err.message}` : "";
-  return `Falha de conexao com a API em ${path}. Tente novamente em alguns segundos.${detail}`;
+  return `Falha de conexao com a API em ${path}. Tente novamente em alguns segundos. Request ID: ${requestId}.${detail}`;
 }
 
 async function accessToken(): Promise<string | null> {
@@ -100,8 +130,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 async function requestWithResponse<T>(path: string, init?: RequestInit): Promise<{ data: T; response: Response }> {
   const token = await accessToken();
+  const requestId = createRequestId();
+  const method = requestMethod(init);
   const headers: HeadersInit = {
     ...(init?.body instanceof FormData ? init.headers : { "Content-Type": "application/json", ...init?.headers }),
+    "X-Request-Id": requestId,
     ...(token ? { Authorization: `Bearer ${token}` } : {})
   };
   const retryable = canRetry(path, init);
@@ -120,7 +153,9 @@ async function requestWithResponse<T>(path: string, init?: RequestInit): Promise
         await sleep(RETRY_DELAYS_MS[attempt]);
         continue;
       }
-      throw new Error(networkErrorMessage(path, err));
+      const message = networkErrorMessage(path, requestId, err);
+      logApiFailure({ path, method, requestId, attempt: attempt + 1, message });
+      throw new Error(message);
     }
 
     if (response.ok) {
@@ -128,18 +163,40 @@ async function requestWithResponse<T>(path: string, init?: RequestInit): Promise
     }
 
     if (retryable && RETRYABLE_STATUS_CODES.has(response.status) && attempt < attempts - 1) {
+      logApiFailure({
+        path,
+        method,
+        requestId,
+        attempt: attempt + 1,
+        status: response.status,
+        message: `Retryable API status ${response.status}`
+      });
       await sleep(RETRY_DELAYS_MS[attempt]);
       continue;
     }
 
     const body = await response.json().catch(() => null);
+    const responseRequestId = response.headers.get("X-Request-Id") ?? body?.error?.request_id ?? requestId;
+    logApiFailure({
+      path,
+      method,
+      requestId: responseRequestId,
+      attempt: attempt + 1,
+      status: response.status,
+      message: body?.error?.message ?? `Erro na API (${response.status})`
+    });
     if (response.status === 401 && typeof window !== "undefined" && isSupabaseConfigured()) {
       const supabase = getSupabaseClient();
       await supabase?.auth.signOut();
       document.cookie = "financy_access_token=; Path=/; Max-Age=0; SameSite=Lax";
       window.location.assign("/login");
     }
-    throw new ApiError(body?.error?.message ?? `Erro na API (${response.status})`, response.status, body?.error?.code ?? null);
+    throw new ApiError(
+      body?.error?.message ?? `Erro na API (${response.status})`,
+      response.status,
+      body?.error?.code ?? null,
+      responseRequestId
+    );
   }
 
   throw new Error("Falha inesperada ao chamar a API.");
@@ -219,8 +276,20 @@ export async function syncOpenFinanceItem(externalItemId: string): Promise<OpenF
   return request<OpenFinanceSyncResponse>(`/open-finance/items/${encodeURIComponent(externalItemId)}/sync`, { method: "POST" });
 }
 
+export async function createOpenFinanceSyncItemJob(externalItemId: string): Promise<JobRun> {
+  return request<JobRun>(`/open-finance/items/${encodeURIComponent(externalItemId)}/sync-jobs`, { method: "POST" });
+}
+
 export async function getOpenFinanceSyncRuns(): Promise<OpenFinanceSyncRun[]> {
   return request<OpenFinanceSyncRun[]>("/open-finance/sync-runs");
+}
+
+export async function getJobs(): Promise<JobRun[]> {
+  return request<JobRun[]>("/jobs");
+}
+
+export async function getJob(jobId: string): Promise<JobRun> {
+  return request<JobRun>(`/jobs/${encodeURIComponent(jobId)}`);
 }
 
 export async function getPlanningOverview(periodMonth?: string): Promise<PlanningOverview> {
@@ -532,6 +601,10 @@ export async function getClassificationRules(): Promise<ClassificationRule[]> {
 
 export async function createClassificationRule(payload: ClassificationRulePayload): Promise<ClassificationRule> {
   return request<ClassificationRule>("/classification-rules", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export async function previewClassificationRule(payload: ClassificationRulePayload): Promise<ClassificationRulePreview> {
+  return request<ClassificationRulePreview>("/classification-rules/preview", { method: "POST", body: JSON.stringify(payload) });
 }
 
 export async function updateClassificationRule(ruleId: string, payload: Partial<ClassificationRulePayload>): Promise<ClassificationRule> {

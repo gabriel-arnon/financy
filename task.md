@@ -232,7 +232,7 @@ Checklist:
 
 - [x] Definir agregados usados pelo resumo sem alterar transações.
 - [x] Criar endpoint de resumo financeiro inicial.
-- [ ] Incluir comparação com período anterior quando houver dados.
+- [x] Incluir comparação com período anterior quando houver dados.
 - [x] Destacar maior categoria de gastos do período analisado.
 - [x] Destacar relação entre entradas e saídas.
 - [x] Mostrar resumo no dashboard.
@@ -737,6 +737,268 @@ npm.cmd run build
 ```
 
 Se houver backend, migration, API ou persistencia:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```
+
+## P11 - Maturidade self-hosted e arquitetura inspirada no Securo
+
+Objetivo:
+
+- Transformar os aprendizados da analise do `securo-finance/securo` em frentes pequenas e seguras para evoluir o Financy como SaaS financeiro self-hosted, sem copiar codigo AGPL e sem trocar a arquitetura validada sem necessidade.
+- Priorizar isolamento, confiabilidade, operacoes longas assicronas, regras financeiras revisaveis, analytics e extensibilidade de providers.
+
+Notas:
+
+- Nao copiar codigo do Securo diretamente por causa da licenca AGPL-3.0.
+- Usar o Securo como referencia de arquitetura e produto, reimplementando no padrao atual do Financy.
+- Preservar Supabase Auth como estrategia principal de identidade.
+- Preservar regra de que IA sugere e explica, mas nao confirma acoes sensiveis automaticamente.
+
+### [x] P11.1 - Observabilidade para `Failed to fetch` e chamadas criticas
+
+Objetivo:
+
+- Instrumentar backend e frontend para explicar falhas intermitentes, latencia, cold start, CORS, token expirado e quedas antes de resposta HTTP.
+
+Checklist:
+
+- [x] Gerar `request_id` por chamada no frontend quando nao houver um vindo do servidor.
+- [x] Propagar `X-Request-Id` para o backend.
+- [x] Incluir `request_id`, metodo, path, status, duracao e usuario autenticado mascarado nos logs seguros da API.
+- [x] Registrar falhas de `fetch` no frontend com path, metodo, tentativa, mensagem segura e timestamp.
+- [x] Expor tempo de resposta em rotas criticas de importacao, transacoes, dashboard e Open Finance.
+- [x] Correlacionar falhas do navegador com logs Render/Supabase usando `request_id`.
+- [x] Manter retry automatico apenas para leituras/idempotentes.
+- [x] Documentar causa raiz ou proximo passo preciso em `output.md`.
+
+Resultado esperado:
+
+- `Failed to fetch` deixa de ser um sintoma generico e passa a ter trilha de diagnostico verificavel.
+
+Validacao:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+cd ..\frontend
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run build
+```
+
+### [x] P11.2 - Modularizar `PostgresRepository` por dominio
+
+Objetivo:
+
+- Reduzir o tamanho e acoplamento de `backend/app/repositories/postgres.py`, preparando a base para workspaces, jobs e regras mais expressivas.
+
+Checklist:
+
+- [x] Mapear metodos atuais por dominio: categorias/regras, contas/cartoes, transacoes/faturas, imports, arquivos, Open Finance, planejamento e ressarcimentos.
+- [x] Definir interfaces ou classes internas por dominio sem alterar contratos de API.
+- [x] Extrair um primeiro dominio de baixo risco.
+- [x] Garantir que `create_repository(settings)` continue retornando uma fachada compativel.
+- [x] Repetir extracao por lotes pequenos, com testes por dominio.
+- [x] Evitar refactor visual ou mudanca de regra financeira no mesmo lote.
+
+Resultado esperado:
+
+- Persistencia fica mais legivel, testavel e pronta para novas fronteiras sem virar um ponto unico gigantesco.
+
+Validacao:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+```
+
+### [x] P11.3 - Plano de `workspace_id` e papeis sem implementacao imediata
+
+Objetivo:
+
+- Planejar a separacao entre identidade (`user_id`) e escopo financeiro (`workspace_id`) antes de abrir multiusuario publico, familia, negocio pequeno ou contador.
+
+Checklist:
+
+- [x] Criar documento `docs/workspaces-plan.md`.
+- [x] Definir entidades impactadas: contas, cartoes, faturas, transacoes, imports, categorias, regras, arquivos, planejamento, Open Finance e ressarcimentos.
+- [x] Definir papeis iniciais: `owner`, `editor`, `viewer`.
+- [x] Definir regra de fallback para usuario atual: workspace pessoal padrao.
+- [x] Definir estrategia de migracao de dados existentes de `user_id` para workspace pessoal.
+- [x] Definir como `user_id` continua sendo ator/auditoria e nao tenant unico.
+- [x] Mapear impacto em RLS Supabase.
+- [x] Mapear impacto no portal guest de ressarcimentos.
+- [x] Registrar riscos e fases de implementacao.
+
+Resultado esperado:
+
+- Existe um plano revisado para evoluir multiusuario sem quebrar isolamento atual.
+
+Validacao:
+
+- Revisao tecnica do documento contra `docs/auth-user-isolation-plan.md`, `docs/architecture.md` e migrations atuais.
+
+### [x] P11.4 - Jobs assicronos para operacoes longas
+
+Objetivo:
+
+- Tirar do request/response operacoes que podem causar timeout ou experiencia ruim, principalmente Open Finance, importacoes grandes e analises de IA.
+
+Checklist:
+
+- [x] Escolher estrategia inicial: Redis + worker Python, fila simples em Postgres ou outro mecanismo compativel com Render/Supabase.
+- [x] Definir tabela/contrato de `job_runs` com status, progresso, erro seguro, timestamps e owner.
+- [x] Transformar Open Finance sync em candidato a job com endpoint de disparo e endpoint de consulta.
+- [x] Avaliar importacao grande como segundo candidato.
+- [x] Avaliar IA financeira pesada como terceiro candidato.
+- [x] Garantir idempotencia para jobs que criam/atualizam dados.
+- [x] Criar UI de status sem bloquear navegacao.
+- [x] Implementar worker operacional para consumir `job_runs` e executar sync fora do request.
+- [x] Documentar operacao e retry manual seguro.
+
+Resultado esperado:
+
+- Chamadas longas deixam de depender de uma conexao HTTP viva e ficam rastreaveis.
+
+Validacao:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+cd ..\frontend
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run build
+```
+
+### [x] P11.5 - Providers extensibles para Open Finance
+
+Objetivo:
+
+- Reorganizar a integracao Pluggy atual para permitir novos providers no futuro sem duplicar regra financeira.
+
+Checklist:
+
+- [x] Definir interface interna para provider: items/connections, accounts, cards, transactions, investments quando existir.
+- [x] Mover detalhes Pluggy para modulo dedicado preservando contrato atual.
+- [x] Manter `OpenFinanceService` como orquestrador de normalizacao e persistencia.
+- [x] Padronizar external IDs, metadata sanitizada, dedupe e motivos de ignorados.
+- [x] Registrar sync runs por provider.
+- [x] Manter Open Finance owner-only enquanto multiusuario publico nao estiver pronto.
+- [x] Documentar como novos providers seriam adicionados sem expor segredos ao frontend.
+
+Resultado esperado:
+
+- Pluggy continua funcionando, mas deixa de ser acoplamento permanente do dominio Open Finance.
+
+Validacao:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+cd ..\frontend
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run build
+```
+
+### [x] P11.6 - Payees e merchant aliases
+
+Objetivo:
+
+- Criar uma camada de comerciantes/beneficiarios canonicos para normalizar descricoes, melhorar regras, busca, dashboard e IA.
+
+Checklist:
+
+- [x] Definir modelo de `payees` ou `merchant_aliases`.
+- [x] Preservar `original_description` intacto.
+- [x] Vincular aliases a descricoes normalizadas e a um nome canonico.
+- [x] Permitir sugestoes de alias pela IA sem aplicar automaticamente.
+- [x] Reutilizar aliases em classificacao, recorrencias, busca em linguagem natural e insights.
+- [x] Evitar mesclar comerciantes diferentes sem confirmacao do usuario.
+- [x] Criar testes para Pix, adquirente, marketplace, assinatura e descricoes com ruido.
+
+Resultado esperado:
+
+- O Financy entende melhor "quem" esta por tras de descricoes bancarias baguncadas, sem perder rastreabilidade.
+
+Validacao:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+cd ..\frontend
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run build
+```
+
+### [x] P11.7 - Regras estruturadas e revisaveis
+
+Objetivo:
+
+- Evoluir `classification_rules` de keyword simples para condicoes e acoes estruturadas, mantendo compatibilidade com regras atuais.
+
+Checklist:
+
+- [x] Definir schema de condicoes: campo, operador e valor.
+- [x] Definir operadores iniciais: contem, comeca com, igual, regex segura, maior/menor que valor.
+- [x] Definir acoes iniciais: definir categoria, definir payee, ignorar de relatorios quando aplicavel.
+- [x] Criar avaliador puro sem acesso direto ao banco.
+- [x] Migrar regras atuais de keyword para formato compativel ou criar modo legado.
+- [x] Garantir prioridade e determinismo.
+- [x] Exibir preview do impacto antes de ativar/criar uma regra.
+- [x] Permitir IA sugerir regra estruturada, sempre com confirmacao humana.
+- [x] Testar duplicidade, prioridade, regex invalida e categoria inexistente.
+
+Resultado esperado:
+
+- Regras ficam mais poderosas sem virar automacao opaca ou perigosa.
+
+Validacao:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe -m pytest
+cd ..\frontend
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run build
+```
+
+### [x] P11.8 - Analytics, exportacao e relatorios
+
+Objetivo:
+
+- Evoluir o dashboard para relatorios praticos inspirados em produtos self-hosted maduros: receita vs despesa, patrimonio, categorias, recorrentes, metas e exportacao.
+
+Checklist:
+
+- [x] Adicionar exportacao CSV de transacoes com filtros ativos.
+- [x] Criar relatorio `Receitas vs Despesas` por periodo.
+- [x] Criar visao inicial de patrimonio liquido usando contas, cartoes e investimentos quando existirem.
+- [x] Adicionar comparacao com periodo anterior nos insights mensais.
+- [x] Adicionar drilldown de categoria para transacoes filtradas.
+- [x] Garantir que transferencias/pagamentos de cartao nao distorcem resultado.
+- [x] Validar graficos em desktop e mobile com screenshots.
+
+Resultado esperado:
+
+- Dashboard deixa de ser apenas operacional e passa a responder perguntas financeiras recorrentes com dados verificaveis.
+
+Validacao:
+
+```powershell
+cd frontend
+npm.cmd run typecheck
+npm.cmd run lint
+npm.cmd run build
+```
+
+Se houver backend, API ou persistencia:
 
 ```powershell
 cd backend

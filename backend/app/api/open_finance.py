@@ -2,7 +2,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Query
 
-from app.api.deps import get_open_finance_service, get_request_user
+from app.api.deps import get_job_service, get_open_finance_service, get_request_user
 from app.core.auth import CurrentUser
 from app.core.config import settings
 from app.core.errors import AppError
@@ -15,6 +15,8 @@ from app.schemas.open_finance import (
     OpenFinanceSyncRunRead,
     OpenFinanceWebhookResponse,
 )
+from app.schemas.jobs import JobRunRead
+from app.services.job_service import JobService
 from app.services.open_finance_service import OpenFinanceService
 
 
@@ -61,6 +63,15 @@ def sync_open_finance_item(
     service: OpenFinanceService = Depends(get_open_finance_service),
 ) -> OpenFinanceSyncResponse:
     return OpenFinanceSyncResponse(**service.sync_item(user_id, external_item_id))
+
+
+@router.post("/items/{external_item_id}/sync-jobs", response_model=JobRunRead)
+def create_open_finance_sync_item_job(
+    external_item_id: str,
+    user_id: str = Depends(require_open_finance_owner),
+    service: JobService = Depends(get_job_service),
+) -> JobRunRead:
+    return service.create_open_finance_sync_item_job(user_id, external_item_id)
 
 
 @router.post("/sync", response_model=OpenFinanceSyncResponse)

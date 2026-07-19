@@ -2,13 +2,15 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { Activity, AlertCircle, CheckCircle2, Landmark, Plus, RefreshCw, ShieldCheck } from "lucide-react";
+import { Activity, AlertCircle, CheckCircle2, Clock3, Landmark, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import type { ProductType } from "pluggy-js";
 import { UiButton } from "@/components/ui-button";
 import { useToast } from "@/components/toast-provider";
 import {
   createOpenFinanceConnectToken,
   createOpenFinanceItem,
+  createOpenFinanceSyncItemJob,
+  getJobs,
   getOpenFinanceItems,
   getOpenFinanceStatus,
   getOpenFinanceSyncRuns,
@@ -16,7 +18,7 @@ import {
   syncOpenFinanceItem
 } from "@/lib/api";
 import { cn } from "@/lib/classnames";
-import type { OpenFinanceItem, OpenFinanceStatus, OpenFinanceSyncRun } from "@/lib/types";
+import type { JobRun, OpenFinanceItem, OpenFinanceStatus, OpenFinanceSyncRun } from "@/lib/types";
 
 const PluggyConnect = dynamic(() => import("react-pluggy-connect").then((mod) => mod.PluggyConnect), { ssr: false });
 const OPEN_FINANCE_PRODUCTS: ProductType[] = ["ACCOUNTS", "CREDIT_CARDS", "TRANSACTIONS"];
@@ -31,9 +33,27 @@ function formatDateTime(value: string | null) {
 
 function statusClass(status: string) {
   if (status === "success" || status === "active" || status === "updated") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
-  if (status === "running") return "bg-blue-50 text-blue-700 ring-blue-200";
+  if (status === "running" || status === "queued") return "bg-blue-50 text-blue-700 ring-blue-200";
   if (status === "error" || status === "failed") return "bg-red-50 text-red-700 ring-red-200";
   return "bg-stone-100 text-stone-700 ring-stone-200";
+}
+
+function jobStatusLabel(status: JobRun["status"]) {
+  const labels: Record<JobRun["status"], string> = {
+    queued: "Na fila",
+    running: "Executando",
+    success: "Concluido",
+    error: "Erro",
+    canceled: "Cancelado"
+  };
+  return labels[status];
+}
+
+function jobProgressLabel(job: JobRun) {
+  if (job.progress_total !== null) return `${job.progress_current}/${job.progress_total}`;
+  if (job.status === "queued") return "Aguardando worker";
+  if (job.status === "running") return "Em andamento";
+  return jobStatusLabel(job.status);
 }
 
 function formatIgnoredReasons(reasons: Record<string, number> | undefined) {
@@ -75,6 +95,7 @@ export function OpenFinanceContent() {
   const [status, setStatus] = useState<OpenFinanceStatus | null>(null);
   const [items, setItems] = useState<OpenFinanceItem[]>([]);
   const [runs, setRuns] = useState<OpenFinanceSyncRun[]>([]);
+  const [jobs, setJobs] = useState<JobRun[]>([]);
   const [externalItemId, setExternalItemId] = useState("");
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState<string | null>(null);
@@ -82,6 +103,8 @@ export function OpenFinanceContent() {
   const [connectUpdateItemId, setConnectUpdateItemId] = useState<string | null>(null);
 
   const lastRun = runs[0] ?? null;
+  const openFinanceJobs = useMemo(() => jobs.filter((job) => job.kind === "open_finance_sync_item").slice(0, 8), [jobs]);
+  const activeJobCount = openFinanceJobs.filter((job) => job.status === "queued" || job.status === "running").length;
   const totals = useMemo(() => {
     return runs.reduce(
       (summary, run) => {
@@ -98,10 +121,17 @@ export function OpenFinanceContent() {
     const nextStatus = await getOpenFinanceStatus();
     setStatus(nextStatus);
     if (nextStatus.enabled) {
-      const [nextItems, nextRuns] = await Promise.all([getOpenFinanceItems(), getOpenFinanceSyncRuns()]);
+      const [nextItems, nextRuns, nextJobs] = await Promise.all([getOpenFinanceItems(), getOpenFinanceSyncRuns(), getJobs()]);
       setItems(nextItems);
       setRuns(nextRuns);
+      setJobs(nextJobs);
     }
+  }
+
+  async function refreshJobs(showToast = true) {
+    const nextJobs = await getJobs();
+    setJobs(nextJobs);
+    if (showToast) toast.info("Status de jobs atualizado.");
   }
 
   useEffect(() => {
@@ -211,6 +241,19 @@ export function OpenFinanceContent() {
     }
   }
 
+  async function handleQueueSyncItem(item: OpenFinanceItem) {
+    try {
+      setSyncing(`job-${item.external_item_id}`);
+      const job = await createOpenFinanceSyncItemJob(item.external_item_id);
+      await refreshJobs(false);
+      toast.info(job.status === "queued" ? "Sync enviado para a fila." : "Job de sync localizado.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao enfileirar sincronizacao.");
+    } finally {
+      setSyncing(null);
+    }
+  }
+
   if (loading) {
     return <div className="rounded-lg border border-stone-200 bg-white p-6 text-sm text-stone-500 shadow-sm">Carregando Open Finance...</div>;
   }
@@ -267,6 +310,15 @@ export function OpenFinanceContent() {
           <p className="mt-2 text-2xl font-semibold text-ink">{totals.updated}</p>
         </div>
       </div>
+
+      {activeJobCount > 0 ? (
+        <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+          <Clock3 className="h-5 w-5" />
+          <span>
+            {activeJobCount} {activeJobCount === 1 ? "sync em segundo plano esta" : "syncs em segundo plano estao"} na fila ou em execucao.
+          </span>
+        </div>
+      ) : null}
 
       {!status.configured ? (
         <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -354,6 +406,10 @@ export function OpenFinanceContent() {
                           <ShieldCheck className="h-4 w-4" />
                           Reconectar
                         </UiButton>
+                        <UiButton disabled={Boolean(syncing) || !status.configured} onClick={() => handleQueueSyncItem(item)} size="sm" title="Enfileirar sincronizacao em segundo plano" type="button" variant="secondary">
+                          <Clock3 className={cn("h-4 w-4", syncing === `job-${item.external_item_id}` && "animate-spin")} />
+                          Fila
+                        </UiButton>
                         <UiButton disabled={Boolean(syncing) || !status.configured} onClick={() => handleSyncItem(item)} size="sm" type="button" variant="secondary">
                           <RefreshCw className={cn("h-4 w-4", syncing === item.external_item_id && "animate-spin")} />
                           Sincronizar
@@ -364,6 +420,43 @@ export function OpenFinanceContent() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-stone-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-stone-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <Clock3 className="h-4 w-4 text-mint" />
+            <h2 className="text-sm font-semibold text-ink">Jobs recentes</h2>
+          </div>
+          <UiButton disabled={Boolean(syncing)} onClick={() => refreshJobs()} size="sm" type="button" variant="ghost">
+            <RefreshCw className="h-4 w-4" />
+            Atualizar status
+          </UiButton>
+        </div>
+        {openFinanceJobs.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-stone-500">Nenhum job recente de Open Finance.</div>
+        ) : (
+          <div className="divide-y divide-stone-100">
+            {openFinanceJobs.map((job) => (
+              <div key={job.id} className="grid gap-3 px-4 py-3 md:grid-cols-[1fr_auto] md:items-center">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={cn("inline-flex rounded-full px-2 py-1 text-xs font-medium ring-1", statusClass(job.status))}>{jobStatusLabel(job.status)}</span>
+                    <span className="truncate text-sm font-medium text-ink">{job.resource_id || "Open Finance"}</span>
+                    <span className="text-xs text-stone-500">{formatDateTime(job.queued_at)}</span>
+                  </div>
+                  {job.error_message ? <p className="mt-1 text-sm text-red-600">{job.error_message}</p> : null}
+                </div>
+                <div className="text-sm text-stone-600">
+                  <div>{jobProgressLabel(job)}</div>
+                  <div className="mt-1 max-w-md truncate text-xs text-stone-500" title={job.id}>
+                    {job.idempotency_key || job.id}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

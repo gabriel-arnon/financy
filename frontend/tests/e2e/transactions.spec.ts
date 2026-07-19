@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Download, type Page } from "@playwright/test";
 
 const categories = [
   { id: "cat-food", name: "Alimentacao", type: "expense", status: "active" },
@@ -195,12 +195,25 @@ async function mockCoreApi(page: Page) {
   await page.route("**/classification-rules", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
   });
+  await page.route("**/open-finance/status", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ enabled: false, configured: false }) });
+  });
 }
 
 async function gotoTransactions(page: Page, path = "/transactions") {
   await mockCoreApi(page);
   await page.goto(path);
   await page.waitForLoadState("networkidle");
+}
+
+async function downloadText(download: Download) {
+  const stream = await download.createReadStream();
+  if (!stream) return "";
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString("utf-8").replace(/^\uFEFF/, "");
 }
 
 test("opens the transaction drawer from a table row and from the edit action", async ({ page }) => {
@@ -404,6 +417,21 @@ test("filters and labels open finance transactions", async ({ page }) => {
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await expect(page.locator("tbody tr").first()).toContainText("OPENAI ASSINATURA");
   await expect(page.locator("tbody tr").first()).toContainText("Open Finance");
+});
+
+test("exports the filtered transactions as CSV", async ({ page }) => {
+  await gotoTransactions(page, "/transactions?source=open_finance");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Exportar CSV" }).click();
+  const download = await downloadPromise;
+  const content = await downloadText(download);
+
+  expect(download.suggestedFilename()).toMatch(/^financy-transacoes-\d{4}-\d{2}-\d{2}\.csv$/);
+  expect(content).toContain("data;descricao;tipo;categoria;conta;cartao;status;origem_dados;valor;id");
+  expect(content).toContain("OPENAI ASSINATURA");
+  expect(content).toContain("Open Finance");
+  expect(content).not.toContain("TRANSACAO TESTE 2");
 });
 
 test("keeps filters empty when transactions route has no query params", async ({ page }) => {

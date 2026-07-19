@@ -8,6 +8,7 @@ from typing import Any
 
 from app.core.errors import AppError
 from app.parsers.utils import normalize_description
+from app.services.open_finance_provider import OpenFinanceProvider
 from app.services.pluggy_client import PluggyClientError
 
 
@@ -82,17 +83,20 @@ class OpenFinanceService:
     _sync_locks_guard = Lock()
     _sync_locks: dict[tuple[str, str], Lock] = {}
 
-    def __init__(self, repository, settings, pluggy_client) -> None:
+    def __init__(self, repository, settings, provider: OpenFinanceProvider | None = None, pluggy_client: OpenFinanceProvider | None = None) -> None:
         self.repository = repository
         self.settings = settings
-        self.pluggy_client = pluggy_client
+        self.provider = provider or pluggy_client
+        if self.provider is None:
+            raise ValueError("OpenFinanceService requires an Open Finance provider.")
+        self.provider_name = str(getattr(self.provider, "provider_name", PROVIDER))
 
     def status(self) -> dict[str, Any]:
         return {
             "enabled": self.settings.open_finance_enabled,
             "owner_only": True,
             "configured": self.settings.open_finance_configured,
-            "provider": PROVIDER,
+            "provider": self.provider_name,
         }
 
     def ensure_owner(self, user_id: str) -> None:
@@ -116,7 +120,7 @@ class OpenFinanceService:
     def create_connect_token(self, user_id: str) -> dict[str, Any]:
         self.ensure_owner(user_id)
         self.ensure_configured()
-        return {"connect_token": self.pluggy_client.create_connect_token(user_id)}
+        return {"connect_token": self.provider.create_connect_token(user_id)}
 
     def register_item(self, user_id: str, external_item_id: str) -> dict[str, Any]:
         self.ensure_owner(user_id)
@@ -129,7 +133,7 @@ class OpenFinanceService:
         self.ensure_configured()
         items = self.repository.list_open_finance_items(user_id)
         if not items:
-            remote_items = self.pluggy_client.list_items()
+            remote_items = self.provider.list_items()
             items = [
                 self.repository.upsert_open_finance_item(user_id, self._item_payload(item.get("id") or item.get("itemId"), item))
                 for item in remote_items
@@ -168,7 +172,7 @@ class OpenFinanceService:
         started = perf_counter()
         run = self.repository.create_open_finance_sync_run(
             user_id,
-            {"status": "running", "external_item_id": external_item_id, "provider": PROVIDER},
+            {"status": "running", "external_item_id": external_item_id, "provider": self.provider_name},
         )
         counters = {
             "accounts_created": 0,
@@ -192,7 +196,7 @@ class OpenFinanceService:
             from_date = None
             if self.settings.pluggy_sync_lookback_days > 0:
                 from_date = (datetime.now(timezone.utc).date() - timedelta(days=self.settings.pluggy_sync_lookback_days)).isoformat()
-            accounts = self.pluggy_client.list_accounts(external_item_id)
+            accounts = self.provider.list_accounts(external_item_id)
             stats["accounts_found"] = len(accounts)
             account_links = []
             sorted_accounts = sorted(accounts, key=lambda account: 1 if _is_credit_account(account) else 0)
@@ -200,7 +204,7 @@ class OpenFinanceService:
                 link = self._sync_account(user_id, item, account, counters, account_links)
                 account_links.append(link)
                 try:
-                    transactions = self.pluggy_client.list_transactions(str(account.get("id")), from_date=from_date)
+                    transactions = self.provider.list_transactions(str(account.get("id")), from_date=from_date)
                 except PluggyClientError as exc:
                     if exc.status_code == 410:
                         counters["transactions_ignored"] += 1
@@ -242,7 +246,7 @@ class OpenFinanceService:
             self.repository.upsert_open_finance_item(
                 user_id,
                 {
-                    "provider": PROVIDER,
+                    "provider": self.provider_name,
                     "external_item_id": external_item_id,
                     "status": "error",
                     "last_sync_at": now.isoformat(),
@@ -267,13 +271,13 @@ class OpenFinanceService:
             raise AppError("Falha ao sincronizar Open Finance.", status_code=502, code="open_finance_sync_failed") from exc
 
     def _fetch_item_metadata(self, external_item_id: str) -> dict[str, Any]:
-        return self._item_payload(external_item_id, self.pluggy_client.get_item(external_item_id))
+        return self._item_payload(external_item_id, self.provider.get_item(external_item_id))
 
     def _item_payload(self, external_item_id: Any, item: dict[str, Any]) -> dict[str, Any]:
         connector = item.get("connector") if isinstance(item.get("connector"), dict) else {}
         institution = item.get("institution") if isinstance(item.get("institution"), dict) else {}
         return {
-            "provider": PROVIDER,
+            "provider": self.provider_name,
             "external_item_id": str(external_item_id),
             "connector_name": connector.get("name") or item.get("connectorName"),
             "institution_name": institution.get("name") or connector.get("institutionName") or item.get("institutionName"),
@@ -298,7 +302,7 @@ class OpenFinanceService:
         institution_name = account.get("institutionName") or inferred_institution or item.get("institution_name")
         bank_data = account.get("bankData") if isinstance(account.get("bankData"), dict) else {}
         credit_data = account.get("creditData") if isinstance(account.get("creditData"), dict) else {}
-        existing = self.repository.get_open_finance_account_link(user_id, PROVIDER, external_account_id)
+        existing = self.repository.get_open_finance_account_link(user_id, self.provider_name, external_account_id)
         last_digits = (_digits(account.get("number")) or _digits(credit_data.get("number")) or external_account_id)[-4:]
         if not last_digits.isdigit() or len(last_digits) != 4:
             last_digits = "0000"
@@ -327,7 +331,7 @@ class OpenFinanceService:
             return self.repository.upsert_open_finance_account_link(
                 user_id,
                 {
-                    "provider": PROVIDER,
+                    "provider": self.provider_name,
                     "external_account_id": external_account_id,
                     "open_finance_item_id": item["id"],
                     "card_id": card["id"],
@@ -359,7 +363,7 @@ class OpenFinanceService:
         return self.repository.upsert_open_finance_account_link(
             user_id,
             {
-                "provider": PROVIDER,
+                "provider": self.provider_name,
                 "external_account_id": external_account_id,
                 "open_finance_item_id": item["id"],
                 "account_id": local_account["id"],
@@ -374,10 +378,10 @@ class OpenFinanceService:
         )
 
     def _list_investments(self, external_item_id: str, stats: dict[str, Any]) -> list[dict[str, Any]]:
-        if not hasattr(self.pluggy_client, "list_investments"):
+        if not hasattr(self.provider, "list_investments"):
             return []
         try:
-            investments = self.pluggy_client.list_investments(external_item_id)
+            investments = self.provider.list_investments(external_item_id)
         except PluggyClientError as exc:
             stats["investments_error"] = _safe_error(exc)
             return []
@@ -405,7 +409,7 @@ class OpenFinanceService:
             or investment.get("netAmount")
             or investment.get("value")
         )
-        existing = self.repository.get_open_finance_account_link(user_id, PROVIDER, external_investment_id)
+        existing = self.repository.get_open_finance_account_link(user_id, self.provider_name, external_investment_id)
         payload = {
             "name": name,
             "institution": institution_name,
@@ -425,7 +429,7 @@ class OpenFinanceService:
         self.repository.upsert_open_finance_account_link(
             user_id,
             {
-                "provider": PROVIDER,
+                "provider": self.provider_name,
                 "external_account_id": external_investment_id,
                 "open_finance_item_id": item["id"],
                 "account_id": local_account["id"],
@@ -460,7 +464,7 @@ class OpenFinanceService:
             counters["transactions_ignored"] += 1
             self._count_ignored(stats, "missing_transaction_identifier")
             return
-        existing = self.repository.get_open_finance_transaction_link(user_id, PROVIDER, external_transaction_id)
+        existing = self.repository.get_open_finance_transaction_link(user_id, self.provider_name, external_transaction_id)
         merchant = transaction.get("merchant") if isinstance(transaction.get("merchant"), dict) else {}
         description = str(transaction.get("description") or merchant.get("name") or transaction.get("providerCode") or "Open Finance")
         tx_type = self._transaction_type(transaction, link)
@@ -486,7 +490,15 @@ class OpenFinanceService:
             "status": "confirmed",
             "external_source": "open_finance",
         }
-        rule = self.repository.match_classification_rule(user_id, payload["description"], payload["original_description"], tx_type)
+        rule = self.repository.match_classification_rule(
+            user_id,
+            payload["description"],
+            payload["original_description"],
+            tx_type,
+            amount=payload["amount"],
+            external_source=payload.get("external_source"),
+            category_id=payload.get("category_id"),
+        )
         if rule:
             payload["category_id"] = rule["category_id"]
         if existing:
@@ -504,7 +516,7 @@ class OpenFinanceService:
         self.repository.upsert_open_finance_transaction_link(
             user_id,
             {
-                "provider": PROVIDER,
+                "provider": self.provider_name,
                 "external_transaction_id": external_transaction_id,
                 "external_account_id": link.get("external_account_id"),
                 "open_finance_item_id": item["id"],
