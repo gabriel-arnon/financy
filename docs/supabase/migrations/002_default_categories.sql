@@ -10,5 +10,9 @@ values
   (null, 'Serviços', 'expense', 'active', true),
   (null, 'Assinaturas', 'expense', 'active', true),
   (null, 'Impostos', 'expense', 'active', true),
+  (null, 'Juros e dividendos', 'income', 'active', true),
+  (null, 'Uber e apps', 'expense', 'active', true),
+  (null, 'Delivery', 'expense', 'active', true),
+  (null, 'Gasolina', 'expense', 'active', true),
   (null, 'Outros', 'both', 'active', true)
 on conflict do nothing;

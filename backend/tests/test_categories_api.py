@@ -16,6 +16,10 @@ def test_categories_endpoint_returns_default_active_categories() -> None:
     names = [category["name"] for category in categories]
     assert "Alimentação" in names
     assert "Supermercado" in names
+    assert "Juros e dividendos" in names
+    assert "Uber e apps" in names
+    assert "Delivery" in names
+    assert "Gasolina" in names
     assert "Outros" in names
     assert all(category["status"] == "active" for category in categories)
     assert all(category["is_system"] for category in categories if category["user_id"] is None)
@@ -29,8 +33,12 @@ def test_default_categories_are_expenses_except_outros() -> None:
     assert response.status_code == 200
     categories_by_name = {category["name"]: category for category in response.json()}
     for name, category in categories_by_name.items():
-        if category["user_id"] is None and name != "Outros":
+        if category["user_id"] is None and name not in {"Outros", "Juros e dividendos"}:
             assert category["type"] == "expense"
+    assert categories_by_name["Juros e dividendos"]["type"] == "income"
+    assert categories_by_name["Uber e apps"]["type"] == "expense"
+    assert categories_by_name["Delivery"]["type"] == "expense"
+    assert categories_by_name["Gasolina"]["type"] == "expense"
     assert categories_by_name["Outros"]["type"] == "both"
 
 

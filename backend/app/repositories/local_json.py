@@ -22,6 +22,10 @@ DEFAULT_CATEGORIES = [
     "Assinaturas",
     "Impostos",
     "Outros",
+    "Juros e dividendos",
+    "Uber e apps",
+    "Delivery",
+    "Gasolina",
 ]
 
 
@@ -37,10 +41,14 @@ DEFAULT_CATEGORY_DISPLAY_NAMES = [
     "Assinaturas",
     "Impostos",
     "Outros",
+    "Juros e dividendos",
+    "Uber e apps",
+    "Delivery",
+    "Gasolina",
 ]
 
 DEFAULT_CATEGORY_TYPES = {
-    name: ("both" if name == "Outros" else "expense")
+    name: ("income" if name == "Juros e dividendos" else "both" if name == "Outros" else "expense")
     for name in DEFAULT_CATEGORY_DISPLAY_NAMES
 }
 
@@ -135,6 +143,27 @@ class LocalJsonRepository:
         categories = data.setdefault("categories", [])
         changed = False
         now = datetime.now(timezone.utc).isoformat()
+        existing_system_names = {
+            category.get("name")
+            for category in categories
+            if category.get("user_id") is None and category.get("is_system", True)
+        }
+        for name in DEFAULT_CATEGORY_DISPLAY_NAMES:
+            if name in existing_system_names:
+                continue
+            categories.append(
+                {
+                    "id": str(uuid4()),
+                    "user_id": None,
+                    "name": name,
+                    "type": DEFAULT_CATEGORY_TYPES[name],
+                    "status": "active",
+                    "is_system": True,
+                    "created_at": now,
+                    "default_type_migrated": True,
+                }
+            )
+            changed = True
         for index, category in enumerate(categories):
             if index < len(DEFAULT_CATEGORY_DISPLAY_NAMES) and category.get("name") != DEFAULT_CATEGORY_DISPLAY_NAMES[index]:
                 category["name"] = DEFAULT_CATEGORY_DISPLAY_NAMES[index]
