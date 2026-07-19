@@ -203,6 +203,12 @@ class OpenFinanceService:
             for account in sorted_accounts:
                 link = self._sync_account(user_id, item, account, counters, account_links)
                 account_links.append(link)
+                reserved_investments = self._reserved_balance_investments(item, account)
+                if reserved_investments:
+                    stats["reserved_balances_found"] = int(stats.get("reserved_balances_found") or 0) + len(reserved_investments)
+                    stats["investments_found"] = int(stats.get("investments_found") or 0) + len(reserved_investments)
+                    for investment in reserved_investments:
+                        self._sync_investment(user_id, item, investment, counters)
                 try:
                     transactions = self.provider.list_transactions(str(account.get("id")), from_date=from_date)
                 except PluggyClientError as exc:
@@ -385,7 +391,45 @@ class OpenFinanceService:
         except PluggyClientError as exc:
             stats["investments_error"] = _safe_error(exc)
             return []
-        stats["investments_found"] = len(investments)
+        stats["investments_found"] = int(stats.get("investments_found") or 0) + len(investments)
+        return investments
+
+    def _reserved_balance_investments(self, item: dict[str, Any], account: dict[str, Any]) -> list[dict[str, Any]]:
+        reserved_balances = account.get("reservedBalances")
+        if not isinstance(reserved_balances, list):
+            reserved_balances = _nested(account, "bankData", "reservedBalances")
+        if not isinstance(reserved_balances, list):
+            return []
+
+        investments = []
+        account_id = str(account.get("id") or "")
+        institution_name = account.get("institutionName") or item.get("institution_name")
+        for index, reserved in enumerate(reserved_balances):
+            if not isinstance(reserved, dict):
+                continue
+            identification = str(reserved.get("identification") or reserved.get("id") or index)
+            amounts = reserved.get("availableAmounts")
+            balance = Decimal("0.00")
+            if isinstance(amounts, list):
+                for amount in amounts:
+                    balance += _decimal(amount)
+            else:
+                balance = _decimal(reserved.get("amount") or reserved.get("balance") or reserved.get("value"))
+            name = str(reserved.get("name") or "Caixinha")
+            investments.append(
+                {
+                    "id": f"{account_id}:reserved:{identification}",
+                    "itemId": item.get("external_item_id"),
+                    "type": "RESERVED_BALANCE",
+                    "subtype": "MERCADO_PAGO_CAIXINHA",
+                    "name": f"Caixinha {name}",
+                    "institutionName": institution_name,
+                    "grossAmount": str(balance),
+                    "code": identification,
+                    "reservedBalance": reserved,
+                    "sourceAccountId": account_id,
+                }
+            )
         return investments
 
     def _sync_investment(self, user_id: str, item: dict[str, Any], investment: dict[str, Any], counters: dict[str, int]) -> None:
@@ -435,11 +479,18 @@ class OpenFinanceService:
                 "account_id": local_account["id"],
                 "card_id": None,
                 "account_type": "INVESTMENT",
-                "subtype": investment.get("type"),
+                "subtype": investment.get("subtype") or investment.get("type"),
                 "display_name": name,
                 "institution_name": institution_name,
                 "last_digits": None,
-                "metadata": {"raw_type": investment.get("type"), "item_id": investment.get("itemId"), "raw": investment},
+                "metadata": {
+                    "raw_type": investment.get("type"),
+                    "raw_subtype": investment.get("subtype"),
+                    "item_id": investment.get("itemId"),
+                    "source_account_id": investment.get("sourceAccountId"),
+                    "reserved_balance": investment.get("reservedBalance"),
+                    "raw": investment,
+                },
             },
         )
 

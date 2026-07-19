@@ -285,6 +285,64 @@ def test_sync_item_imports_investments_as_investment_accounts(tmp_path) -> None:
     assert investment_accounts[0]["external_source"] == "open_finance"
 
 
+def test_sync_item_imports_mercado_pago_reserved_balances_as_investments(tmp_path) -> None:
+    class MercadoPagoCaixinhaPluggyClient(FakePluggyClient):
+        def list_accounts(self, item_id: str):
+            return [
+                {
+                    "id": "mp-account-1",
+                    "itemId": item_id,
+                    "name": "Mercado Pago - Conta Corrente",
+                    "institutionName": "Mercado Pago",
+                    "type": "BANK",
+                    "subtype": "CHECKING_ACCOUNT",
+                    "number": "12345",
+                    "balance": "10.00",
+                    "reservedBalances": [
+                        {
+                            "name": "Carro",
+                            "identification": "3f986b26-5c85-45c4-abda-5f7ac1b47685",
+                            "availableAmounts": [
+                                {
+                                    "amount": 1003.88,
+                                    "currencyCode": "BRL",
+                                    "remuneration": {
+                                        "indexer": "CDI",
+                                        "rateType": "EXPONENCIAL",
+                                        "calculation": "DIAS_UTEIS",
+                                        "ratePeriodicity": "ANUAL",
+                                        "postFixedIndexerPercentage": 1.199987,
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+
+        def list_transactions(self, account_id: str, **kwargs):
+            return []
+
+    repository = LocalJsonRepository(tmp_path)
+    service = OpenFinanceService(repository=repository, settings=settings(), pluggy_client=MercadoPagoCaixinhaPluggyClient())
+
+    first = service.sync_item(OWNER_ID, "item-1")
+    second = service.sync_item(OWNER_ID, "item-1")
+
+    investment_accounts = [account for account in repository.list_accounts(OWNER_ID) if account["type"] == "investment"]
+    links = [link for link in repository._read()["open_finance_account_links"] if link.get("account_type") == "INVESTMENT"]
+    assert first["run"]["metadata"]["reserved_balances_found"] == 1
+    assert first["run"]["metadata"]["investments_found"] == 1
+    assert first["run"]["accounts_created"] == 2
+    assert second["run"]["accounts_updated"] == 2
+    assert len(investment_accounts) == 1
+    assert investment_accounts[0]["name"] == "Caixinha Carro"
+    assert investment_accounts[0]["institution"] == "Mercado Pago"
+    assert investment_accounts[0]["balance"] == "1003.88"
+    assert links[0]["metadata"]["source_account_id"] == "mp-account-1"
+    assert links[0]["metadata"]["reserved_balance"]["availableAmounts"][0]["remuneration"]["indexer"] == "CDI"
+
+
 def test_sync_item_links_credit_card_to_bank_account_from_same_item(tmp_path) -> None:
     class LinkedCardPluggyClient(FakePluggyClient):
         def list_accounts(self, item_id: str):
